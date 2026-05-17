@@ -13,6 +13,31 @@ const E2EE_REQUIRED_DEFAULT = (() => {
   return !(raw === "0" || raw === "false" || raw === "off");
 })();
 const HEARTBEAT_SEC = Math.max(5, Number(process.env.SFU_HEARTBEAT_SEC ?? "10"));
+
+// ── TURN credential generation (RFC 5766 §9.2 — same HMAC-SHA1 as turn-credentials Edge Function) ──
+const TURN_SHARED_SECRET = process.env.TURN_SHARED_SECRET ?? "";
+const TURN_URLS = (process.env.TURN_URLS ?? "").split(/[\s,]+/).map(s => s.trim()).filter(Boolean);
+const TURN_TTL_SECONDS = Math.max(3600, Number(process.env.TURN_TTL_SECONDS ?? "3600"));
+const STUN_URLS = (process.env.STUN_URLS ?? "stun:stun.l.google.com:19302").split(/[\s,]+/).map(s => s.trim()).filter(Boolean);
+
+function generateTurnCredentials(userId) {
+  if (!TURN_SHARED_SECRET || TURN_URLS.length === 0) return null;
+  const expiry = Math.floor(Date.now() / 1000) + TURN_TTL_SECONDS;
+  const username = `${expiry}:${userId.slice(0, 20)}`;
+  const credential = crypto.createHmac("sha1", TURN_SHARED_SECRET).update(username).digest("base64");
+  return { username, credential, expiry };
+}
+
+function buildIceServers(userId) {
+  const servers = STUN_URLS.map(u => ({ urls: u }));
+  const turn = generateTurnCredentials(userId);
+  if (turn) {
+    for (const u of TURN_URLS) {
+      servers.push({ urls: u, username: turn.username, credential: turn.credential });
+    }
+  }
+  return servers;
+}
 const CALLS_DEV_INSECURE_AUTH = !IS_PROD_LIKE && process.env.CALLS_DEV_INSECURE_AUTH === "1";
 const REQUIRE_MEDIASOUP_IN_PROD = IS_PROD_LIKE && process.env.SFU_REQUIRE_MEDIASOUP !== "0";
 const requireSFrame = (() => {
@@ -362,6 +387,7 @@ function makeSnapshot(room) {
     memberSetVersion: room.memberSetVersion,
     serverTime: nowMs(),
     peers: Array.from(room.peers.values()).map((p) => ({
+      peerId: p.userId,
       userId: p.userId,
       deviceId: p.deviceId,
       role: "member",
@@ -861,6 +887,7 @@ wss.on("connection", (ws, req) => {
             iceParameters: transport.iceParameters ?? {},
             iceCandidates: transport.iceCandidates ?? [],
             dtlsParameters: transport.dtlsParameters ?? {},
+            iceServers: buildIceServers(conn.userId),
           },
         });
         ack(ws, frame.msgId, true);
@@ -1058,6 +1085,8 @@ wss.on("connection", (ws, req) => {
           ack(ws, frame.msgId, false, wsError("VALIDATION_FAILED", "rtpCapabilities must be non-empty", {}, false));
           return;
         }
+        const producerOwnerDeviceId = producer?.peerDeviceId ?? "";
+        const producerOwnerUserId = producer?.userId ?? "";
         const consumed = await mediaPlane.consume(
           room.roomId,
           conn.deviceId,
@@ -1076,6 +1105,9 @@ wss.on("connection", (ws, req) => {
             producerId,
             kind: consumed.kind ?? producer.kind,
             rtpParameters: consumed.rtpParameters ?? {},
+            peerId: producerOwnerUserId && producerOwnerDeviceId
+              ? `${producerOwnerUserId}:${producerOwnerDeviceId}`
+              : producerOwnerUserId || undefined,
           },
         });
 
@@ -1117,15 +1149,36 @@ wss.on("connection", (ws, req) => {
 
       case "ICE_RESTART": {
         if (!ensureAuth()) return;
-        send(ws, {
-          v: 1,
-          type: "ICE_RESTART_OK",
-          msgId: uuid(),
-          ts: nowMs(),
-          seq: conn.expectedSeq++,
-          payload: { roomId: frame.payload?.roomId ?? conn.roomId, policy: frame.payload?.policy ?? "relay" },
-        });
-        ack(ws, frame.msgId, true);
+        const room = rooms.get(frame.payload?.roomId ?? conn.roomId);
+        if (!room || !conn.deviceId || !room.peers.has(conn.deviceId)) {
+          ack(ws, frame.msgId, false, wsError("UNAUTHORIZED", "Not a room member", {}, false));
+          return;
+        }
+        const transportId = frame.payload?.transportId;
+        if (!transportId) {
+          ack(ws, frame.msgId, false, wsError("VALIDATION_FAILED", "Missing transportId", {}, false));
+          return;
+        }
+        try {
+          const result = await mediaPlane.restartIce(room.roomId, transportId);
+          const iceServers = buildIceServers(conn.userId);
+          send(ws, {
+            v: 1,
+            type: "ICE_RESTART_OK",
+            msgId: uuid(),
+            ts: nowMs(),
+            seq: conn.expectedSeq++,
+            payload: {
+              roomId: room.roomId,
+              transportId,
+              iceParameters: result?.iceParameters ?? {},
+              iceServers,
+            },
+          });
+          ack(ws, frame.msgId, true);
+        } catch (error) {
+          ack(ws, frame.msgId, false, wsError("ICE_RESTART_FAILED", error?.message ?? "restartIce failed", {}, true));
+        }
         return;
       }
 

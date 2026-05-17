@@ -403,6 +403,8 @@ export interface ConsumedPayload {
   producerId: string;
   kind: 'audio' | 'video';
   rtpParameters: RtpParameters;
+  /** E2EE peer identifier (userId:deviceId) — set by new servers; absent on legacy servers */
+  peerId?: string;
 }
 
 export interface E2EEPolicyPayload {

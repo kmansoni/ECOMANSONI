@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, type Dispatch, type MutableRefObject, type SetStateAction } from "react";
+import { useCallback, useEffect, useRef, type MutableRefObject } from "react";
 import { toast } from "sonner";
 import { logger } from "@/lib/logger";
 import { SfuMediaManager } from "@/calls-v2/sfuMediaManager";
@@ -44,8 +44,8 @@ interface UseCallsV2MediaBootstrapParams {
   mediaBootstrapToastShownRef: MutableRefObject<Set<string>>;
   isScreenSharing: boolean;
   screenStream: MediaStream | null;
-  setRemoteMediaStream: Dispatch<SetStateAction<MediaStream | null>>;
-  setRemoteScreenStream: Dispatch<SetStateAction<MediaStream | null>>;
+  setRemoteMediaStream: (stream: MediaStream | null) => void;
+  setRemoteScreenStream: (stream: MediaStream | null) => void;
   callStateRef: MutableRefObject<CallState>;
   dispatchFsm: (event: CallEvent) => CallState;
   isCallConnecting: (state: CallState) => boolean;
@@ -479,6 +479,7 @@ export function useCallsV2MediaBootstrap({
           consumerId: p.consumerId,
           producerId: p.producerId,
           kind: p.kind,
+          peerId: p.peerId,
           roomId: roomId.slice(0, 8),
         });
 
@@ -496,14 +497,33 @@ export function useCallsV2MediaBootstrap({
             trackKind: consumer.track?.kind,
             trackState: consumer.track?.readyState,
           });
+
           consumerCreateParamsRef.current.set(consumer.id, p);
-          if (REQUIRE_SFRAME && CallMediaEncryption.isSupported()) {
-            const receiver = sfuManagerRef.current?.getConsumerReceiver(consumer.id);
-            if (receiver) {
-              const peerKey = producerPeerKeyRef.current.get(p.producerId) || p.producerId;
-              callMediaEncryptionRef.current?.setupReceiverTransform(receiver, peerKey, consumer.id);
-            }
-          }
+           if (REQUIRE_SFRAME && CallMediaEncryption.isSupported()) {
+             const enc = callMediaEncryptionRef.current;
+             const receiver = sfuManagerRef.current?.getConsumerReceiver(consumer.id);
+             const peerKey = p.peerId
+               || producerPeerKeyRef.current.get(p.producerId)
+               || p.producerId;
+             logger.debug("[VideoCallContext] E2EE setupReceiverTransform", {
+               consumerId: consumer.id,
+               peerKey,
+               peerIdField: p.peerId,
+               fromProducerRef: producerPeerKeyRef.current.get(p.producerId),
+               producerId: p.producerId,
+               hasEncryption: enc?.hasEncryptionKey,
+               decryptionKeysCount: enc ? enc.peerDecryptionEpochs.size : -1,
+               allDecryptionKeys: enc ? Array.from(enc.peerDecryptionEpochs.keys()) : [],
+             });
+             if (receiver && enc) {
+               enc.setupReceiverTransform(receiver, peerKey, consumer.id);
+               logger.info("[VideoCallContext] E2EE setupReceiverTransform:ok", {
+                 peerKey,
+                 consumerId: consumer.id,
+                 decryptionKeysNow: Array.from(enc.peerDecryptionEpochs.keys()),
+               });
+             }
+           }
           return client.consumerResume({ roomId, consumerId: consumer.id }).then(() => {
             logger.debug("[VideoCallContext] consumerResume done, calling rebuildRemoteStream");
             rebuildRemoteStream();
@@ -513,6 +533,7 @@ export function useCallsV2MediaBootstrap({
         });
       });
 
+      // Create E2EE key BEFORE producing tracks (H-6 fix: must be set BEFORE setupSenderTransform)
       if (REQUIRE_SFRAME && CallMediaEncryption.isSupported()) {
         const kx = callKeyExchangeRef.current;
         const enc = callMediaEncryptionRef.current;

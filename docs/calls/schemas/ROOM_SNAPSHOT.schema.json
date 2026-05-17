@@ -33,6 +33,7 @@
         "additionalProperties": false,
         "required": ["userId", "deviceId", "role", "state"],
         "properties": {
+          "peerId": { "type": "string", "description": "Canonical E2EE peer identifier (same as userId for single-device, userId:deviceId for multi-device)" },
           "userId": { "$ref": "https://mansoni.com/schemas/ws/types.schema.json#/properties/userId" },
           "deviceId": { "$ref": "https://mansoni.com/schemas/ws/types.schema.json#/properties/deviceId" },
           "role": { "type": "string", "enum": ["member", "moderator"] },

@@ -91,9 +91,11 @@ export class CallMediaEncryption {
    */
   async setDecryptionKey(peerId: string, epochKey: EpochKeyMaterial): Promise<void> {
     // MediaEncryptor.setDecryptionKey(CryptoKey, keyId: number, peerId: string)
-    await this.encryptor.setDecryptionKey(epochKey.key, epochKey.epoch & 0xff, peerId);
+    const keyId = epochKey.epoch & 0xff;
+    logger.debug(`[CallMediaEncryption] setDecryptionKey: peer=${peerId} epoch=${epochKey.epoch} keyId=${keyId}`);
+    await this.encryptor.setDecryptionKey(epochKey.key, keyId, peerId);
     this.peerDecryptionEpochs.set(peerId, epochKey.epoch);
-    logger.debug(`[CallMediaEncryption] Decryption key set for peer ${peerId} epoch ${epochKey.epoch}`);
+    logger.debug(`[CallMediaEncryption] Decryption key set for peer ${peerId} epoch ${epochKey.epoch}, total keys=${this.peerDecryptionEpochs.size}`);
   }
 
   /**
@@ -139,9 +141,12 @@ export class CallMediaEncryption {
     // M-6: assert epoch guard allows media
     this.epochGuard?.assertMediaAllowed('setupReceiverTransform');
 
-    if (!this.peerDecryptionEpochs.has(peerId)) {
+    const hasKey = this.peerDecryptionEpochs.has(peerId);
+    const knownKeys = Array.from(this.peerDecryptionEpochs.keys());
+    if (!hasKey) {
       logger.warn(
-        `[CallMediaEncryption] No decryption key for peer ${peerId} — frames will be dropped until key arrives`
+        `[CallMediaEncryption] No decryption key for peer ${peerId} — frames will be dropped until key arrives. ` +
+        `known peers: ${JSON.stringify(knownKeys)}`
       );
     }
     // MediaEncryptor.setupReceiverTransform(receiver, trackId, peerId) — note arg order difference

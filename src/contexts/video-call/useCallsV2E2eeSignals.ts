@@ -7,7 +7,7 @@ import { RekeyStateMachine } from "../../calls-v2/rekeyStateMachine";
 import { EpochGuard } from "@/calls-v2/epochGuard";
 import type { CallsWsClient } from "@/calls-v2/wsClient";
 import type { PipeBreakInfo } from "@/lib/e2ee/insertableStreams";
-import { getOrCreateIdentityKeyPair, signIdentity, exportPublicKey as exportEcdsaPublicKey } from "@/calls-v2/ecdsaIdentity";
+import { getOrCreateIdentityKeyPair, signIdentity, exportPublicKey as exportEcdsaPublicKey, verifyIdentity, importPublicKey } from "@/calls-v2/ecdsaIdentity";
 
 interface UseCallsV2E2eeSignalsParams {
   user: { id: string } | null;
@@ -61,7 +61,7 @@ export function useCallsV2E2eeSignals({
       const snapshot = frame.payload as {
         roomVersion?: number | string;
         e2ee?: { leaderDeviceId?: string };
-        peers?: Array<{ peerId?: string; deviceId?: string }>;
+        peers?: Array<{ peerId?: string; userId?: string; deviceId?: string }>;
       } | null;
       const roomVersionRaw = snapshot?.roomVersion;
       const roomVersion = typeof roomVersionRaw === "number" ? roomVersionRaw : Number(roomVersionRaw);
@@ -80,14 +80,15 @@ export function useCallsV2E2eeSignals({
         e2eeLeaderDeviceRef.current = leader;
       }
       if (Array.isArray(snapshot?.peers)) {
-        const peerIds: string[] = (snapshot.peers as Array<{ peerId?: string; deviceId?: string }>)
-          .map((p) => p.peerId ?? p.deviceId ?? "")
+        const peerIds: string[] = (snapshot.peers as Array<{ peerId?: string; userId?: string; deviceId?: string }>)
+          .map((p) => p.peerId ?? p.userId ?? p.deviceId ?? "")
           .filter(Boolean);
         rekeyMachineRef.current?.setActivePeers(peerIds);
 
-        for (const peer of snapshot.peers as Array<{ peerId?: string; deviceId?: string }>) {
-          if (!peer?.peerId || !peer?.deviceId) continue;
-          const peerUserId = peer.peerId.split(":")[0] || "";
+        for (const peer of snapshot.peers as Array<{ peerId?: string; userId?: string; deviceId?: string }>) {
+          const canonicalPeerId = peer.peerId ?? peer.userId;
+          if (!canonicalPeerId || !peer?.deviceId) continue;
+          const peerUserId = canonicalPeerId.includes(":") ? canonicalPeerId.split(":")[0] : canonicalPeerId;
           if (peerUserId) {
             peerUserIdByDeviceIdRef.current.set(peer.deviceId, peerUserId);
           }
@@ -243,7 +244,7 @@ export function useCallsV2E2eeSignals({
             return;
           }
 
-          if (keyExchange && mediaEncryption && senderPublicKeyB64 && ciphertextB64) {
+          if (keyExchange && mediaEncryption && senderPublicKeyB64 && ciphertextB64 && (sigB64 || isDiscovery)) {
             const senderIdentityObj = rawPayload?.senderIdentity as
               | { userId?: string; deviceId?: string; sessionId?: string }
               | undefined;
@@ -320,6 +321,52 @@ export function useCallsV2E2eeSignals({
                 return;
               }
 
+              // Verify ECDSA signature on discovery packet before creating wrapped epoch key.
+              // Discovery packets carry sigB64 when sent by current-version clients.
+              // If sigB64 is present + senderIdentity has identityPubKeyJwk → verify.
+              // Reject on verification failure. Allow without verification only if
+              // sender is a legacy client (no sig, no identity key) — defense in depth
+              // via WS authentication (only authenticated devices reach this handler).
+              if (sigB64 && sigB64.length > 0) {
+                const senderIdentityJwk = rawPayload?.senderIdentity as
+                  | { identityPubKeyJwk?: JsonWebKey }
+                  | undefined;
+                const senderJwk = senderIdentityJwk?.identityPubKeyJwk;
+                if (senderJwk && senderJwk.kty && senderJwk.crv) {
+                  try {
+                    const senderVerifyKey = await importPublicKey(senderJwk);
+                    const sigBytes = Uint8Array.from(atob(sigB64), (c) => c.charCodeAt(0));
+                    const senderSalt = (rawPayload?.salt as string | undefined) ?? "";
+                    const valid = await verifyIdentity(
+                      senderVerifyKey,
+                      senderUserId,
+                      senderDeviceId,
+                      senderSessionId,
+                      senderPublicKeyB64,
+                      ciphertextB64,
+                      epoch,
+                      senderSalt,
+                      sigBytes.buffer as ArrayBuffer,
+                    );
+                    if (!valid) {
+                      logger.warn("[VideoCallContext] KEY_PACKAGE discovery rejected: ECDSA signature verification FAILED", {
+                        epoch, senderUserId, senderDeviceId,
+                      });
+                      return;
+                    }
+                    logger.debug("[VideoCallContext] KEY_PACKAGE discovery ECDSA signature verified", {
+                      epoch, senderUserId,
+                    });
+                  } catch (verifyErr) {
+                    logger.warn("[VideoCallContext] KEY_PACKAGE discovery signature verification error", {
+                      epoch, senderUserId, error: verifyErr instanceof Error ? verifyErr.message : String(verifyErr),
+                    });
+                    // Fail-closed: reject if verification attempted but failed
+                    return;
+                  }
+                }
+              }
+
               logger.info("[VideoCallContext] KEY_PACKAGE discovery accepted: leader responding with wrapped epoch key", {
                 epoch,
                 senderDeviceId,
@@ -387,6 +434,12 @@ export function useCallsV2E2eeSignals({
             try {
               const peerEpochKey = await keyExchange.processKeyPackage(pkgData);
               const peerKey = senderDeviceId ? `${senderUserId}:${senderDeviceId}` : senderUserId;
+              logger.debug("[VideoCallContext] KEY_PACKAGE: about to call setDecryptionKey", {
+                epoch: peerEpochKey.epoch,
+                peerKey,
+                senderUserId,
+                senderDeviceId,
+              });
               await mediaEncryption.setDecryptionKey(peerKey, peerEpochKey);
               keyExchangeSuccess = true;
               logger.info("[VideoCallContext] KEY_PACKAGE: processKeyPackage OK", { epoch, senderUserId, peerKey });

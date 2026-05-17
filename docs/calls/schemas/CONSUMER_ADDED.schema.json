@@ -10,6 +10,7 @@
     "consumerId": { "type": "string", "minLength": 3, "maxLength": 128 },
     "producerId": { "type": "string", "minLength": 3, "maxLength": 128 },
     "kind": { "type": "string", "enum": ["audio", "video", "screen"] },
-    "rtpParameters": { "type": "object" }
+    "rtpParameters": { "type": "object" },
+    "peerId": { "type": "string", "description": "E2EE peer identifier (userId:deviceId) for SFrame decryption key lookup" }
   }
 }
