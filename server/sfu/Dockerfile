@@ -6,7 +6,7 @@
 #   docker build -t mansoni-sfu -f server/sfu/Dockerfile .
 #
 # Run:
-#   docker run -e SFU_ANNOUNCED_IP=<vps-public-ip> -p 4443:4443 -p 40000-49999:40000-49999/udp mansoni-sfu
+#   docker run --env-file server/sfu/.env.production -p 4443:4443 -p 40000-49999:40000-49999/udp mansoni-sfu
 
 FROM node:20-bookworm AS deps
 WORKDIR /app

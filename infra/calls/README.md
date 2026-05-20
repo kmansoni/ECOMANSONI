@@ -23,6 +23,30 @@ docker compose -f infra/calls/docker-compose.yml up -d
 
 ## Production — автоматическая настройка coturn
 
+Production SFU не должен брать критичные параметры из локальной рабочей машины.
+`SFU_ANNOUNCED_IP`, `TURN_SHARED_SECRET`, `TURN_URLS`, Supabase env и join-token secret
+хранятся на VPS в `/opt/mansoni/app/.env.production` и
+`/opt/mansoni/app/server/sfu/.env.production`. Deploy workflow синхронизирует эти файлы
+из GitHub Secrets и, если `SFU_ANNOUNCED_IP` не задан явно, определяет публичный IP на самом сервере.
+
+Минимальные GitHub Secrets для production media path:
+
+```bash
+CALLS_JOIN_TOKEN_SECRET=...
+VITE_SUPABASE_URL=...
+VITE_SUPABASE_PUBLISHABLE_KEY=...
+TURN_SHARED_SECRET=...
+TURN_URLS=turns:turn.mansoni.ru:5349?transport=tcp,turn:turn.mansoni.ru:3478?transport=udp
+# Опционально, иначе deploy auto-detect на VPS:
+SFU_RU_ANNOUNCED_IP=<public_ipv4>
+```
+
+Docker Compose production поднимает `calls-ws` и `sfu` вместе:
+
+```bash
+docker compose -f infra/calls/docker-compose.prod.yml up -d --build calls-ws sfu
+```
+
 ### Вариант А: автоматический bootstrap (рекомендуется)
 
 На VPS с Debian/Ubuntu:

@@ -33,7 +33,9 @@ npm run calls:sfu:dev
 - `SFU_HEARTBEAT_SEC` (default `10`)
 - `SFU_ENABLE_MEDIASOUP` (`1` to enable mediasoup mode, default disabled)
 - `SFU_REQUIRE_MEDIASOUP` (`1` by default in production; fail-closed if mediasoup is unavailable)
-- `SFU_ANNOUNCED_IP` (optional announced IP for mediasoup transports)
+- `SFU_ANNOUNCED_IP` (required in production; public node IP for mediasoup ICE candidates)
+- `TURN_SHARED_SECRET` (required in production; same HMAC secret as coturn `static-auth-secret`)
+- `TURN_URLS` (required in production; comma-separated TURN/TURNS URLs returned to clients)
 - `SFU_RTC_MIN_PORT` / `SFU_RTC_MAX_PORT` (mediasoup RTC UDP/TCP range, defaults `40000-49999`)
 - `SFU_MEDIASOUP_LOG_LEVEL` (`warn` by default)
 
@@ -118,6 +120,9 @@ E2EE_REQUIRED_DEFAULT=true      # Default E2EE policy for all rooms
 # Security
 SFU_STRICT_VALIDATION=1         # Reject empty dtlsParameters/rtpParameters
 SFU_INSECURE_DEV_MODE=0         # Disable dev mode auth bypass
+SFU_ANNOUNCED_IP=<public_ip>    # Public VPS IP for WebRTC ICE candidates
+TURN_SHARED_SECRET=<secret>     # Must match coturn static-auth-secret
+TURN_URLS=turns:turn.example.com:5349?transport=tcp,turn:turn.example.com:3478?transport=udp
 
 # Rate Limits
 SFU_KEY_PACKAGE_RATE=50         # Max KEY_PACKAGE per minute per peer

@@ -508,31 +508,32 @@ export function useCallsV2MediaBootstrap({
           });
 
           consumerCreateParamsRef.current.set(consumer.id, p);
-           if (REQUIRE_SFRAME && CallMediaEncryption.isSupported()) {
-             const enc = callMediaEncryptionRef.current;
-             const receiver = sfuManagerRef.current?.getConsumerReceiver(consumer.id);
-             const peerKey = p.peerId
-               || producerPeerKeyRef.current.get(p.producerId)
-               || p.producerId;
-             logger.debug("[VideoCallContext] E2EE setupReceiverTransform", {
-               consumerId: consumer.id,
-               peerKey,
-               peerIdField: p.peerId,
-               fromProducerRef: producerPeerKeyRef.current.get(p.producerId),
-               producerId: p.producerId,
-               hasEncryption: enc?.hasEncryptionKey,
-               decryptionKeysCount: enc ? enc.peerDecryptionEpochs.size : -1,
-               allDecryptionKeys: enc ? Array.from(enc.peerDecryptionEpochs.keys()) : [],
-             });
-             if (receiver && enc) {
-               enc.setupReceiverTransform(receiver, peerKey, consumer.id);
-               logger.info("[VideoCallContext] E2EE setupReceiverTransform:ok", {
-                 peerKey,
-                 consumerId: consumer.id,
-                 decryptionKeysNow: Array.from(enc.peerDecryptionEpochs.keys()),
-               });
-             }
-           }
+          if (REQUIRE_SFRAME && CallMediaEncryption.isSupported()) {
+            const enc = callMediaEncryptionRef.current;
+            const receiver = sfuManagerRef.current?.getConsumerReceiver(consumer.id);
+            const peerKey = p.peerId
+              || producerPeerKeyRef.current.get(p.producerId)
+              || p.producerId;
+            const decryptionPeerIds = enc?.getDecryptionPeerIds() ?? [];
+            logger.debug("[VideoCallContext] E2EE setupReceiverTransform", {
+              consumerId: consumer.id,
+              peerKey,
+              peerIdField: p.peerId,
+              fromProducerRef: producerPeerKeyRef.current.get(p.producerId),
+              producerId: p.producerId,
+              hasEncryption: enc?.hasOutboundKey() ?? false,
+              decryptionKeysCount: decryptionPeerIds.length,
+              allDecryptionKeys: decryptionPeerIds,
+            });
+            if (receiver && enc) {
+              enc.setupReceiverTransform(receiver, peerKey, consumer.id);
+              logger.info("[VideoCallContext] E2EE setupReceiverTransform:ok", {
+                peerKey,
+                consumerId: consumer.id,
+                decryptionKeysNow: enc.getDecryptionPeerIds(),
+              });
+            }
+          }
           return client.consumerResume({ roomId, consumerId: consumer.id }).then(() => {
             logger.debug("[VideoCallContext] consumerResume done, calling rebuildRemoteStream");
             rebuildRemoteStream();

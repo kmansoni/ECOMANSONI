@@ -26,6 +26,7 @@ export class VideoBlurProcessor {
   private running = false;
   private blurAmount = 15;
   private lastFrameTime = 0;
+  private outputTrack: MediaStreamTrack | null = null;
 
   /**
    * Запускает обработку: сегментация + blur на каждом кадре.
@@ -80,6 +81,7 @@ export class VideoBlurProcessor {
     const outputStream = this.canvas.captureStream(TARGET_FPS);
     const outputTrack = outputStream.getVideoTracks()[0];
     if (!outputTrack) throw new Error('Не удалось получить трек из canvas');
+    this.outputTrack = outputTrack;
 
     logger.info('[VideoBlurProcessor] Обработка запущена', {
       width,
@@ -134,6 +136,12 @@ export class VideoBlurProcessor {
     if (this.rafId !== null) {
       cancelAnimationFrame(this.rafId);
       this.rafId = null;
+    }
+
+    // Stop the captureStream track so consumers know the track ended.
+    if (this.outputTrack) {
+      this.outputTrack.stop();
+      this.outputTrack = null;
     }
 
     if (this.video) {

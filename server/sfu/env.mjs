@@ -38,6 +38,8 @@ export function validateSfuStartupEnv() {
   const joinTokenSkip = process.env.CALLS_JOIN_TOKEN_SKIP === "1";
   const requireMediasoup = process.env.SFU_REQUIRE_MEDIASOUP !== "0";
   const enableMediasoup = process.env.SFU_ENABLE_MEDIASOUP === "1";
+  const turnSharedSecret = String(process.env.TURN_SHARED_SECRET ?? "").trim();
+  const turnUrls = String(process.env.TURN_URLS ?? "").trim();
   const supabaseUrl = process.env.SUPABASE_URL ?? process.env.VITE_SUPABASE_URL ?? "";
   const supabaseAuthKey =
     process.env.SUPABASE_PUBLISHABLE_KEY ??
@@ -64,6 +66,14 @@ export function validateSfuStartupEnv() {
 
   if (IS_PROD_LIKE && requireMediasoup && !enableMediasoup) {
     errors.push("SFU_ENABLE_MEDIASOUP=1 is required when SFU_REQUIRE_MEDIASOUP is enabled in production-like environments");
+  }
+
+  if (IS_PROD_LIKE && !isValidSecret(turnSharedSecret)) {
+    errors.push("TURN_SHARED_SECRET with length >= 32 is required in production-like environments");
+  }
+
+  if (IS_PROD_LIKE && !turnUrls) {
+    errors.push("TURN_URLS is required in production-like environments");
   }
 
   if (errors.length > 0) {

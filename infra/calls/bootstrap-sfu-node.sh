@@ -35,6 +35,20 @@ PM2_CONFIG="$APP_DIR/infra/calls/pm2.config.cjs"
 log()  { echo "[bootstrap:$REGION] $*"; }
 step() { echo ""; log "==> $*"; }
 
+upsert_env_var() {
+  local file="$1"
+  local key="$2"
+  local value="$3"
+  touch "$file"
+  chmod 600 "$file" || true
+  if grep -q "^${key}=" "$file"; then
+    escaped_value="$(printf '%s' "$value" | sed -e 's/[\\&|]/\\&/g')"
+    sed -i "s|^${key}=.*|${key}=${escaped_value}|" "$file"
+  else
+    printf '\n%s=%s\n' "$key" "$value" >> "$file"
+  fi
+}
+
 # ── 0. Require root / sudo ───────────────────────────────────────────────────
 if [[ $EUID -ne 0 ]]; then
   # Re-run under sudo
@@ -133,10 +147,11 @@ fi
 if [[ -d "$APP_DIR/node_modules/mediasoup" ]]; then
   log "Rebuilding mediasoup native bindings..."
   cd "$APP_DIR"
-  npm rebuild mediasoup || log "WARNING: mediasoup rebuild failed — SFU will run in fallback mode"
+  npm rebuild mediasoup || { log "ERROR: mediasoup rebuild failed — production SFU cannot run in fallback mode"; exit 1; }
   chown -R mansoni:mansoni "$APP_DIR/node_modules/mediasoup" || true
 else
-  log "mediasoup not in node_modules — skipping rebuild"
+  log "ERROR: mediasoup not in node_modules — production SFU cannot start"
+  exit 1
 fi
 
 # ── 6. Systemd services ──────────────────────────────────────────────────────
@@ -154,23 +169,51 @@ if command -v systemctl &>/dev/null; then
   fi
 
   # sfu — определяем публичный IP и пишем в .env.production если ещё не задан
-  step "Configuring SFU announced IP"
+  step "Configuring SFU production environment"
   SFU_ENV="$APP_DIR/server/sfu/.env.production"
+  mkdir -p "$APP_DIR/server/sfu"
+  touch "$SFU_ENV"
+  chmod 600 "$SFU_ENV" || true
   if [[ ! -f "$SFU_ENV" ]] || ! grep -qE '^SFU_ANNOUNCED_IP=.+' "$SFU_ENV"; then
-    PUBLIC_IP=$(curl -sf --max-time 5 ifconfig.me || curl -sf --max-time 5 api.ipify.org || echo "")
+    PUBLIC_IP=$(curl -sf --max-time 5 https://api.ipify.org || curl -sf --max-time 5 https://ifconfig.me || echo "")
     if [[ -n "$PUBLIC_IP" ]]; then
-      # Удаляем пустую строку SFU_ANNOUNCED_IP= если есть, добавляем с IP
-      if [[ -f "$SFU_ENV" ]]; then
-        sed -i '/^SFU_ANNOUNCED_IP=/d' "$SFU_ENV"
-      fi
-      echo "SFU_ANNOUNCED_IP=$PUBLIC_IP" >> "$SFU_ENV"
+      upsert_env_var "$SFU_ENV" "SFU_ANNOUNCED_IP" "$PUBLIC_IP"
       log "SFU_ANNOUNCED_IP set to $PUBLIC_IP in $SFU_ENV"
     else
-      log "WARNING: Could not detect public IP — set SFU_ANNOUNCED_IP manually in $SFU_ENV"
+      log "ERROR: Could not detect public IP — set SFU_ANNOUNCED_IP in $SFU_ENV before bootstrap"
+      exit 1
     fi
   else
     CURRENT_IP=$(grep -E '^SFU_ANNOUNCED_IP=' "$SFU_ENV" | cut -d= -f2)
     log "SFU_ANNOUNCED_IP already set to $CURRENT_IP — skipping."
+  fi
+
+  upsert_env_var "$SFU_ENV" "SFU_REGION" "$REGION"
+  upsert_env_var "$SFU_ENV" "REGION" "$REGION"
+  upsert_env_var "$SFU_ENV" "SFU_ENABLE_MEDIASOUP" "1"
+  upsert_env_var "$SFU_ENV" "SFU_REQUIRE_MEDIASOUP" "1"
+  upsert_env_var "$SFU_ENV" "SFU_REQUIRE_SFRAME" "1"
+  upsert_env_var "$SFU_ENV" "SFU_E2EE_REQUIRED" "1"
+  upsert_env_var "$SFU_ENV" "E2EE_REQUIRED_DEFAULT" "true"
+  upsert_env_var "$SFU_ENV" "SFU_STRICT_VALIDATION" "1"
+  upsert_env_var "$SFU_ENV" "SFU_INSECURE_DEV_MODE" "0"
+
+  if [[ -n "${TURN_SHARED_SECRET:-}" ]]; then
+    upsert_env_var "$SFU_ENV" "TURN_SHARED_SECRET" "$TURN_SHARED_SECRET"
+  elif ! grep -qE '^TURN_SHARED_SECRET=.{32,}' "$SFU_ENV"; then
+    log "ERROR: TURN_SHARED_SECRET is missing in environment and $SFU_ENV"
+    exit 1
+  fi
+
+  if [[ -n "${TURN_URLS:-}" ]]; then
+    upsert_env_var "$SFU_ENV" "TURN_URLS" "$TURN_URLS"
+  elif ! grep -qE '^TURN_URLS=.+' "$SFU_ENV"; then
+    log "ERROR: TURN_URLS is missing in environment and $SFU_ENV"
+    exit 1
+  fi
+
+  if [[ -n "${STUN_URLS:-}" ]]; then
+    upsert_env_var "$SFU_ENV" "STUN_URLS" "$STUN_URLS"
   fi
 
   step "Installing systemd unit for $SERVICE_SFU"
@@ -236,22 +279,24 @@ echo "      SUPABASE_ANON_KEY=<anon-key>"
 echo "      CALLS_WS_PORT=8787"
 echo "  - Ensure /opt/mansoni/app/server/sfu/.env.production has:"
 echo "      SFU_ANNOUNCED_IP=<public_ipv4>   ← автоматически задан выше"
-echo "      SUPABASE_URL=<your-url>"
-echo "      SUPABASE_ANON_KEY=<anon-key>"
-echo "  - Открыть UDP порты 49160-49200 (mediasoup RTP relay) в firewall:"
+echo "      TURN_SHARED_SECRET=<coturn-static-auth-secret>"
+echo "      TURN_URLS=<turn/turns urls>"
+echo "  - Открыть UDP порты mediasoup и TURN relay в firewall:"
+echo "      ufw allow 40000:49999/udp"
 echo "      ufw allow 49160:49200/udp"
 echo "      ufw allow 4443/tcp"
-echo "  - Добавить GitHub Secrets: SFU_RU_HOST, SFU_RU_USER, SFU_RU_SSH_KEY"  echo ""
-  echo "nginx WSS setup:"
-  NGINX_CONF="/etc/nginx/sites-available/sfu-${REGION}.mansoni.ru"
-  NGINX_SRC="$APP_DIR/infra/calls/nginx-sfu-ru.conf"
-  if [[ -f "$NGINX_SRC" ]] && [[ ! -f "$NGINX_CONF" ]]; then
-    cp "$NGINX_SRC" "$NGINX_CONF"
-    ln -sf "$NGINX_CONF" "/etc/nginx/sites-enabled/sfu-${REGION}.mansoni.ru" 2>/dev/null || true
-    nginx -t 2>/dev/null && systemctl reload nginx && log "nginx config installed: $NGINX_CONF"
-  elif [[ -f "$NGINX_CONF" ]]; then
-    log "nginx config already exists: $NGINX_CONF"
-  fi
-  echo "  - Obtain TLS cert (once DNS points to this server):"
-  echo "      certbot --nginx -d sfu-${REGION}.mansoni.ru"
-  echo "  - After cert: uncomment ssl_certificate lines in $NGINX_CONF"
+echo "  - Добавить GitHub Secrets: SFU_RU_HOST, SFU_RU_USER, SFU_RU_SSH_KEY"
+echo ""
+echo "nginx WSS setup:"
+NGINX_CONF="/etc/nginx/sites-available/sfu-${REGION}.mansoni.ru"
+NGINX_SRC="$APP_DIR/infra/calls/nginx-sfu-ru.conf"
+if [[ -f "$NGINX_SRC" ]] && [[ ! -f "$NGINX_CONF" ]]; then
+  cp "$NGINX_SRC" "$NGINX_CONF"
+  ln -sf "$NGINX_CONF" "/etc/nginx/sites-enabled/sfu-${REGION}.mansoni.ru" 2>/dev/null || true
+  nginx -t 2>/dev/null && systemctl reload nginx && log "nginx config installed: $NGINX_CONF"
+elif [[ -f "$NGINX_CONF" ]]; then
+  log "nginx config already exists: $NGINX_CONF"
+fi
+echo "  - Obtain TLS cert (once DNS points to this server):"
+echo "      certbot --nginx -d sfu-${REGION}.mansoni.ru"
+echo "  - After cert: uncomment ssl_certificate lines in $NGINX_CONF"

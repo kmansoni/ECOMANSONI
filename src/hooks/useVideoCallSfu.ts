@@ -39,6 +39,11 @@ import type { VideoCall, VideoCallStatus } from "@/hooks/useVideoCall";
 /** Allowlist of valid `video_calls.status` values for call termination. */
 const VALID_END_STATUSES = ["ended", "declined", "missed"] as const;
 type EndCallStatus = typeof VALID_END_STATUSES[number];
+type StateUpdate<T> = T | ((previous: T) => T);
+
+function resolveStateUpdate<T>(previous: T, update: StateUpdate<T>): T {
+  return typeof update === "function" ? (update as (previous: T) => T)(previous) : update;
+}
 
 function toSafeEndStatus(reason: string): EndCallStatus {
   return (VALID_END_STATUSES as readonly string[]).includes(reason)
@@ -55,7 +60,7 @@ function toSafeEndStatus(reason: string): EndCallStatus {
  * Constraints tuned for production quality while allowing degradation
  * under hardware/permission constraints.
  */
-async function acquireLocalMedia(isVideo: boolean): Promise<MediaStream> {
+async function acquireLocalMedia(isVideo: boolean): Promise<{ stream: MediaStream; isAudioOnly: boolean }> {
   if (!navigator.mediaDevices?.getUserMedia) {
     const unsupported = new Error("MediaDevices API unavailable");
     unsupported.name = "NotSupportedError";
@@ -105,20 +110,24 @@ async function acquireLocalMedia(isVideo: boolean): Promise<MediaStream> {
   try {
     if (isVideo) {
       try {
-        return await request({ audio: baseAudio, video: hdVideo }, "video+audio(hd)");
+        const stream = await request({ audio: baseAudio, video: hdVideo }, "video+audio(hd)");
+        return { stream, isAudioOnly: false };
       } catch (error) {
         logger.warn("video_call_sfu.acquire_media_hd_failed", { error });
         try {
-          return await request({ audio: baseAudio, video: safeVideo }, "video+audio(safe)");
+          const stream = await request({ audio: baseAudio, video: safeVideo }, "video+audio(safe)");
+          return { stream, isAudioOnly: false };
         } catch (safeError) {
           logger.warn("video_call_sfu.acquire_media_safe_failed", { error: safeError });
           // Graceful degradation: keep the call alive in audio-only mode.
-          return await request({ audio: baseAudio, video: false }, "audio-only fallback");
+          const stream = await request({ audio: baseAudio, video: false }, "audio-only fallback");
+          return { stream, isAudioOnly: true };
         }
       }
     }
 
-    return await request({ audio: baseAudio, video: false }, "audio-only");
+    const stream = await request({ audio: baseAudio, video: false }, "audio-only");
+    return { stream, isAudioOnly: true };
   } catch (err) {
     logger.error("video_call_sfu.acquire_local_media_all_failed", { error: err });
     throw err;
@@ -190,6 +199,8 @@ export interface UseVideoCallSfuReturn {
   isMuted: boolean;
   /** true = camera off. Mirrors legacy hook's `isVideoOff`. */
   isVideoOff: boolean;
+  /** true = call degraded to audio-only (video unavailable). */
+  isAudioOnly: boolean;
   /**
    * Connection quality descriptor.
    * Mirrors legacy hook's `connectionState` string slot.
@@ -271,6 +282,10 @@ export interface UseVideoCallSfuOptions {
   onLocalTrackReplaced?: (kind: LocalReplaceableTrackKind, track: MediaStreamTrack) => Promise<void>;
 }
 
+function validateUUID(value: string): boolean {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value);
+}
+
 function normalizeRealtimeCallRow(value: unknown): VideoCall | null {
   if (!value || typeof value !== "object") return null;
 
@@ -304,6 +319,7 @@ export function useVideoCallSfu(options: UseVideoCallSfuOptions = {}): UseVideoC
   const [remoteStreamState, setRemoteStreamState] = useState<MediaStream | null>(null);
   const [isMuted, setIsMuted] = useState(false);
   const [isVideoOff, setIsVideoOff] = useState(false);
+  const [isAudioOnly, setIsAudioOnly] = useState(false);
   const [connectionState, setConnectionState] = useState<string>("unknown");
 
   // Screen share state
@@ -327,6 +343,18 @@ export function useVideoCallSfu(options: UseVideoCallSfuOptions = {}): UseVideoC
   const currentCallRef = useRef<VideoCall | null>(null);
   const mediaBootstrapSignalsRef = useRef<Set<string>>(new Set());
 
+  const setStatusSynced = useCallback((nextStatus: StateUpdate<VideoCallStatus>) => {
+    const resolvedStatus = resolveStateUpdate(statusRef.current, nextStatus);
+    statusRef.current = resolvedStatus;
+    setStatus(resolvedStatus);
+  }, []);
+
+  const setConnectionStateSynced = useCallback((nextState: StateUpdate<string>) => {
+    const resolvedState = resolveStateUpdate(connectionStateRef.current, nextState);
+    connectionStateRef.current = resolvedState;
+    setConnectionState(resolvedState);
+  }, []);
+
   // Keep refs in sync for use inside callbacks
   useEffect(() => { statusRef.current = status; }, [status]);
   useEffect(() => { connectionStateRef.current = connectionState; }, [connectionState]);
@@ -342,18 +370,18 @@ export function useVideoCallSfu(options: UseVideoCallSfuOptions = {}): UseVideoC
       trackCount: stream?.getTracks().length ?? 0,
     });
     if (hasLiveRemoteTracks) {
-      setStatus((prev) => (prev === "idle" ? prev : "connected"));
-      setConnectionState("connected");
+      setStatusSynced((prev) => (prev === "idle" ? prev : "connected"));
+      setConnectionStateSynced("connected");
       logger.info("video_call_sfu.connection_promoted_by_remote_tracks", {});
     }
-  }, []);
+  }, [setConnectionStateSynced, setStatusSynced]);
 
   const markMediaBootstrapFailed = useCallback((reason = "media_bootstrap_failed", details?: unknown) => {
     logger.error("video_call_sfu.media_bootstrap_failed", { reason, details });
-    setConnectionState("failed");
+    setConnectionStateSynced("failed");
     // Do NOT touch status here. status tracks DB/call lifecycle (idle/calling/ringing/connected/ended)
     // and must not be artificially promoted to "connected" on a media failure.
-  }, []);
+  }, [setConnectionStateSynced]);
 
   const markMediaBootstrapProgress = useCallback((signal: "send_transport_created" | "recv_transport_created") => {
     mediaBootstrapSignalsRef.current.add(signal);
@@ -368,7 +396,7 @@ export function useVideoCallSfu(options: UseVideoCallSfuOptions = {}): UseVideoC
     if (currentConnectionState === "connected" || currentConnectionState === "failed") return;
     if (!hasSend || !hasRecv) return;
 
-    setConnectionState((prev) => {
+    setConnectionStateSynced((prev) => {
       if (prev === "connected" || prev === "failed") return prev;
       logger.info("video_call_sfu.connection_promoted_by_bootstrap_signals", {
         signal,
@@ -376,7 +404,7 @@ export function useVideoCallSfu(options: UseVideoCallSfuOptions = {}): UseVideoC
       });
       return "connected";
     });
-  }, []);
+  }, [setConnectionStateSynced]);
 
   useEffect(() => {
     if (status !== "connected") return;
@@ -386,7 +414,7 @@ export function useVideoCallSfu(options: UseVideoCallSfuOptions = {}): UseVideoC
     // so UI does not stay forever in "connecting".
     logger.info("video_call_sfu.fallback_timer_started", { connectionState });
     const timer = window.setTimeout(() => {
-      setConnectionState((prev) => {
+      setConnectionStateSynced((prev) => {
         if (prev === "failed") return prev;
         const hasSend = mediaBootstrapSignalsRef.current.has("send_transport_created");
         const hasRecv = mediaBootstrapSignalsRef.current.has("recv_transport_created");
@@ -405,29 +433,48 @@ export function useVideoCallSfu(options: UseVideoCallSfuOptions = {}): UseVideoC
     return () => {
       window.clearTimeout(timer);
     };
-  }, [status, connectionState]);
+  }, [status, connectionState, setConnectionStateSynced]);
 
   // ---------------------------------------------------------------------------
   // Internal helpers
   // ---------------------------------------------------------------------------
 
   const replaceLocalTrack = useCallback(async (
-    stream: MediaStream,
+    kind: LocalReplaceableTrackKind,
     currentTrack: MediaStreamTrack,
     nextTrack: MediaStreamTrack,
-  ) => {
+    reason: string
+  ): Promise<void> => {
+    const stream = localStreamRef.current;
+    if (!stream || currentTrack === nextTrack) return;
+
+    if (nextTrack.kind !== kind) {
+      throw new Error(`Cannot replace ${kind} with ${nextTrack.kind} track`);
+    }
     if (nextTrack.readyState !== "live") {
-      throw new Error(`Cannot replace ${nextTrack.kind} with ${nextTrack.readyState} track`);
+      throw new Error(`Cannot replace ${kind} with ${nextTrack.readyState} track`);
     }
 
-    stream.removeTrack(currentTrack);
+    const tracks = kind === "audio" ? stream.getAudioTracks() : stream.getVideoTracks();
+    const existingTrack = tracks.find((track) => track === currentTrack) ?? tracks[0] ?? null;
+
+    if (existingTrack) stream.removeTrack(existingTrack);
     stream.addTrack(nextTrack);
 
     try {
-      await onLocalTrackReplacedRef.current?.(nextTrack.kind, nextTrack);
+      await onLocalTrackReplacedRef.current?.(kind, nextTrack);
+      logger.info("video_call_sfu.local_track_replaced", {
+        kind,
+        reason,
+        oldTrackId: existingTrack?.id,
+        newTrackId: nextTrack.id,
+      });
     } catch (error) {
       stream.removeTrack(nextTrack);
-      stream.addTrack(currentTrack);
+      if (existingTrack && existingTrack.readyState === "live") {
+        stream.addTrack(existingTrack);
+      }
+      logger.error("video_call_sfu.local_track_replace_failed", { kind, reason, error });
       throw error;
     }
   }, []);
@@ -436,8 +483,8 @@ export function useVideoCallSfu(options: UseVideoCallSfuOptions = {}): UseVideoC
     const stream = localStreamRef.current;
     if (stream) {
       stream.getTracks().forEach((t) => t.stop());
-      setLocalStream(null);
       localStreamRef.current = null;
+      setLocalStream(null);
     }
   }, []);
 
@@ -469,22 +516,24 @@ export function useVideoCallSfu(options: UseVideoCallSfuOptions = {}): UseVideoC
     cleanupProcessors();
     setRemoteStreamState(null);
     mediaBootstrapSignalsRef.current.clear();
-    setConnectionState("unknown");
+    setConnectionStateSynced("unknown");
     logger.info("video_call_sfu.media_released_for_engine_handoff", {});
-  }, [releaseLocalMedia, stopScreenShare, cleanupProcessors]);
+  }, [releaseLocalMedia, stopScreenShare, cleanupProcessors, setConnectionStateSynced]);
 
   const resetState = useCallback(() => {
+    isEndingRef.current = false;
     releaseLocalMedia();
     stopScreenShare();
     cleanupProcessors();
     setRemoteStreamState(null);
     mediaBootstrapSignalsRef.current.clear();
-    setStatus("idle");
-    setConnectionState("unknown");
+    setStatusSynced("idle");
+    setConnectionStateSynced("unknown");
     setIsMuted(false);
     setIsVideoOff(false);
+    setIsAudioOnly(false);
     // Note: setCurrentCall(null) must be called after onCallEnded fires — see endCall
-  }, [releaseLocalMedia, stopScreenShare, cleanupProcessors]);
+  }, [releaseLocalMedia, stopScreenShare, cleanupProcessors, setConnectionStateSynced, setStatusSynced]);
 
   // ---------------------------------------------------------------------------
   // startCall
@@ -499,6 +548,14 @@ export function useVideoCallSfu(options: UseVideoCallSfuOptions = {}): UseVideoC
       logger.error("video_call_sfu.start_call_not_authenticated", {});
       return null;
     }
+    if (!validateUUID(calleeId)) {
+      logger.error("video_call_sfu.start_call_invalid_callee_id", {});
+      throw new VideoCallStartError("invalid_callee_id");
+    }
+    if (conversationId !== null && !validateUUID(conversationId)) {
+      logger.error("video_call_sfu.start_call_invalid_conversation_id", {});
+      throw new VideoCallStartError("invalid_conversation_id");
+    }
     if (currentCallRef.current) {
       logger.warn("video_call_sfu.start_call_already_in_call", {});
       return null;
@@ -508,15 +565,22 @@ export function useVideoCallSfu(options: UseVideoCallSfuOptions = {}): UseVideoC
 
     // Acquire media BEFORE writing to DB — fail fast if permissions denied
     let stream: MediaStream;
+    let audioOnly: boolean;
     try {
-      stream = await acquireLocalMedia(isVideo);
+      const result = await acquireLocalMedia(isVideo);
+      stream = result.stream;
+      audioOnly = result.isAudioOnly;
     } catch (err) {
       logger.error("video_call_sfu.start_call_media_failed", { error: err });
       throw toMediaAccessError(err);
     }
 
+    setStatusSynced("calling");
     setLocalStream(stream);
-    setStatus("calling");
+    if (audioOnly) {
+      setIsAudioOnly(true);
+      logger.warn("video_call_sfu.start_call_audio_only_degradation", {});
+    }
 
     // Persist call record — used for push notification routing and call history.
     // NOTE: SFU signaling does NOT go through DB — only WS.
@@ -538,8 +602,8 @@ export function useVideoCallSfu(options: UseVideoCallSfuOptions = {}): UseVideoC
     if (error) {
       logger.error("video_call_sfu.start_call_db_insert_failed", { error });
       releaseLocalMedia();
-      setStatus("idle");
-      throw new VideoCallStartError("db_insert_failed", error);
+      setStatusSynced("idle");
+      throw new VideoCallStartError("db_insert_failed");
     }
 
     const call: VideoCall = {
@@ -555,10 +619,10 @@ export function useVideoCallSfu(options: UseVideoCallSfuOptions = {}): UseVideoC
     };
     setCurrentCall(call);
     mediaBootstrapSignalsRef.current.clear();
-    setConnectionState("connecting");
+    setConnectionStateSynced("connecting");
     logger.info("video_call_sfu.start_call_connecting", { callId: call.id.slice(0, 8) });
     return call;
-  }, [user, releaseLocalMedia]);
+  }, [user, releaseLocalMedia, setConnectionStateSynced, setStatusSynced]);
 
   // ---------------------------------------------------------------------------
   // answerCall
@@ -572,7 +636,12 @@ export function useVideoCallSfu(options: UseVideoCallSfuOptions = {}): UseVideoC
 
     let stream: MediaStream;
     try {
-      stream = await acquireLocalMedia(isVideo);
+      const result = await acquireLocalMedia(isVideo);
+      stream = result.stream;
+      if (result.isAudioOnly) {
+        setIsAudioOnly(true);
+        logger.warn("video_call_sfu.answer_call_audio_only_degradation", {});
+      }
     } catch (err) {
       logger.error("video_call_sfu.answer_call_media_failed", { error: err });
       throw toMediaAccessError(err);
@@ -602,24 +671,24 @@ export function useVideoCallSfu(options: UseVideoCallSfuOptions = {}): UseVideoC
 
         if (fallbackError) {
           releaseLocalMedia();
-          setStatus("idle");
-          throw new VideoCallStartError("db_answer_update_failed", fallbackError);
+          setStatusSynced("idle");
+          throw new VideoCallStartError("db_answer_update_failed");
         }
       } else {
         releaseLocalMedia();
-        setStatus("idle");
-        throw new VideoCallStartError("db_answer_update_failed", answerError);
+        setStatusSynced("idle");
+        throw new VideoCallStartError("db_answer_update_failed");
       }
     }
 
     const answeredCall: VideoCall = { ...call, status: "answered" };
     setCurrentCall(answeredCall);
     mediaBootstrapSignalsRef.current.clear();
-    setStatus("connected");
+    setStatusSynced("connected");
     // Keep call active, but do not report final media connectivity before SFU bootstrap succeeds.
-    setConnectionState("connecting");
+    setConnectionStateSynced("connecting");
     logger.info("video_call_sfu.answer_call_connecting", { callId: call.id.slice(0, 8) });
-  }, [releaseLocalMedia, user]);
+  }, [releaseLocalMedia, setConnectionStateSynced, setStatusSynced, user]);
 
   const applyCallRowUpdate = useCallback((updated: VideoCall) => {
     if (!updated || !updated.id) return;
@@ -627,23 +696,26 @@ export function useVideoCallSfu(options: UseVideoCallSfuOptions = {}): UseVideoC
     const active = currentCallRef.current;
     if (!active || active.id !== updated.id) return;
 
-    // Always sync call metadata (participants, timestamps, call_type, etc.)
-    setCurrentCall(updated);
-
     // Terminal states from DB are authoritative — honour unconditionally.
     if (["declined", "ended", "missed"].includes(updated.status)) {
+      // Guard: endCall may have already fired onCallEnded — avoid double invocation.
+      if (isEndingRef.current) return;
+      isEndingRef.current = true;
       onCallEndedRef.current?.(updated);
-      setStatus("ended");
+      setStatusSynced("ended");
       setCurrentCall(null);
       resetState();
       return;
     }
 
+    // Sync call metadata only for non-terminal updates.
+    setCurrentCall(updated);
+
     // For connected call statuses (answered/active/connected):
     // Only advance status forward (calling/ringing → connected).
     // Never regress from ended/idle and never override media-driven connectionState.
     if (isConnectedCallStatus(updated.status)) {
-      setStatus((prev) => {
+      setStatusSynced((prev) => {
         if (prev === "calling" || prev === "ringing") return "connected";
         return prev; // already connected or terminal — no-op
       });
@@ -652,7 +724,7 @@ export function useVideoCallSfu(options: UseVideoCallSfuOptions = {}): UseVideoC
       // DB must not touch it.
       return;
     }
-  }, [resetState]);
+  }, [resetState, setStatusSynced]);
 
   useEffect(() => {
     if (!currentCall?.id || !user?.id) return;
@@ -738,6 +810,8 @@ export function useVideoCallSfu(options: UseVideoCallSfuOptions = {}): UseVideoC
   // ---------------------------------------------------------------------------
 
   const endCall = useCallback(async (reason = "ended"): Promise<void> => {
+    if (isEndingRef.current) return;
+    isEndingRef.current = true;
     const call = currentCallRef.current;
 
     if (call) {
@@ -758,10 +832,10 @@ export function useVideoCallSfu(options: UseVideoCallSfuOptions = {}): UseVideoC
       onCallEndedRef.current?.(call);
     }
 
-    setStatus("ended");
+    setStatusSynced("ended");
     setCurrentCall(null);
     resetState();
-  }, [resetState]);
+  }, [resetState, setStatusSynced]);
 
   // ---------------------------------------------------------------------------
   // toggleMute / toggleVideo
@@ -770,19 +844,21 @@ export function useVideoCallSfu(options: UseVideoCallSfuOptions = {}): UseVideoC
   const toggleMute = useCallback(() => {
     const stream = localStreamRef.current;
     if (!stream) return;
-    stream.getAudioTracks().forEach((t) => {
-      t.enabled = !t.enabled;
-    });
-    setIsMuted((prev) => !prev);
+    const tracks = stream.getAudioTracks();
+    if (!tracks.length) return;
+    const nextEnabled = !tracks[0].enabled;
+    tracks.forEach((t) => { t.enabled = nextEnabled; });
+    setIsMuted(!nextEnabled);
   }, []);
 
   const toggleVideo = useCallback(() => {
     const stream = localStreamRef.current;
     if (!stream) return;
-    stream.getVideoTracks().forEach((t) => {
-      t.enabled = !t.enabled;
-    });
-    setIsVideoOff((prev) => !prev);
+    const tracks = stream.getVideoTracks();
+    if (!tracks.length) return;
+    const nextEnabled = !tracks[0].enabled;
+    tracks.forEach((t) => { t.enabled = nextEnabled; });
+    setIsVideoOff(!nextEnabled);
   }, []);
 
   // ---------------------------------------------------------------------------
@@ -790,6 +866,7 @@ export function useVideoCallSfu(options: UseVideoCallSfuOptions = {}): UseVideoC
   // ---------------------------------------------------------------------------
 
   const startScreenShare = useCallback(async () => {
+    if (!currentCallRef.current) return;
     if (screenStreamRef.current) return;
     try {
       const stream = await acquireScreenStream();
@@ -823,7 +900,8 @@ export function useVideoCallSfu(options: UseVideoCallSfuOptions = {}): UseVideoC
         if (originalTrack && originalTrack.readyState === 'live') {
           const currentAudio = stream.getAudioTracks()[0];
           if (currentAudio) {
-            await replaceLocalTrack(stream, currentAudio, originalTrack);
+            originalTrack.enabled = currentAudio.enabled;
+            await replaceLocalTrack("audio", currentAudio, originalTrack, "noise_suppression_disable");
           }
         }
         suppressor.close();
@@ -850,8 +928,9 @@ export function useVideoCallSfu(options: UseVideoCallSfuOptions = {}): UseVideoC
         }
 
         const processedTrack = processedStream.getAudioTracks()[0];
-        if (processedTrack?.readyState === 'live') {
-          await replaceLocalTrack(stream, audioTrack, processedTrack);
+        if (processedTrack) {
+          processedTrack.enabled = audioTrack.enabled;
+          await replaceLocalTrack("audio", audioTrack, processedTrack, "noise_suppression_enable");
         }
         setNoiseSuppressionEnabled(true);
         logger.info('video_call_sfu.noise_suppression_enabled', {});
@@ -875,7 +954,11 @@ export function useVideoCallSfu(options: UseVideoCallSfuOptions = {}): UseVideoC
         if (originalTrack && originalTrack.readyState === 'live') {
           const currentVideo = stream.getVideoTracks()[0];
           if (currentVideo) {
-            await replaceLocalTrack(stream, currentVideo, originalTrack);
+            originalTrack.enabled = currentVideo.enabled;
+            await replaceLocalTrack("video", currentVideo, originalTrack, "background_blur_disable");
+            if (currentVideo !== originalTrack && currentVideo.readyState === "live") {
+              currentVideo.stop();
+            }
           }
         }
         processor.stop();
@@ -893,7 +976,16 @@ export function useVideoCallSfu(options: UseVideoCallSfuOptions = {}): UseVideoC
         blurProcessorRef.current = processor;
 
         const processedTrack = await processor.start(videoTrack);
-        await replaceLocalTrack(stream, videoTrack, processedTrack);
+        processedTrack.enabled = videoTrack.enabled;
+        try {
+          await replaceLocalTrack("video", videoTrack, processedTrack, "background_blur_enable");
+        } catch (error) {
+          processedTrack.stop();
+          processor.stop();
+          blurProcessorRef.current = null;
+          originalVideoTrackRef.current = null;
+          throw error;
+        }
         setBackgroundBlurEnabled(true);
         logger.info('video_call_sfu.background_blur_enabled', {});
       }
@@ -910,6 +1002,7 @@ export function useVideoCallSfu(options: UseVideoCallSfuOptions = {}): UseVideoC
   // ---------------------------------------------------------------------------
 
   const retryInFlightRef = useRef(false);
+  const isEndingRef = useRef(false);
 
   const retryWithFreshCredentials = useCallback(async (): Promise<void> => {
     if (retryInFlightRef.current) {
@@ -927,15 +1020,22 @@ export function useVideoCallSfu(options: UseVideoCallSfuOptions = {}): UseVideoC
     }
 
     retryInFlightRef.current = true;
+    mediaBootstrapSignalsRef.current.clear();
+    setConnectionStateSynced("connecting");
     try {
       logger.info("video_call_sfu.retry_media_bootstrap", {
         reason: "Retrying SFU media bootstrap via provider callback",
+        previousConnectionState: connectionStateRef.current,
       });
       await retry(call, stream);
+    } catch (error) {
+      setConnectionStateSynced("failed");
+      logger.error("video_call_sfu.retry_media_bootstrap_failed", { error });
+      throw error;
     } finally {
       retryInFlightRef.current = false;
     }
-  }, []);
+  }, [setConnectionStateSynced]);
 
   // ---------------------------------------------------------------------------
   // Cleanup on unmount
@@ -957,6 +1057,7 @@ export function useVideoCallSfu(options: UseVideoCallSfuOptions = {}): UseVideoC
     setRemoteStream,
     isMuted,
     isVideoOff,
+    isAudioOnly,
     connectionState,
     startCall,
     answerCall,

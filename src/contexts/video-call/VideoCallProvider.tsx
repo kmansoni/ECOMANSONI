@@ -112,6 +112,7 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
   const callsWsSendTransportRef = useRef<string | null>(null);
   const callsWsRecvTransportRef = useRef<string | null>(null);
   const localProducerIdsRef = useRef<{ audio: string | null; video: string | null }>({ audio: null, video: null });
+  const activeCallsV2BootstrapCallIdRef = useRef<string | null>(null);
   const relayMetricsTimerRef = useRef<number | null>(null);
   const relayMetricsLastLogAtRef = useRef<number>(0);
   const relayMetricsLastSignatureRef = useRef<string>("");
@@ -234,6 +235,9 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
       logger.info("[VideoCallContext] Call ended:", call.id.slice(0, 8));
       dispatchFsm("CLEANUP_DONE");
       dispatchFsm("RESET");
+      if (activeCallsV2BootstrapCallIdRef.current === call.id) {
+        activeCallsV2BootstrapCallIdRef.current = null;
+      }
       if (callsWsCallIdRef.current === call.id) {
         callsWsCallIdRef.current = null;
         callsWsRoomRef.current = null;
@@ -472,6 +476,7 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
     producerPeerKeyRef,
     peerUserIdByDeviceIdRef,
     handleE2eePipeBreakRef,
+    isCallStillActiveForBootstrap: (callId) => activeCallsV2BootstrapCallIdRef.current === callId,
   });
 
   const { rebuildRemoteStream, bootstrapCallsV2Media } = useCallsV2MediaBootstrap({
@@ -516,6 +521,7 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
     callsWsMediaRoomRef,
     consumerCreateParamsRef,
     localProducerIdsRef,
+    producerPeerKeyRef,
     pipeBreakRetryAtRef,
     pipeBreakRecoveryInFlightRef,
     handleE2eePipeBreakRef,
@@ -623,6 +629,7 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
 
     try {
       await answerVideoCall(call);
+      activeCallsV2BootstrapCallIdRef.current = call.id;
       dispatchFsm("CALLEE_ACCEPT");
 
       // Refresh call row to pick up caller-persisted calls-v2 room metadata.
@@ -650,6 +657,11 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
       const roomBootstrapOk = await bootstrapCallsV2Room(resolvedCall, "callee");
       if (roomBootstrapOk && callStateRef.current === "bootstrapping") dispatchFsm("BOOTSTRAP_OK");
       if (!roomBootstrapOk) {
+        if (activeCallsV2BootstrapCallIdRef.current !== call.id) {
+          logger.info("[VideoCallContext] answerCall bootstrap result ignored: stale call", { callId: call.id });
+          return;
+        }
+
         // Detect whether the caller used legacy P2P (no SFU room hints were written).
         // When calls_v2_room_id is absent the caller launched a P2P call — match the protocol.
         const hasSfuRoomHints = !!resolvedCall.calls_v2_room_id;
@@ -812,6 +824,7 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
         });
         return null;
       }
+      activeCallsV2BootstrapCallIdRef.current = result.id;
       // B: deliver call.invite via WS relay so caller doesn't need DB polling
       const ws = callsWsRef.current;
       if (ws) {
@@ -826,6 +839,11 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
       const roomBootstrapOk = await bootstrapCallsV2Room(result, "caller");
       if (roomBootstrapOk && callStateRef.current === "bootstrapping") dispatchFsm("BOOTSTRAP_OK");
       if (!roomBootstrapOk) {
+        if (activeCallsV2BootstrapCallIdRef.current !== result.id) {
+          logger.info("[VideoCallContext] startCall bootstrap result ignored: stale call", { callId: result.id });
+          return null;
+        }
+
         dispatchFsm("ERROR");
         // P0: Fail-closed — NO auto-fallback to legacy P2P.
         // Silent downgrade from SFU+E2EE to legacy P2P creates split-brain:

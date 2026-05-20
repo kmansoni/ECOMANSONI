@@ -53,6 +53,7 @@ interface UseCallsV2BootstrapParams {
   producerPeerKeyRef: MutableRefObject<Map<string, string>>;
   peerUserIdByDeviceIdRef: MutableRefObject<Map<string, string>>;
   handleE2eePipeBreakRef: MutableRefObject<((info: PipeBreakInfo) => void) | null>;
+  isCallStillActiveForBootstrap: (callId: string) => boolean;
 }
 
 export function useCallsV2Bootstrap({
@@ -82,6 +83,7 @@ export function useCallsV2Bootstrap({
   producerPeerKeyRef,
   peerUserIdByDeviceIdRef,
   handleE2eePipeBreakRef,
+  isCallStillActiveForBootstrap,
 }: UseCallsV2BootstrapParams) {
   const { initializeCallsV2E2ee } = useCallsV2E2eeBootstrap({
     user,
@@ -230,8 +232,19 @@ export function useCallsV2Bootstrap({
       if (callsWsCallIdRef.current === callId && callsWsRoomRef.current) return true;
       logger.info("[VideoCallContext] calls-v2 room-bootstrap:start", { callId, role });
 
+      const isStale = () => !isCallStillActiveForBootstrap(callId);
+      if (isStale()) {
+        logger.info("[VideoCallContext] calls-v2 room-bootstrap skipped: stale call", { callId, role });
+        return false;
+      }
+
       const client = await ensureCallsV2Connected();
       if (!client) return false;
+
+      if (isStale()) {
+        logger.info("[VideoCallContext] calls-v2 room-bootstrap aborted after connect: stale call", { callId, role });
+        return false;
+      }
 
       try {
         let roomId: string;
@@ -257,6 +270,10 @@ export function useCallsV2Bootstrap({
             },
             { timeoutMs: 5000, acceptRecent: true }
           );
+          if (isStale()) {
+            logger.info("[VideoCallContext] calls-v2 caller room ignored: stale call", { callId });
+            return false;
+          }
           roomId = (createdFrame.payload as { roomId?: string } | undefined)?.roomId as string;
           logger.info("[VideoCallContext] calls-v2 room-created:ok", { callId, roomId });
 
@@ -284,6 +301,10 @@ export function useCallsV2Bootstrap({
               calls_v2_join_token: joinToken ?? null,
             })
             .eq("id", callId);
+          if (isStale()) {
+            logger.info("[VideoCallContext] calls-v2 caller room persisted but not activated: stale call", { callId, roomId });
+            return false;
+          }
           if (persistRoomError) {
             logger.warn("[VideoCallContext] calls-v2 room hints persist failed", {
               callId,
@@ -330,6 +351,10 @@ export function useCallsV2Bootstrap({
           },
           { timeoutMs: 5000, acceptRecent: true }
         );
+        if (isStale()) {
+          logger.info("[VideoCallContext] calls-v2 joined room ignored: stale call", { callId, roomId, role });
+          return false;
+        }
         const joinedPayload = joinedFrame.payload as Record<string, unknown> | undefined;
         const joinedEpochRaw = joinedPayload?.epoch;
         const joinedEpoch = typeof joinedEpochRaw === "number" ? joinedEpochRaw : Number(joinedEpochRaw ?? 0);
@@ -458,6 +483,7 @@ export function useCallsV2Bootstrap({
       ensureCallsV2Connected,
       lastCallsBootstrapErrorRef,
       lastSnapshotRoomVersionRef,
+      isCallStillActiveForBootstrap,
       peerUserIdByDeviceIdRef,
       producerPeerKeyRef,
       rekeyMachineRef,

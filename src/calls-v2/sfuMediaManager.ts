@@ -569,6 +569,11 @@ export class SfuMediaManager {
     return null;
   }
 
+  getProducerAppData(producerId: string): Record<string, unknown> | null {
+    const producer = this.producers.get(producerId);
+    return producer?.appData ? { ...producer.appData } : null;
+  }
+
   /**
    * Закрыть конкретный producer и вернуть его MediaStreamTrack (для recovery).
    * Track можно использовать для повторного produce().

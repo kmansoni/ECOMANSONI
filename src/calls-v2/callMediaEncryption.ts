@@ -180,6 +180,14 @@ export class CallMediaEncryption {
     return this.hasEncryptionKey && this.peerDecryptionEpochs.size > 0;
   }
 
+  hasOutboundKey(): boolean {
+    return this.hasEncryptionKey;
+  }
+
+  getDecryptionPeerIds(): string[] {
+    return Array.from(this.peerDecryptionEpochs.keys());
+  }
+
   /** Текущий epoch номер */
   getEpoch(): number {
     return this.currentEpoch;

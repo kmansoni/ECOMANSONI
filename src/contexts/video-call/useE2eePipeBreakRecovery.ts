@@ -16,6 +16,7 @@ export function useE2eePipeBreakRecovery(
   callsWsMediaRoomRef: { current: string | null },
   consumerCreateParamsRef: { current: Map<string, ConsumedPayload> },
   localProducerIdsRef: { current: { audio: string | null; video: string | null } },
+  producerPeerKeyRef: { current: Map<string, string> },
   pipeBreakRetryAtRef: { current: Map<string, number> },
   pipeBreakRecoveryInFlightRef: { current: Set<string> },
   handleE2eePipeBreakRef: { current: ((info: PipeBreakInfo) => void) | null },
@@ -50,6 +51,7 @@ export function useE2eePipeBreakRecovery(
 
     try {
       if (direction === 'encrypt') {
+        const previousAppData = sfuManager.getProducerAppData(trackId) ?? {};
         const track = sfuManager.closeProducer(trackId);
         if (!track || track.readyState !== 'live') {
           logger.error('[VideoCallContext] E2EE sender recovery: track dead', { trackId });
@@ -57,8 +59,10 @@ export function useE2eePipeBreakRecovery(
           return;
         }
 
+        const previousSource = typeof previousAppData.source === 'string' ? previousAppData.source : null;
+        const source = previousSource ?? (track.kind === 'audio' ? 'microphone' : 'camera');
         logger.info('[VideoCallContext] E2EE sender pipe recovery: re-producing', { trackId });
-        const newProducer = await sfuManager.produce(track, { trackId: track.id });
+        const newProducer = await sfuManager.produce(track, { ...previousAppData, trackId: track.id, source });
 
         if (sfuManagerRef.current !== sfuManager || sfuManager.closed) {
           logger.warn('[VideoCallContext] E2EE sender recovery aborted: stale or closed SFU manager', {
@@ -69,8 +73,12 @@ export function useE2eePipeBreakRecovery(
           return;
         }
 
-        if (sfuManager.getProducerSender(newProducer.id)) {
-          encryption.setupSenderTransform(sfuManager.getProducerSender(newProducer.id)!, newProducer.id);
+        const sender = sfuManager.getProducerSender(newProducer.id);
+        if (sender) {
+          encryption.setupSenderTransform(sender, newProducer.id);
+        }
+        if ((track.kind === 'audio' || track.kind === 'video') && localProducerIdsRef.current[track.kind] === trackId) {
+          localProducerIdsRef.current[track.kind] = newProducer.id;
         }
         if ((track.kind === 'audio' || track.kind === 'video') && localProducerIdsRef.current[track.kind] === trackId) {
           localProducerIdsRef.current[track.kind] = newProducer.id;
@@ -114,8 +122,12 @@ export function useE2eePipeBreakRecovery(
         consumerCreateParamsRef.current.set(newConsumer.id, storedParams);
 
         const newReceiver = sfuManager.getConsumerReceiver(newConsumer.id);
-        if (newReceiver && storedParams.producerId) {
-          encryption.setupReceiverTransform(newReceiver, storedParams.producerId, newConsumer.id);
+        const peerKey = peerId
+          || storedParams.peerId
+          || producerPeerKeyRef.current.get(storedParams.producerId)
+          || storedParams.producerId;
+        if (newReceiver) {
+          encryption.setupReceiverTransform(newReceiver, peerKey, newConsumer.id);
         }
 
         const client = callsWsRef.current;
@@ -147,6 +159,7 @@ export function useE2eePipeBreakRecovery(
     callsWsMediaRoomRef,
     consumerCreateParamsRef,
     localProducerIdsRef,
+    producerPeerKeyRef,
     pipeBreakRetryAtRef,
     pipeBreakRecoveryInFlightRef,
     rebuildRemoteStream,

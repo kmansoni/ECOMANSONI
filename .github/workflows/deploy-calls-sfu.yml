@@ -32,6 +32,10 @@ jobs:
           CALLS_JOIN_TOKEN_SECRET: ${{ secrets.CALLS_JOIN_TOKEN_SECRET }}
           CALLS_WS_TRUSTED_PROXIES: ${{ secrets.CALLS_WS_TRUSTED_PROXIES }}
           SFU_TRUSTED_PROXIES: ${{ secrets.SFU_TRUSTED_PROXIES }}
+          SFU_ANNOUNCED_IP: ${{ secrets.SFU_RU_ANNOUNCED_IP || secrets.SFU_ANNOUNCED_IP }}
+          TURN_SHARED_SECRET: ${{ secrets.TURN_SHARED_SECRET }}
+          TURN_URLS: ${{ secrets.TURN_URLS }}
+          STUN_URLS: ${{ secrets.STUN_URLS }}
           VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
           VITE_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.VITE_SUPABASE_PUBLISHABLE_KEY }}
         with:
@@ -39,12 +43,13 @@ jobs:
           port: ${{ secrets.SFU_RU_SSH_PORT || '22' }}
           username: ${{ secrets.SFU_RU_USER }}
           key: ${{ secrets.SFU_RU_SSH_KEY }}
-          envs: CALLS_JOIN_TOKEN_SECRET,CALLS_WS_TRUSTED_PROXIES,SFU_TRUSTED_PROXIES,VITE_SUPABASE_URL,VITE_SUPABASE_PUBLISHABLE_KEY
+          envs: CALLS_JOIN_TOKEN_SECRET,CALLS_WS_TRUSTED_PROXIES,SFU_TRUSTED_PROXIES,SFU_ANNOUNCED_IP,TURN_SHARED_SECRET,TURN_URLS,STUN_URLS,VITE_SUPABASE_URL,VITE_SUPABASE_PUBLISHABLE_KEY
           script: |
             set -euo pipefail
             APP_DIR="${CALLS_APP_DIR:-/opt/mansoni/app}"
             COMPOSE_FILE="${CALLS_COMPOSE_FILE:-infra/calls/docker-compose.prod.yml}"
             SERVICE="${CALLS_SERVICE:-calls-ws}"
+            COMPOSE_SERVICES="${CALLS_COMPOSE_SERVICES:-calls-ws sfu}"
             REGION="ru"
             LOCK_FILE="${CALLS_DEPLOY_LOCK_FILE:-/tmp/calls-ws-deploy.lock}"
             exec 9>"$LOCK_FILE"
@@ -66,7 +71,8 @@ jobs:
               touch "$file"
               chmod 600 "$file" || true
               if grep -q "^${key}=" "$file"; then
-                sed -i "s|^${key}=.*|${key}=${value}|" "$file"
+                escaped_value="$(printf '%s' "$value" | sed -e 's/[\\&|]/\\&/g')"
+                sed -i "s|^${key}=.*|${key}=${escaped_value}|" "$file"
               else
                 printf '\n%s=%s\n' "$key" "$value" >> "$file"
               fi
@@ -76,13 +82,7 @@ jobs:
             # Keep secret in .env.production for systemd EnvironmentFile loading.
             if [ -n "${CALLS_JOIN_TOKEN_SECRET:-}" ]; then
               ENV_FILE="$APP_DIR/.env.production"
-              touch "$ENV_FILE"
-              chmod 600 "$ENV_FILE" || true
-              if grep -q '^CALLS_JOIN_TOKEN_SECRET=' "$ENV_FILE"; then
-                sed -i "s|^CALLS_JOIN_TOKEN_SECRET=.*|CALLS_JOIN_TOKEN_SECRET=${CALLS_JOIN_TOKEN_SECRET}|" "$ENV_FILE"
-              else
-                printf '\nCALLS_JOIN_TOKEN_SECRET=%s\n' "$CALLS_JOIN_TOKEN_SECRET" >> "$ENV_FILE"
-              fi
+              upsert_env_var "$ENV_FILE" "CALLS_JOIN_TOKEN_SECRET" "$CALLS_JOIN_TOKEN_SECRET"
               echo "[RU] CALLS_JOIN_TOKEN_SECRET synced to .env.production"
             else
               echo "[RU] WARNING: CALLS_JOIN_TOKEN_SECRET secret is not set in GitHub; runtime fallback may be used"
@@ -90,13 +90,7 @@ jobs:
 
             if [ -n "${CALLS_WS_TRUSTED_PROXIES:-}" ]; then
               ENV_FILE="$APP_DIR/.env.production"
-              touch "$ENV_FILE"
-              chmod 600 "$ENV_FILE" || true
-              if grep -q '^CALLS_WS_TRUSTED_PROXIES=' "$ENV_FILE"; then
-                sed -i "s|^CALLS_WS_TRUSTED_PROXIES=.*|CALLS_WS_TRUSTED_PROXIES=${CALLS_WS_TRUSTED_PROXIES}|" "$ENV_FILE"
-              else
-                printf '\nCALLS_WS_TRUSTED_PROXIES=%s\n' "$CALLS_WS_TRUSTED_PROXIES" >> "$ENV_FILE"
-              fi
+              upsert_env_var "$ENV_FILE" "CALLS_WS_TRUSTED_PROXIES" "$CALLS_WS_TRUSTED_PROXIES"
               echo "[RU] CALLS_WS_TRUSTED_PROXIES synced to .env.production"
             else
               echo "[RU] WARNING: CALLS_WS_TRUSTED_PROXIES secret is not set in GitHub"
@@ -105,13 +99,7 @@ jobs:
             if [ -n "${SFU_TRUSTED_PROXIES:-}" ]; then
               SFU_ENV_FILE="$APP_DIR/server/sfu/.env.production"
               mkdir -p "$APP_DIR/server/sfu"
-              touch "$SFU_ENV_FILE"
-              chmod 600 "$SFU_ENV_FILE" || true
-              if grep -q '^SFU_TRUSTED_PROXIES=' "$SFU_ENV_FILE"; then
-                sed -i "s|^SFU_TRUSTED_PROXIES=.*|SFU_TRUSTED_PROXIES=${SFU_TRUSTED_PROXIES}|" "$SFU_ENV_FILE"
-              else
-                printf '\nSFU_TRUSTED_PROXIES=%s\n' "$SFU_TRUSTED_PROXIES" >> "$SFU_ENV_FILE"
-              fi
+              upsert_env_var "$SFU_ENV_FILE" "SFU_TRUSTED_PROXIES" "$SFU_TRUSTED_PROXIES"
               echo "[RU] SFU_TRUSTED_PROXIES synced to server/sfu/.env.production"
             else
               echo "[RU] WARNING: SFU_TRUSTED_PROXIES secret is not set in GitHub"
@@ -135,6 +123,47 @@ jobs:
             else
               echo "[RU] WARNING: VITE_SUPABASE_PUBLISHABLE_KEY secret is not set in GitHub"
             fi
+
+            SFU_ENV_FILE="$APP_DIR/server/sfu/.env.production"
+            mkdir -p "$APP_DIR/server/sfu"
+            touch "$SFU_ENV_FILE"
+            chmod 600 "$SFU_ENV_FILE" || true
+
+            ANNOUNCED_IP="${SFU_ANNOUNCED_IP:-}"
+            if [ -z "$ANNOUNCED_IP" ]; then
+              ANNOUNCED_IP="$(curl -fsS --max-time 5 https://api.ipify.org || curl -fsS --max-time 5 https://ifconfig.me || true)"
+            fi
+            if [ -z "$ANNOUNCED_IP" ]; then
+              echo "[RU] ERROR: SFU_ANNOUNCED_IP is missing and public IP auto-detect failed"
+              exit 1
+            fi
+
+            upsert_env_var "$SFU_ENV_FILE" "SFU_ANNOUNCED_IP" "$ANNOUNCED_IP"
+            upsert_env_var "$SFU_ENV_FILE" "SFU_REGION" "$REGION"
+            upsert_env_var "$SFU_ENV_FILE" "REGION" "$REGION"
+            upsert_env_var "$SFU_ENV_FILE" "SFU_ENABLE_MEDIASOUP" "1"
+            upsert_env_var "$SFU_ENV_FILE" "SFU_REQUIRE_MEDIASOUP" "1"
+            upsert_env_var "$SFU_ENV_FILE" "SFU_REQUIRE_SFRAME" "1"
+            upsert_env_var "$SFU_ENV_FILE" "SFU_E2EE_REQUIRED" "1"
+            upsert_env_var "$SFU_ENV_FILE" "E2EE_REQUIRED_DEFAULT" "true"
+            upsert_env_var "$SFU_ENV_FILE" "SFU_STRICT_VALIDATION" "1"
+            upsert_env_var "$SFU_ENV_FILE" "SFU_INSECURE_DEV_MODE" "0"
+            if [ -n "${TURN_SHARED_SECRET:-}" ]; then
+              upsert_env_var "$SFU_ENV_FILE" "TURN_SHARED_SECRET" "$TURN_SHARED_SECRET"
+            elif ! grep -qE '^TURN_SHARED_SECRET=.{32,}' "$SFU_ENV_FILE"; then
+              echo "[RU] ERROR: TURN_SHARED_SECRET is missing in GitHub secrets and server env"
+              exit 1
+            fi
+            if [ -n "${TURN_URLS:-}" ]; then
+              upsert_env_var "$SFU_ENV_FILE" "TURN_URLS" "$TURN_URLS"
+            elif ! grep -qE '^TURN_URLS=.+' "$SFU_ENV_FILE"; then
+              echo "[RU] ERROR: TURN_URLS is missing in GitHub secrets and server env"
+              exit 1
+            fi
+            if [ -n "${STUN_URLS:-}" ]; then
+              upsert_env_var "$SFU_ENV_FILE" "STUN_URLS" "$STUN_URLS"
+            fi
+            echo "[RU] SFU production env synced on server"
 
             # -- 1.2 Ensure runtime deps are present -----------------------------
             # calls-ws imports ioredis at module load; if node_modules is stale
@@ -176,7 +205,7 @@ jobs:
             _restart_docker() {
               local cmd="$1"
               if $cmd version >/dev/null 2>&1; then
-                $cmd -f "$COMPOSE_FILE" up -d --build "$SERVICE"
+                $cmd -f "$COMPOSE_FILE" up -d --build $COMPOSE_SERVICES
                 return 0
               fi
               return 1
@@ -261,6 +290,10 @@ jobs:
           CALLS_JOIN_TOKEN_SECRET: ${{ secrets.CALLS_JOIN_TOKEN_SECRET }}
           CALLS_WS_TRUSTED_PROXIES: ${{ secrets.CALLS_WS_TRUSTED_PROXIES }}
           SFU_TRUSTED_PROXIES: ${{ secrets.SFU_TRUSTED_PROXIES }}
+          SFU_ANNOUNCED_IP: ${{ secrets.SFU_TR_ANNOUNCED_IP || secrets.SFU_ANNOUNCED_IP }}
+          TURN_SHARED_SECRET: ${{ secrets.TURN_SHARED_SECRET }}
+          TURN_URLS: ${{ secrets.TURN_URLS }}
+          STUN_URLS: ${{ secrets.STUN_URLS }}
           VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
           VITE_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.VITE_SUPABASE_PUBLISHABLE_KEY }}
         with:
@@ -268,12 +301,13 @@ jobs:
           port: ${{ secrets.SFU_TR_SSH_PORT || '22' }}
           username: ${{ secrets.SFU_TR_USER }}
           key: ${{ secrets.SFU_TR_SSH_KEY }}
-          envs: CALLS_JOIN_TOKEN_SECRET,CALLS_WS_TRUSTED_PROXIES,SFU_TRUSTED_PROXIES,VITE_SUPABASE_URL,VITE_SUPABASE_PUBLISHABLE_KEY
+          envs: CALLS_JOIN_TOKEN_SECRET,CALLS_WS_TRUSTED_PROXIES,SFU_TRUSTED_PROXIES,SFU_ANNOUNCED_IP,TURN_SHARED_SECRET,TURN_URLS,STUN_URLS,VITE_SUPABASE_URL,VITE_SUPABASE_PUBLISHABLE_KEY
           script: |
             set -euo pipefail
             APP_DIR="${CALLS_APP_DIR:-/opt/mansoni/app}"
             COMPOSE_FILE="${CALLS_COMPOSE_FILE:-infra/calls/docker-compose.prod.yml}"
             SERVICE="${CALLS_SERVICE:-calls-ws}"
+            COMPOSE_SERVICES="${CALLS_COMPOSE_SERVICES:-calls-ws sfu}"
             REGION="tr"
             LOCK_FILE="${CALLS_DEPLOY_LOCK_FILE:-/tmp/calls-ws-deploy.lock}"
             exec 9>"$LOCK_FILE"
@@ -294,7 +328,8 @@ jobs:
               touch "$file"
               chmod 600 "$file" || true
               if grep -q "^${key}=" "$file"; then
-                sed -i "s|^${key}=.*|${key}=${value}|" "$file"
+                escaped_value="$(printf '%s' "$value" | sed -e 's/[\\&|]/\\&/g')"
+                sed -i "s|^${key}=.*|${key}=${escaped_value}|" "$file"
               else
                 printf '\n%s=%s\n' "$key" "$value" >> "$file"
               fi
@@ -302,26 +337,14 @@ jobs:
 
             if [ -n "${CALLS_JOIN_TOKEN_SECRET:-}" ]; then
               ENV_FILE="$APP_DIR/.env.production"
-              touch "$ENV_FILE"
-              chmod 600 "$ENV_FILE" || true
-              if grep -q '^CALLS_JOIN_TOKEN_SECRET=' "$ENV_FILE"; then
-                sed -i "s|^CALLS_JOIN_TOKEN_SECRET=.*|CALLS_JOIN_TOKEN_SECRET=${CALLS_JOIN_TOKEN_SECRET}|" "$ENV_FILE"
-              else
-                printf '\nCALLS_JOIN_TOKEN_SECRET=%s\n' "$CALLS_JOIN_TOKEN_SECRET" >> "$ENV_FILE"
-              fi
+              upsert_env_var "$ENV_FILE" "CALLS_JOIN_TOKEN_SECRET" "$CALLS_JOIN_TOKEN_SECRET"
             else
               echo "[TR] WARNING: CALLS_JOIN_TOKEN_SECRET secret is not set in GitHub"
             fi
 
             if [ -n "${CALLS_WS_TRUSTED_PROXIES:-}" ]; then
               ENV_FILE="$APP_DIR/.env.production"
-              touch "$ENV_FILE"
-              chmod 600 "$ENV_FILE" || true
-              if grep -q '^CALLS_WS_TRUSTED_PROXIES=' "$ENV_FILE"; then
-                sed -i "s|^CALLS_WS_TRUSTED_PROXIES=.*|CALLS_WS_TRUSTED_PROXIES=${CALLS_WS_TRUSTED_PROXIES}|" "$ENV_FILE"
-              else
-                printf '\nCALLS_WS_TRUSTED_PROXIES=%s\n' "$CALLS_WS_TRUSTED_PROXIES" >> "$ENV_FILE"
-              fi
+              upsert_env_var "$ENV_FILE" "CALLS_WS_TRUSTED_PROXIES" "$CALLS_WS_TRUSTED_PROXIES"
               echo "[TR] CALLS_WS_TRUSTED_PROXIES synced to .env.production"
             else
               echo "[TR] WARNING: CALLS_WS_TRUSTED_PROXIES secret is not set in GitHub"
@@ -330,13 +353,7 @@ jobs:
             if [ -n "${SFU_TRUSTED_PROXIES:-}" ]; then
               SFU_ENV_FILE="$APP_DIR/server/sfu/.env.production"
               mkdir -p "$APP_DIR/server/sfu"
-              touch "$SFU_ENV_FILE"
-              chmod 600 "$SFU_ENV_FILE" || true
-              if grep -q '^SFU_TRUSTED_PROXIES=' "$SFU_ENV_FILE"; then
-                sed -i "s|^SFU_TRUSTED_PROXIES=.*|SFU_TRUSTED_PROXIES=${SFU_TRUSTED_PROXIES}|" "$SFU_ENV_FILE"
-              else
-                printf '\nSFU_TRUSTED_PROXIES=%s\n' "$SFU_TRUSTED_PROXIES" >> "$SFU_ENV_FILE"
-              fi
+              upsert_env_var "$SFU_ENV_FILE" "SFU_TRUSTED_PROXIES" "$SFU_TRUSTED_PROXIES"
               echo "[TR] SFU_TRUSTED_PROXIES synced to server/sfu/.env.production"
             else
               echo "[TR] WARNING: SFU_TRUSTED_PROXIES secret is not set in GitHub"
@@ -361,6 +378,47 @@ jobs:
               echo "[TR] WARNING: VITE_SUPABASE_PUBLISHABLE_KEY secret is not set in GitHub"
             fi
 
+            SFU_ENV_FILE="$APP_DIR/server/sfu/.env.production"
+            mkdir -p "$APP_DIR/server/sfu"
+            touch "$SFU_ENV_FILE"
+            chmod 600 "$SFU_ENV_FILE" || true
+
+            ANNOUNCED_IP="${SFU_ANNOUNCED_IP:-}"
+            if [ -z "$ANNOUNCED_IP" ]; then
+              ANNOUNCED_IP="$(curl -fsS --max-time 5 https://api.ipify.org || curl -fsS --max-time 5 https://ifconfig.me || true)"
+            fi
+            if [ -z "$ANNOUNCED_IP" ]; then
+              echo "[TR] ERROR: SFU_ANNOUNCED_IP is missing and public IP auto-detect failed"
+              exit 1
+            fi
+
+            upsert_env_var "$SFU_ENV_FILE" "SFU_ANNOUNCED_IP" "$ANNOUNCED_IP"
+            upsert_env_var "$SFU_ENV_FILE" "SFU_REGION" "$REGION"
+            upsert_env_var "$SFU_ENV_FILE" "REGION" "$REGION"
+            upsert_env_var "$SFU_ENV_FILE" "SFU_ENABLE_MEDIASOUP" "1"
+            upsert_env_var "$SFU_ENV_FILE" "SFU_REQUIRE_MEDIASOUP" "1"
+            upsert_env_var "$SFU_ENV_FILE" "SFU_REQUIRE_SFRAME" "1"
+            upsert_env_var "$SFU_ENV_FILE" "SFU_E2EE_REQUIRED" "1"
+            upsert_env_var "$SFU_ENV_FILE" "E2EE_REQUIRED_DEFAULT" "true"
+            upsert_env_var "$SFU_ENV_FILE" "SFU_STRICT_VALIDATION" "1"
+            upsert_env_var "$SFU_ENV_FILE" "SFU_INSECURE_DEV_MODE" "0"
+            if [ -n "${TURN_SHARED_SECRET:-}" ]; then
+              upsert_env_var "$SFU_ENV_FILE" "TURN_SHARED_SECRET" "$TURN_SHARED_SECRET"
+            elif ! grep -qE '^TURN_SHARED_SECRET=.{32,}' "$SFU_ENV_FILE"; then
+              echo "[TR] ERROR: TURN_SHARED_SECRET is missing in GitHub secrets and server env"
+              exit 1
+            fi
+            if [ -n "${TURN_URLS:-}" ]; then
+              upsert_env_var "$SFU_ENV_FILE" "TURN_URLS" "$TURN_URLS"
+            elif ! grep -qE '^TURN_URLS=.+' "$SFU_ENV_FILE"; then
+              echo "[TR] ERROR: TURN_URLS is missing in GitHub secrets and server env"
+              exit 1
+            fi
+            if [ -n "${STUN_URLS:-}" ]; then
+              upsert_env_var "$SFU_ENV_FILE" "STUN_URLS" "$STUN_URLS"
+            fi
+            echo "[TR] SFU production env synced on server"
+
             if [ ! -f "$APP_DIR/node_modules/ioredis/package.json" ] || [ ! -f "$APP_DIR/node_modules/ajv/package.json" ] || [ ! -f "$APP_DIR/node_modules/ajv-formats/package.json" ]; then
               echo "[TR] Installing production dependencies"
               npm ci --omit=dev --ignore-scripts
@@ -381,7 +439,7 @@ jobs:
             _restart_docker() {
               local cmd="$1"
               if $cmd version >/dev/null 2>&1; then
-                $cmd -f "$COMPOSE_FILE" up -d --build "$SERVICE"
+                $cmd -f "$COMPOSE_FILE" up -d --build $COMPOSE_SERVICES
                 return 0
               fi
               return 1
@@ -439,6 +497,10 @@ jobs:
           CALLS_JOIN_TOKEN_SECRET: ${{ secrets.CALLS_JOIN_TOKEN_SECRET }}
           CALLS_WS_TRUSTED_PROXIES: ${{ secrets.CALLS_WS_TRUSTED_PROXIES }}
           SFU_TRUSTED_PROXIES: ${{ secrets.SFU_TRUSTED_PROXIES }}
+          SFU_ANNOUNCED_IP: ${{ secrets.SFU_AE_ANNOUNCED_IP || secrets.SFU_ANNOUNCED_IP }}
+          TURN_SHARED_SECRET: ${{ secrets.TURN_SHARED_SECRET }}
+          TURN_URLS: ${{ secrets.TURN_URLS }}
+          STUN_URLS: ${{ secrets.STUN_URLS }}
           VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
           VITE_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.VITE_SUPABASE_PUBLISHABLE_KEY }}
         with:
@@ -446,12 +508,13 @@ jobs:
           port: ${{ secrets.SFU_AE_SSH_PORT || '22' }}
           username: ${{ secrets.SFU_AE_USER }}
           key: ${{ secrets.SFU_AE_SSH_KEY }}
-          envs: CALLS_JOIN_TOKEN_SECRET,CALLS_WS_TRUSTED_PROXIES,SFU_TRUSTED_PROXIES,VITE_SUPABASE_URL,VITE_SUPABASE_PUBLISHABLE_KEY
+          envs: CALLS_JOIN_TOKEN_SECRET,CALLS_WS_TRUSTED_PROXIES,SFU_TRUSTED_PROXIES,SFU_ANNOUNCED_IP,TURN_SHARED_SECRET,TURN_URLS,STUN_URLS,VITE_SUPABASE_URL,VITE_SUPABASE_PUBLISHABLE_KEY
           script: |
             set -euo pipefail
             APP_DIR="${CALLS_APP_DIR:-/opt/mansoni/app}"
             COMPOSE_FILE="${CALLS_COMPOSE_FILE:-infra/calls/docker-compose.prod.yml}"
             SERVICE="${CALLS_SERVICE:-calls-ws}"
+            COMPOSE_SERVICES="${CALLS_COMPOSE_SERVICES:-calls-ws sfu}"
             REGION="ae"
             LOCK_FILE="${CALLS_DEPLOY_LOCK_FILE:-/tmp/calls-ws-deploy.lock}"
             exec 9>"$LOCK_FILE"
@@ -472,7 +535,8 @@ jobs:
               touch "$file"
               chmod 600 "$file" || true
               if grep -q "^${key}=" "$file"; then
-                sed -i "s|^${key}=.*|${key}=${value}|" "$file"
+                escaped_value="$(printf '%s' "$value" | sed -e 's/[\\&|]/\\&/g')"
+                sed -i "s|^${key}=.*|${key}=${escaped_value}|" "$file"
               else
                 printf '\n%s=%s\n' "$key" "$value" >> "$file"
               fi
@@ -480,26 +544,14 @@ jobs:
 
             if [ -n "${CALLS_JOIN_TOKEN_SECRET:-}" ]; then
               ENV_FILE="$APP_DIR/.env.production"
-              touch "$ENV_FILE"
-              chmod 600 "$ENV_FILE" || true
-              if grep -q '^CALLS_JOIN_TOKEN_SECRET=' "$ENV_FILE"; then
-                sed -i "s|^CALLS_JOIN_TOKEN_SECRET=.*|CALLS_JOIN_TOKEN_SECRET=${CALLS_JOIN_TOKEN_SECRET}|" "$ENV_FILE"
-              else
-                printf '\nCALLS_JOIN_TOKEN_SECRET=%s\n' "$CALLS_JOIN_TOKEN_SECRET" >> "$ENV_FILE"
-              fi
+              upsert_env_var "$ENV_FILE" "CALLS_JOIN_TOKEN_SECRET" "$CALLS_JOIN_TOKEN_SECRET"
             else
               echo "[AE] WARNING: CALLS_JOIN_TOKEN_SECRET secret is not set in GitHub"
             fi
 
             if [ -n "${CALLS_WS_TRUSTED_PROXIES:-}" ]; then
               ENV_FILE="$APP_DIR/.env.production"
-              touch "$ENV_FILE"
-              chmod 600 "$ENV_FILE" || true
-              if grep -q '^CALLS_WS_TRUSTED_PROXIES=' "$ENV_FILE"; then
-                sed -i "s|^CALLS_WS_TRUSTED_PROXIES=.*|CALLS_WS_TRUSTED_PROXIES=${CALLS_WS_TRUSTED_PROXIES}|" "$ENV_FILE"
-              else
-                printf '\nCALLS_WS_TRUSTED_PROXIES=%s\n' "$CALLS_WS_TRUSTED_PROXIES" >> "$ENV_FILE"
-              fi
+              upsert_env_var "$ENV_FILE" "CALLS_WS_TRUSTED_PROXIES" "$CALLS_WS_TRUSTED_PROXIES"
               echo "[AE] CALLS_WS_TRUSTED_PROXIES synced to .env.production"
             else
               echo "[AE] WARNING: CALLS_WS_TRUSTED_PROXIES secret is not set in GitHub"
@@ -508,13 +560,7 @@ jobs:
             if [ -n "${SFU_TRUSTED_PROXIES:-}" ]; then
               SFU_ENV_FILE="$APP_DIR/server/sfu/.env.production"
               mkdir -p "$APP_DIR/server/sfu"
-              touch "$SFU_ENV_FILE"
-              chmod 600 "$SFU_ENV_FILE" || true
-              if grep -q '^SFU_TRUSTED_PROXIES=' "$SFU_ENV_FILE"; then
-                sed -i "s|^SFU_TRUSTED_PROXIES=.*|SFU_TRUSTED_PROXIES=${SFU_TRUSTED_PROXIES}|" "$SFU_ENV_FILE"
-              else
-                printf '\nSFU_TRUSTED_PROXIES=%s\n' "$SFU_TRUSTED_PROXIES" >> "$SFU_ENV_FILE"
-              fi
+              upsert_env_var "$SFU_ENV_FILE" "SFU_TRUSTED_PROXIES" "$SFU_TRUSTED_PROXIES"
               echo "[AE] SFU_TRUSTED_PROXIES synced to server/sfu/.env.production"
             else
               echo "[AE] WARNING: SFU_TRUSTED_PROXIES secret is not set in GitHub"
@@ -539,6 +585,47 @@ jobs:
               echo "[AE] WARNING: VITE_SUPABASE_PUBLISHABLE_KEY secret is not set in GitHub"
             fi
 
+            SFU_ENV_FILE="$APP_DIR/server/sfu/.env.production"
+            mkdir -p "$APP_DIR/server/sfu"
+            touch "$SFU_ENV_FILE"
+            chmod 600 "$SFU_ENV_FILE" || true
+
+            ANNOUNCED_IP="${SFU_ANNOUNCED_IP:-}"
+            if [ -z "$ANNOUNCED_IP" ]; then
+              ANNOUNCED_IP="$(curl -fsS --max-time 5 https://api.ipify.org || curl -fsS --max-time 5 https://ifconfig.me || true)"
+            fi
+            if [ -z "$ANNOUNCED_IP" ]; then
+              echo "[AE] ERROR: SFU_ANNOUNCED_IP is missing and public IP auto-detect failed"
+              exit 1
+            fi
+
+            upsert_env_var "$SFU_ENV_FILE" "SFU_ANNOUNCED_IP" "$ANNOUNCED_IP"
+            upsert_env_var "$SFU_ENV_FILE" "SFU_REGION" "$REGION"
+            upsert_env_var "$SFU_ENV_FILE" "REGION" "$REGION"
+            upsert_env_var "$SFU_ENV_FILE" "SFU_ENABLE_MEDIASOUP" "1"
+            upsert_env_var "$SFU_ENV_FILE" "SFU_REQUIRE_MEDIASOUP" "1"
+            upsert_env_var "$SFU_ENV_FILE" "SFU_REQUIRE_SFRAME" "1"
+            upsert_env_var "$SFU_ENV_FILE" "SFU_E2EE_REQUIRED" "1"
+            upsert_env_var "$SFU_ENV_FILE" "E2EE_REQUIRED_DEFAULT" "true"
+            upsert_env_var "$SFU_ENV_FILE" "SFU_STRICT_VALIDATION" "1"
+            upsert_env_var "$SFU_ENV_FILE" "SFU_INSECURE_DEV_MODE" "0"
+            if [ -n "${TURN_SHARED_SECRET:-}" ]; then
+              upsert_env_var "$SFU_ENV_FILE" "TURN_SHARED_SECRET" "$TURN_SHARED_SECRET"
+            elif ! grep -qE '^TURN_SHARED_SECRET=.{32,}' "$SFU_ENV_FILE"; then
+              echo "[AE] ERROR: TURN_SHARED_SECRET is missing in GitHub secrets and server env"
+              exit 1
+            fi
+            if [ -n "${TURN_URLS:-}" ]; then
+              upsert_env_var "$SFU_ENV_FILE" "TURN_URLS" "$TURN_URLS"
+            elif ! grep -qE '^TURN_URLS=.+' "$SFU_ENV_FILE"; then
+              echo "[AE] ERROR: TURN_URLS is missing in GitHub secrets and server env"
+              exit 1
+            fi
+            if [ -n "${STUN_URLS:-}" ]; then
+              upsert_env_var "$SFU_ENV_FILE" "STUN_URLS" "$STUN_URLS"
+            fi
+            echo "[AE] SFU production env synced on server"
+
             if [ ! -f "$APP_DIR/node_modules/ioredis/package.json" ] || [ ! -f "$APP_DIR/node_modules/ajv/package.json" ] || [ ! -f "$APP_DIR/node_modules/ajv-formats/package.json" ]; then
               echo "[AE] Installing production dependencies"
               npm ci --omit=dev --ignore-scripts
@@ -559,7 +646,7 @@ jobs:
             _restart_docker() {
               local cmd="$1"
               if $cmd version >/dev/null 2>&1; then
-                $cmd -f "$COMPOSE_FILE" up -d --build "$SERVICE"
+                $cmd -f "$COMPOSE_FILE" up -d --build $COMPOSE_SERVICES
                 return 0
               fi
               return 1

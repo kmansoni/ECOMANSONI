@@ -81,6 +81,23 @@ function mockGetUserMedia(hasVideo: boolean) {
     value: { getUserMedia: vi.fn().mockResolvedValue(stream) },
   });
 }
+
+function makeIncomingCall(callType: "audio" | "video" = "audio") {
+  return {
+    id: "call-1",
+    caller_id: "u-caller",
+    callee_id: "u-callee",
+    conversation_id: "conv-1",
+    call_type: callType,
+    status: "ringing" as const,
+    created_at: new Date().toISOString(),
+    started_at: null,
+    ended_at: null,
+    caller_profile: { display_name: "Caller", avatar_url: null },
+    callee_profile: { display_name: "Callee", avatar_url: null },
+  };
+}
+
 function resetAll() {
   vi.clearAllMocks();
   authState.user = { id: "u-test" };
@@ -93,6 +110,9 @@ function resetAll() {
 }
 
 describe("useVideoCallSfu", () => {
+  const calleeId = "11111111-1111-4111-8111-111111111111";
+  const conversationId = "22222222-2222-4222-8222-222222222222";
+
   beforeEach(() => { resetAll(); vi.useFakeTimers(); });
   afterEach(() => { vi.useRealTimers(); });
 
@@ -108,7 +128,7 @@ describe("useVideoCallSfu", () => {
     const { useVideoCallSfu } = await import("@/hooks/useVideoCallSfu");
     const { result } = renderHook(() => useVideoCallSfu());
     mockGetUserMedia(true);
-    await act(async () => { await result.current.startCall("u-callee", "conv-1", "video"); });
+    await act(async () => { await result.current.startCall(calleeId, conversationId, "video"); });
     expect(result.current.status).toBe("calling");
     expect(result.current.currentCall?.call_type).toBe("video");
   });
@@ -117,7 +137,7 @@ describe("useVideoCallSfu", () => {
     const { useVideoCallSfu } = await import("@/hooks/useVideoCallSfu");
     const { result } = renderHook(() => useVideoCallSfu());
     mockGetUserMedia(false);
-    await act(async () => { await result.current.startCall("u-callee", "conv-1", "audio"); });
+    await act(async () => { await result.current.startCall(calleeId, conversationId, "audio"); });
     expect(result.current.status).toBe("calling");
     expect(result.current.currentCall?.call_type).toBe("audio");
   });
@@ -126,14 +146,7 @@ describe("useVideoCallSfu", () => {
     const { useVideoCallSfu } = await import("@/hooks/useVideoCallSfu");
     const { result } = renderHook(() => useVideoCallSfu());
     mockGetUserMedia(false);
-    const call = {
-      id: "call-1", caller_id: "u-caller", callee_id: "u-callee", conversation_id: "conv-1",
-      call_type: "audio" as const, status: "ringing" as const,
-      created_at: new Date().toISOString(), started_at: null, ended_at: null,
-      caller_profile: { display_name: "Caller", avatar_url: null },
-      callee_profile: { display_name: "Callee", avatar_url: null },
-    };
-    await act(async () => { await result.current.answerCall(call); });
+    await act(async () => { await result.current.answerCall(makeIncomingCall("audio")); });
     expect(result.current.status).toBe("connected");
     expect(result.current.connectionState).toBe("connecting");
   });
@@ -142,7 +155,7 @@ describe("useVideoCallSfu", () => {
     const { useVideoCallSfu } = await import("@/hooks/useVideoCallSfu");
     const { result } = renderHook(() => useVideoCallSfu());
     mockGetUserMedia(false);
-    await act(async () => { await result.current.startCall("u-callee", "conv-1", "audio"); });
+    await act(async () => { await result.current.startCall(calleeId, conversationId, "audio"); });
     expect(result.current.status).toBe("calling");
     expect(result.current.connectionState).toBe("connecting");
     await act(async () => { await result.current.endCall(); });
@@ -155,7 +168,7 @@ describe("useVideoCallSfu", () => {
     const { result } = renderHook(() => useVideoCallSfu());
 
     mockGetUserMedia(false);
-    await act(async () => { await result.current.startCall("u-callee", "conv-1", "audio"); });
+    await act(async () => { await result.current.startCall(calleeId, conversationId, "audio"); });
     act(() => result.current.toggleMute());
     expect(result.current.isMuted).toBe(true);
     act(() => result.current.toggleMute());
@@ -167,7 +180,7 @@ describe("useVideoCallSfu", () => {
     const { result } = renderHook(() => useVideoCallSfu());
 
     mockGetUserMedia(true);
-    await act(async () => { await result.current.startCall("u-callee", "conv-1", "video"); });
+    await act(async () => { await result.current.startCall(calleeId, conversationId, "video"); });
     act(() => result.current.toggleVideo());
     expect(result.current.isVideoOff).toBe(true);
     act(() => result.current.toggleVideo());
@@ -180,16 +193,20 @@ describe("useVideoCallSfu", () => {
     const { result } = renderHook(() => useVideoCallSfu({ onLocalTrackReplaced }));
 
     mockGetUserMedia(false);
-    await act(async () => { await result.current.startCall("u-callee", "conv-1", "audio"); });
+    await act(async () => { await result.current.startCall(calleeId, conversationId, "audio"); });
     await act(async () => { await result.current.toggleNoiseSuppression(); });
 
     expect(onLocalTrackReplaced).toHaveBeenLastCalledWith("audio", expect.objectContaining({ id: "audio-processed" }));
     expect(result.current.localStream?.getAudioTracks()[0]?.id).toBe("audio-processed");
 
+    act(() => result.current.toggleMute());
+    expect(result.current.localStream?.getAudioTracks()[0]?.enabled).toBe(false);
+
     await act(async () => { await result.current.toggleNoiseSuppression(); });
 
     expect(onLocalTrackReplaced).toHaveBeenLastCalledWith("audio", expect.objectContaining({ id: "audio-1" }));
     expect(result.current.localStream?.getAudioTracks()[0]?.id).toBe("audio-1");
+    expect(result.current.localStream?.getAudioTracks()[0]?.enabled).toBe(false);
   });
 
   it("replaces active video producer when background blur toggles", async () => {
@@ -198,23 +215,28 @@ describe("useVideoCallSfu", () => {
     const { result } = renderHook(() => useVideoCallSfu({ onLocalTrackReplaced }));
 
     mockGetUserMedia(true);
-    await act(async () => { await result.current.startCall("u-callee", "conv-1", "video"); });
+    await act(async () => { await result.current.startCall(calleeId, conversationId, "video"); });
     await act(async () => { await result.current.toggleBackgroundBlur(); });
 
     expect(onLocalTrackReplaced).toHaveBeenLastCalledWith("video", expect.objectContaining({ id: "video-processed" }));
     expect(result.current.localStream?.getVideoTracks()[0]?.id).toBe("video-processed");
 
+    act(() => result.current.toggleVideo());
+    expect(result.current.localStream?.getVideoTracks()[0]?.enabled).toBe(false);
+
     await act(async () => { await result.current.toggleBackgroundBlur(); });
 
     expect(onLocalTrackReplaced).toHaveBeenLastCalledWith("video", expect.objectContaining({ id: "video-1" }));
     expect(result.current.localStream?.getVideoTracks()[0]?.id).toBe("video-1");
+    expect(result.current.localStream?.getVideoTracks()[0]?.enabled).toBe(false);
+    expect(mediaProcessorState.videoProcessedTrack.stop).toHaveBeenCalled();
   });
 
-  it("tracks media bootstrap progress — promotes connectionState when both signals received", async () => {
+  it("keeps media bootstrap progress in connecting state until the call is connected", async () => {
     const { useVideoCallSfu } = await import("@/hooks/useVideoCallSfu");
     const { result } = renderHook(() => useVideoCallSfu());
     mockGetUserMedia(true);
-    await act(async () => { await result.current.startCall("u-callee", "conv-1", "video"); });
+    await act(async () => { await result.current.startCall(calleeId, conversationId, "video"); });
 
     // markMediaBootstrapProgress only promotes connectionState when status === "connected"
     // and both send+recv transport signals are present. Test that invariant:
@@ -233,5 +255,50 @@ describe("useVideoCallSfu", () => {
     //    In real flow, status changes via Supabase Realtime.
     //    For test, we verify the signals were recorded (no regression from original).
     expect(result.current.status).toBe("calling");
+  });
+
+  it("promotes connectionState immediately when connected call receives both bootstrap signals", async () => {
+    const { useVideoCallSfu } = await import("@/hooks/useVideoCallSfu");
+    const { result } = renderHook(() => useVideoCallSfu());
+    mockGetUserMedia(false);
+
+    await act(async () => { await result.current.answerCall(makeIncomingCall("audio")); });
+    expect(result.current.status).toBe("connected");
+    expect(result.current.connectionState).toBe("connecting");
+
+    act(() => { result.current.markMediaBootstrapProgress("send_transport_created"); });
+    expect(result.current.connectionState).toBe("connecting");
+
+    act(() => { result.current.markMediaBootstrapProgress("recv_transport_created"); });
+    expect(result.current.connectionState).toBe("connected");
+  });
+
+  it("retries SFU bootstrap from failed state without reusing stale progress signals", async () => {
+    let progressHook: {
+      current: {
+        markMediaBootstrapProgress: (signal: "send_transport_created" | "recv_transport_created") => void;
+      };
+    } | null = null;
+
+    const onRetryMediaBootstrap = vi.fn(async () => {
+      progressHook?.current.markMediaBootstrapProgress("recv_transport_created");
+    });
+    const { useVideoCallSfu } = await import("@/hooks/useVideoCallSfu");
+    const { result } = renderHook(() => useVideoCallSfu({ onRetryMediaBootstrap }));
+    progressHook = result;
+    mockGetUserMedia(false);
+
+    await act(async () => { await result.current.answerCall(makeIncomingCall("audio")); });
+    act(() => { result.current.markMediaBootstrapProgress("send_transport_created"); });
+    act(() => { result.current.markMediaBootstrapFailed("test_failure"); });
+    expect(result.current.connectionState).toBe("failed");
+
+    await act(async () => { await result.current.retryWithFreshCredentials(); });
+
+    expect(onRetryMediaBootstrap).toHaveBeenCalledTimes(1);
+    expect(result.current.connectionState).toBe("connecting");
+
+    act(() => { result.current.markMediaBootstrapProgress("send_transport_created"); });
+    expect(result.current.connectionState).toBe("connected");
   });
 });

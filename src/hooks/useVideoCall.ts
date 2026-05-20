@@ -674,6 +674,7 @@ export function useVideoCall(options: UseVideoCallOptions = {}) {
     // Force TURN relay for iOS to avoid frequent ICE failures in WebView/NAT environments.
     // On other platforms keep adaptive behavior: start with "all" and switch to relay on failure.
     const isIOS = /iPhone|iPad/i.test(navigator.userAgent);
+    const isTelegramIOS = isIOS && /Telegram|TelegramWebView|Tg\//i.test(navigator.userAgent);
     const shouldForceRelay = forceRelay || isIOS;
 
     log("Creating peer connection, initiator:", isInitiator, "forceRelay:", shouldForceRelay, "isTelegramIOS:", isTelegramIOS);

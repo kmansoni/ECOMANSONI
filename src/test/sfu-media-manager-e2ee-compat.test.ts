@@ -257,6 +257,33 @@ describe("SfuMediaManager E2EE compatibility", () => {
     expect(manager.getRemoteTrackSource(screenTrack as unknown as MediaStreamTrack)).toBe("screen");
   });
 
+  it("exposes producer appData copy for recovery", async () => {
+    transportState.sendTransport.produce.mockImplementationOnce(async (options?: { appData?: Record<string, unknown> }) => (
+      transportState.makeProducer({ id: "producer-screen", appData: options?.appData })
+    ));
+
+    const { SfuMediaManager } = await import("@/calls-v2/sfuMediaManager");
+    const manager = new SfuMediaManager({ requireSenderReceiverAccessForE2ee: false });
+
+    await manager.loadDevice({ codecs: [{ mimeType: "video/VP8" }] } as never);
+    manager.createSendTransport(
+      { id: "send-1", iceParameters: {} as never, iceCandidates: [], dtlsParameters: {} as never },
+      async () => undefined,
+      async () => "producer-screen",
+    );
+
+    const producer = await manager.produce(
+      transportState.makeTrack("screen-track", "video") as unknown as MediaStreamTrack,
+      { trackId: "screen-track", source: "screen" },
+    );
+
+    const appData = manager.getProducerAppData(producer.id);
+    expect(appData).toEqual({ trackId: "screen-track", source: "screen" });
+
+    if (appData) appData.source = "camera";
+    expect(manager.getProducerAppData(producer.id)).toEqual({ trackId: "screen-track", source: "screen" });
+  });
+
   it("rejects replaceProducerTrack for dead tracks and kind mismatches", async () => {
     const producer = transportState.makeProducer({ id: "producer-video" });
     transportState.sendTransport.produce.mockResolvedValueOnce(producer);
