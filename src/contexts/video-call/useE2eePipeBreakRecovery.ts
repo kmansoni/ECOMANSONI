@@ -80,9 +80,6 @@ export function useE2eePipeBreakRecovery(
         if ((track.kind === 'audio' || track.kind === 'video') && localProducerIdsRef.current[track.kind] === trackId) {
           localProducerIdsRef.current[track.kind] = newProducer.id;
         }
-        if ((track.kind === 'audio' || track.kind === 'video') && localProducerIdsRef.current[track.kind] === trackId) {
-          localProducerIdsRef.current[track.kind] = newProducer.id;
-        }
 
         logger.info('[VideoCallContext] E2EE sender pipe recovery: OK', {
           oldProducerId: trackId,
