@@ -195,7 +195,6 @@ function isStatusCompatibilityError(error: unknown): boolean {
 
 // ---------------------------------------------------------------------------
 // Hook return type
-  const mediaRecoveryInFlightRef = useRef(false);
 // ---------------------------------------------------------------------------
 
 export interface UseVideoCallSfuReturn {
@@ -319,6 +318,7 @@ function normalizeRealtimeCallRow(value: unknown): VideoCall | null {
 
 export function useVideoCallSfu(options: UseVideoCallSfuOptions = {}): UseVideoCallSfuReturn {
   const { user } = useAuth();
+  const mediaRecoveryInFlightRef = useRef(false);
   const onCallEndedRef = useRef(options.onCallEnded);
   const onRetryMediaBootstrapRef = useRef(options.onRetryMediaBootstrap);
   const onLocalTrackReplacedRef = useRef(options.onLocalTrackReplaced);
