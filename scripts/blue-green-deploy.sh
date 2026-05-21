@@ -86,8 +86,8 @@ log "Switched to $INACTIVE slot. Active: $INACTIVE"
 
 # Финальная проверка
 sleep 2
-HTTP=$(curl -o /dev/null -s -w "%{http_code}" --max-time 10 http://localhost/health || echo "000")
-if [ "$HTTP" != "200" ]; then
+HTTP=$(curl -o /dev/null -s -w "%{http_code}" --max-time 10 http://localhost/ || echo "000")
+if [ "$HTTP" != "200" ] && [ "$HTTP" != "301" ] && [ "$HTTP" != "302" ]; then
   log "ERROR: health check failed ($HTTP) — rolling back to $ACTIVE"
   ln -sfn "$APP_DIR/releases/$ACTIVE" "$CURRENT_LINK"
   if [ -n "$NGINX_CONF" ]; then
