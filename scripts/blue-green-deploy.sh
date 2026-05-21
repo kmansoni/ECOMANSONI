@@ -6,10 +6,24 @@
 set -euo pipefail
 
 APP_DIR="${APP_DIR:-/opt/mansoni/app}"
-NGINX_CONF="/etc/nginx/sites-available/mansoni-api"
+CURRENT_LINK="$APP_DIR/current"
 BLUE_DIR="$APP_DIR/releases/blue"
 GREEN_DIR="$APP_DIR/releases/green"
-CURRENT_LINK="$APP_DIR/current"
+
+# Ищем nginx конфиг в нескольких возможных местах
+find_nginx_conf() {
+  for path in \
+    /etc/nginx/sites-available/mansoni-api \
+    /etc/nginx/sites-available/mansoni \
+    /etc/nginx/conf.d/mansoni.conf \
+    /etc/nginx/conf.d/default.conf \
+    /etc/nginx/nginx.conf; do
+    if [ -f "$path" ]; then echo "$path"; return 0; fi
+  done
+  echo ""
+}
+
+NGINX_CONF=$(find_nginx_conf)
 
 log() { echo "[$(date '+%H:%M:%S')] $*"; }
 
@@ -59,12 +73,14 @@ log "Smoke test passed — switching nginx to $INACTIVE slot"
 # Переключаем symlink
 ln -sfn "$INACTIVE_DIR" "$CURRENT_LINK"
 
-# Обновляем nginx root на новый слот
-sudo sed -i "s|root $APP_DIR/releases/$ACTIVE|root $INACTIVE_DIR|g" "$NGINX_CONF"
-
-# Проверяем конфиг и перезагружаем nginx (graceful reload — без даунтайма)
-sudo nginx -t
-sudo systemctl reload nginx
+# Обновляем nginx root на новый слот (если конфиг найден)
+if [ -n "$NGINX_CONF" ]; then
+  sudo sed -i "s|root $APP_DIR/releases/$ACTIVE|root $INACTIVE_DIR|g" "$NGINX_CONF"
+  sudo nginx -t && sudo systemctl reload nginx
+  log "Nginx reloaded with new root: $INACTIVE_DIR"
+else
+  log "WARNING: nginx config not found — symlink updated but nginx not reloaded"
+fi
 
 log "Switched to $INACTIVE slot. Active: $INACTIVE"
 
@@ -74,8 +90,10 @@ HTTP=$(curl -o /dev/null -s -w "%{http_code}" --max-time 10 http://localhost/hea
 if [ "$HTTP" != "200" ]; then
   log "ERROR: health check failed ($HTTP) — rolling back to $ACTIVE"
   ln -sfn "$APP_DIR/releases/$ACTIVE" "$CURRENT_LINK"
-  sudo sed -i "s|root $INACTIVE_DIR|root $APP_DIR/releases/$ACTIVE|g" "$NGINX_CONF"
-  sudo systemctl reload nginx
+  if [ -n "$NGINX_CONF" ]; then
+    sudo sed -i "s|root $INACTIVE_DIR|root $APP_DIR/releases/$ACTIVE|g" "$NGINX_CONF"
+    sudo systemctl reload nginx
+  fi
   log "Rollback complete — still on $ACTIVE"
   exit 1
 fi
