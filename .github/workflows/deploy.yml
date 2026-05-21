@@ -120,7 +120,8 @@ jobs:
   deploy-frontend:
     name: Deploy frontend → mansoni.ru
     runs-on: ubuntu-latest
-    needs: [build, supabase]
+    needs: [build]
+    if: always() && needs.build.result == 'success'
     steps:
       - name: Download dist artifact
         uses: actions/download-artifact@v4
