@@ -15,7 +15,7 @@ describe('device utilities', () => {
     it('detects desktop when not mobile UA', async () => {
       const original = global.navigator.userAgent;
       Object.defineProperty(global.navigator, 'userAgent', { value: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)', configurable: true });
-      // @ts-ignore
+      // @ts-expect-error -- optional peer dependency
       const { getDeviceInfo } = await import('./device');
       const info = getDeviceInfo();
       expect(info.isDesktop).toBe(true);
@@ -27,7 +27,7 @@ describe('device utilities', () => {
     it('detects iOS from iPhone UA', async () => {
       const original = global.navigator.userAgent;
       Object.defineProperty(global.navigator, 'userAgent', { value: 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X)', configurable: true });
-      // @ts-ignore
+      // @ts-expect-error -- optional peer dependency
       const { getDeviceInfo } = await import('./device');
       const info = getDeviceInfo();
       expect(info.isMobile).toBe(true);
@@ -38,7 +38,7 @@ describe('device utilities', () => {
     it('detects Android', async () => {
       const original = global.navigator.userAgent;
       Object.defineProperty(global.navigator, 'userAgent', { value: 'Mozilla/5.0 (Linux; Android 13)', configurable: true });
-      // @ts-ignore
+      // @ts-expect-error -- optional peer dependency
       const { getDeviceInfo } = await import('./device');
       const info = getDeviceInfo();
       expect(info.isMobile).toBe(true);
@@ -50,7 +50,7 @@ describe('device utilities', () => {
   describe('accelerometer', () => {
     it('start adds event listener', async () => {
       const addSpy = vi.spyOn(global.window, 'addEventListener');
-      // @ts-ignore
+      // @ts-expect-error -- optional peer dependency
       const { accelerometer } = await import('./device');
       accelerometer.start();
       expect(addSpy).toHaveBeenCalledWith('devicemotion', expect.any(Function));
@@ -59,7 +59,7 @@ describe('device utilities', () => {
 
     it('stop removes event listener', async () => {
       const removeSpy = vi.spyOn(global.window, 'removeEventListener');
-      // @ts-ignore
+      // @ts-expect-error -- optional peer dependency
       const { accelerometer } = await import('./device');
       accelerometer.stop();
       expect(removeSpy).toHaveBeenCalledWith('devicemotion', expect.any(Function));
@@ -67,7 +67,7 @@ describe('device utilities', () => {
     });
 
     it('isSupported returns false without DeviceMotionEvent', async () => {
-      // @ts-ignore
+      // @ts-expect-error -- optional peer dependency
       const { accelerometer } = await import('./device');
       expect(typeof accelerometer.isSupported()).toBe('boolean');
     });
@@ -77,7 +77,7 @@ describe('device utilities', () => {
     it('impact is no-op without vibrate', async () => {
       const original = navigator.vibrate;
       delete (navigator as any).vibrate;
-      // @ts-ignore
+      // @ts-expect-error -- optional peer dependency
       const { haptic } = await import('./device');
       expect(() => haptic.impact('light')).not.toThrow();
       (navigator as any).vibrate = original;
@@ -86,7 +86,7 @@ describe('device utilities', () => {
     it('notification is no-op without vibrate', async () => {
       const original = navigator.vibrate;
       delete (navigator as any).vibrate;
-      // @ts-ignore
+      // @ts-expect-error -- optional peer dependency
       const { haptic } = await import('./device');
       expect(() => haptic.notification('success')).not.toThrow();
       (navigator as any).vibrate = original;
@@ -97,7 +97,7 @@ describe('device utilities', () => {
     it('returns false when mediaDevices unavailable', async () => {
       const original = navigator.mediaDevices;
       delete (navigator as any).mediaDevices;
-      // @ts-ignore
+      // @ts-expect-error -- optional peer dependency
       const { isQRScannerSupported } = await import('./device');
       expect(isQRScannerSupported()).toBe(false);
       (navigator as any).mediaDevices = original;

@@ -56,7 +56,7 @@ export function HomePage() {
       const pinned: typeof posts = [];
       const regular: typeof posts = [];
       for (const post of items) {
-        pinnedPositions.has(post.id) ? pinned.push(post) : regular.push(post);
+        if (pinnedPositions.has(post.id)) { pinned.push(post); } else { regular.push(post); }
       }
       pinned.sort((a, b) => (pinnedPositions.get(a.id) ?? 0) - (pinnedPositions.get(b.id) ?? 0));
       return [...pinned, ...regular];

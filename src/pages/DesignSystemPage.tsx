@@ -478,8 +478,7 @@ function ChatsView({ compact }: { compact?: boolean }) {
   ];
   return (
     <div style={{ display: "grid", gridTemplateColumns: compact ? "1fr" : "320px 1fr", gap: 0, height: compact ? "auto" : "calc(100vh - 200px)", maxHeight: 700 }}>
-      {(!compact || true) && (
-        <div className="lg-glass" style={{ padding: 12, display: "flex", flexDirection: "column", gap: 8, borderRadius: compact ? 20 : "20px 0 0 20px" }}>
+      <div className="lg-glass" style={{ padding: 12, display: "flex", flexDirection: "column", gap: 8, borderRadius: compact ? 20 : "20px 0 0 20px" }}>
           <input className="lg-input" placeholder="🔍 Поиск чатов" style={{ marginBottom: 6 }} />
           {chats.map((c, i) => (
             <div
@@ -512,7 +511,6 @@ function ChatsView({ compact }: { compact?: boolean }) {
             </div>
           ))}
         </div>
-      )}
       {!compact && <ChatPane name={chats[active].name} online={chats[active].online} />}
     </div>
   );

@@ -13,19 +13,7 @@ export function GroupVideoCallPage() {
   const { roomId } = useParams<{ roomId: string }>();
   const navigate = useNavigate();
 
-  if (!roomId) {
-    return (
-      <div className="fixed inset-0 z-50 flex items-center justify-center bg-zinc-900">
-        <div className="text-center">
-          <p className="text-white/60 mb-4">Не указан ID комнаты звонка</p>
-          <Button variant="outline" onClick={() => navigate(-1)}>
-            Назад
-          </Button>
-        </div>
-      </div>
-    );
-  }
-
+  const groupCall = useGroupVideoCall(roomId ?? "");
   const {
     participants,
     localStream,
@@ -48,7 +36,20 @@ export function GroupVideoCallPage() {
     error,
     isJoined,
     isJoining,
-  } = useGroupVideoCall(roomId);
+  } = groupCall;
+
+  if (!roomId) {
+    return (
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-zinc-900">
+        <div className="text-center">
+          <p className="text-white/60 mb-4">Не указан ID комнаты звонка</p>
+          <Button variant="outline" onClick={() => navigate(-1)}>
+            Назад
+          </Button>
+        </div>
+      </div>
+    );
+  }
 
   if (error && !isJoined) {
     return (

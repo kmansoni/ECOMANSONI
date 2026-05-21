@@ -26,7 +26,7 @@ vi.mock('@/lib/telegram/analytics', () => ({
 
 describe('mini-app analytics bridge', () => {
   it('exports all expected functions', async () => {
-    // @ts-ignore
+    // @ts-expect-error -- optional peer dependency
     const analytics = await import('./analytics');
     expect(typeof analytics.trackEvent).toBe('function');
     expect(typeof analytics.trackPageView).toBe('function');

@@ -1,7 +1,7 @@
 import { supabase, dbLoose } from '@/lib/supabase';
 import { toast } from 'sonner';
 import { logger } from '@/lib/logger';
-import { useAuth } from '@/hooks/useAuth';
+
 
 // =============================================================================
 // MARKETPLACE CONNECTIONS — привязка аккаунтов Ozon, WB, Amazon
@@ -41,7 +41,7 @@ export interface CreateConnectionInput {
 }
 
 export async function getMarketplaceConnections(userId?: string) {
-  const { user } = useAuth();
+  const { data: { user } } = await supabase.auth.getUser();
   const targetUserId = userId || user?.id;
   if (!targetUserId) return [];
 
@@ -60,7 +60,7 @@ export async function getMarketplaceConnections(userId?: string) {
 }
 
 export async function createMarketplaceConnection(input: CreateConnectionInput) {
-  const { user } = useAuth();
+  const { data: { user } } = await supabase.auth.getUser();
   if (!user) {
     toast.error('Необходимо авторизоваться');
     return null;
@@ -157,7 +157,7 @@ export interface CreateMarketplaceProductInput {
 }
 
 export async function getMarketplaceProducts(connectionId?: string) {
-  const { user } = useAuth();
+  const { data: { user } } = await supabase.auth.getUser();
   if (!user) return [];
 
   let query = dbLoose
@@ -180,7 +180,7 @@ export async function getMarketplaceProducts(connectionId?: string) {
 }
 
 export async function createMarketplaceProduct(input: CreateMarketplaceProductInput) {
-  const { user } = useAuth();
+  const { data: { user } } = await supabase.auth.getUser();
   if (!user) {
     toast.error('Необходимо авторизоваться');
     return null;
@@ -306,7 +306,7 @@ export interface MarketplaceOrder {
 }
 
 export async function getMarketplaceOrders(connectionId?: string) {
-  const { user } = useAuth();
+  const { data: { user } } = await supabase.auth.getUser();
   if (!user) return [];
 
   let query = dbLoose
@@ -366,7 +366,7 @@ export interface MarketplaceStock {
 }
 
 export async function getMarketplaceStocks(connectionId?: string) {
-  const { user } = useAuth();
+  const { data: { user } } = await supabase.auth.getUser();
   if (!user) return [];
 
   let query = dbLoose
@@ -389,7 +389,7 @@ export async function getMarketplaceStocks(connectionId?: string) {
 }
 
 export async function updateMarketplaceStock(sku: string, updates: Partial<MarketplaceStock>) {
-  const { user } = useAuth();
+  const { data: { user } } = await supabase.auth.getUser();
   if (!user) return null;
 
   const { data, error } = await dbLoose
@@ -440,7 +440,7 @@ export interface PVZPoint {
 }
 
 export async function getPVZPoints(city?: string, provider?: PVZPoint['provider']) {
-  const { user } = useAuth();
+  const { data: { user } } = await supabase.auth.getUser();
   if (!user) return [];
 
   let query = dbLoose
@@ -467,7 +467,7 @@ export async function getPVZPoints(city?: string, provider?: PVZPoint['provider'
 }
 
 export async function getNearestPVZPoints(lat: number, lng: number, radiusKm = 10) {
-  const { user } = useAuth();
+  const { data: { user } } = await supabase.auth.getUser();
   if (!user) return [];
 
   // Используем PostGIS для поиска ближайших точек
@@ -535,7 +535,7 @@ export interface CalculateDeliveryInput {
 }
 
 export async function getDeliveryTariffs() {
-  const { user } = useAuth();
+  const { data: { user } } = await supabase.auth.getUser();
   if (!user) return [];
 
   const { data, error } = await dbLoose
@@ -586,7 +586,7 @@ export interface Promotion {
 }
 
 export async function getActivePromotions(marketplaceType?: string) {
-  const { user } = useAuth();
+  const { data: { user } } = await supabase.auth.getUser();
   if (!user) return [];
 
   let query = dbLoose
@@ -633,7 +633,7 @@ export async function createPayment(orderId: string, input: {
   currency?: string;
   method: Payment['method'];
 }) {
-  const { user } = useAuth();
+  const { data: { user } } = await supabase.auth.getUser();
   if (!user) {
     toast.error('Необходимо авторизоваться');
     return null;
@@ -683,7 +683,7 @@ export interface UserType {
 }
 
 export async function getUserType(userId?: string) {
-  const { user } = useAuth();
+  const { data: { user } } = await supabase.auth.getUser();
   const targetUserId = userId || user?.id;
   if (!targetUserId) return null;
 
@@ -708,7 +708,7 @@ export async function createUserType(input: {
   kpp?: string;
   documents: string[];
 }) {
-  const { user } = useAuth();
+  const { data: { user } } = await supabase.auth.getUser();
   if (!user) {
     toast.error('Необходимо авторизоваться');
     return null;

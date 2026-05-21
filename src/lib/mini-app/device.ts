@@ -151,7 +151,7 @@ export const deviceOrientation = {
 // ── QR Scanner (jsqr + fallback) ─────────────────────────
 
 let _jsqr: any = null;
-try { _jsqr = require('jsqr'); } catch { /* optional */ }
+try { _jsqr = (await import('jsqr').catch(() => null))?.default ?? null; } catch { /* optional */ }
 
 function decodeQRFromCanvas(canvas: HTMLCanvasElement): string | null {
   const ctx = canvas.getContext('2d');
@@ -253,7 +253,7 @@ export const haptic = {
 
 export async function requestContact(): Promise<ContactPayload | null> {
   try {
-    // @ts-ignore — experimental API
+    // @ts-expect-error — experimental API
     if ((navigator as any).contacts?.select) {
       const contacts = await (navigator as any).contacts.select(['name', 'email', 'tel'], { multiple: false });
       if (contacts && contacts.length > 0) {

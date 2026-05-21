@@ -12,7 +12,7 @@ vi.mock('@/lib/telegram/deepLinks', () => ({
 
 describe('parseLocation', () => {
   it('parses a full URL correctly', async () => {
-    // @ts-ignore
+    // @ts-expect-error -- optional peer dependency
     const { parseLocation } = await import('./router');
     const loc = parseLocation('https://example.com/path/to/page?foo=bar&baz=123#section');
     expect(loc.path).toBe('/path/to/page');
@@ -22,7 +22,7 @@ describe('parseLocation', () => {
   });
 
   it('handles root URL', async () => {
-    // @ts-ignore
+    // @ts-expect-error -- optional peer dependency
     const { parseLocation } = await import('./router');
     const loc = parseLocation('https://example.com/');
     expect(loc.path).toBe('/');
@@ -32,7 +32,7 @@ describe('parseLocation', () => {
 
 describe('handleDeepLink', () => {
   it('parses t.me startapp links', async () => {
-    // @ts-ignore
+    // @ts-expect-error -- optional peer dependency
     const { handleDeepLink } = await import('./router');
     const { parseDeepLink } = await import('@/lib/telegram/deepLinks');
     const parseMock = vi.mocked(parseDeepLink, true);
@@ -54,7 +54,7 @@ describe('handleDeepLink', () => {
   });
 
   it('parses tg:// resolve links', async () => {
-    // @ts-ignore
+    // @ts-expect-error -- optional peer dependency
     const { handleDeepLink } = await import('./router');
     const { parseDeepLink } = await import('@/lib/telegram/deepLinks');
     const parseMock = vi.mocked(parseDeepLink, true);
@@ -74,7 +74,7 @@ describe('handleDeepLink', () => {
   });
 
   it('returns false for invalid URLs', async () => {
-    // @ts-ignore
+    // @ts-expect-error -- optional peer dependency
     const { handleDeepLink } = await import('./router');
     const { parseDeepLink } = await import('@/lib/telegram/deepLinks');
     const parseMock = vi.mocked(parseDeepLink, true);
@@ -91,7 +91,7 @@ describe('handleDeepLink', () => {
 
 describe('navigate', () => {
   it('pushes new route', async () => {
-    // @ts-ignore
+    // @ts-expect-error -- optional peer dependency
     const { navigate } = await import('./router');
     const pushSpy = vi.spyOn(window.history, 'pushState');
     navigate('/test');
@@ -100,7 +100,7 @@ describe('navigate', () => {
   });
 
   it('replaces current route', async () => {
-    // @ts-ignore
+    // @ts-expect-error -- optional peer dependency
     const { navigate } = await import('./router');
     const replaceSpy = vi.spyOn(window.history, 'replaceState');
     navigate('/test', true);
@@ -111,7 +111,7 @@ describe('navigate', () => {
 
 describe('goBack', () => {
   it('calls window.history.back', async () => {
-    // @ts-ignore
+    // @ts-expect-error -- optional peer dependency
     const { goBack } = await import('./router');
     const backSpy = vi.spyOn(window.history, 'back');
     goBack();
