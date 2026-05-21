@@ -147,7 +147,8 @@ export function useMessageReactions(conversationId: string) {
   const isMissingConversationIdError = useCallback((err: unknown) => {
     const e = toErrorLike(err);
     const msg = String(e?.message ?? "");
-    return e?.code === "42703" || msg.includes("message_reactions.conversation_id") || msg.includes("conversation_id does not exist");
+    const status = Number(e?.status ?? 0);
+    return e?.code === "42703" || msg.includes("message_reactions.conversation_id") || msg.includes("conversation_id does not exist") || status === 400;
   }, []);
 
   const isMissingReactionsTableError = useCallback((err: unknown) => {

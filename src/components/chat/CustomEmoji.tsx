@@ -54,6 +54,7 @@ export function CustomEmoji({
         const lottie = await import("lottie-web").catch(() => null);
         if (!lottie) { setError(true); return; }
         if (!containerRef.current) return;
+        if (!src) { setError(true); return; }
 
         lottieInstance = lottie.default.loadAnimation({
           container: containerRef.current,

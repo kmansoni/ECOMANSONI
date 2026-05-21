@@ -52,11 +52,11 @@ export function usePostReminders(): UsePostRemindersReturn {
           remind_at,
           created_at,
           notified,
-          posts!inner (
+          posts (
             id,
             content,
             post_media (media_url, media_type),
-            profiles!inner (
+            profiles (
               username,
               display_name,
               avatar_url

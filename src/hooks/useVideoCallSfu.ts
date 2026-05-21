@@ -178,9 +178,24 @@ function isStatusCompatibilityError(error: unknown): boolean {
     message.includes("status")
   );
 }
+  function isTransientNetworkDbError(error: unknown): boolean {
+    const message = String((error as { message?: unknown } | null)?.message ?? "").toLowerCase();
+    const details = String((error as { details?: unknown } | null)?.details ?? "").toLowerCase();
+    return (
+      message.includes("fetch") ||
+      message.includes("network") ||
+      message.includes("aborted") ||
+      message.includes("timeout") ||
+      message.includes("tempor") ||
+      details.includes("fetch") ||
+      details.includes("network") ||
+      details.includes("aborted")
+    );
+  }
 
 // ---------------------------------------------------------------------------
 // Hook return type
+  const mediaRecoveryInFlightRef = useRef(false);
 // ---------------------------------------------------------------------------
 
 export interface UseVideoCallSfuReturn {
@@ -670,14 +685,22 @@ export function useVideoCallSfu(options: UseVideoCallSfuOptions = {}): UseVideoC
           .eq("id", call.id);
 
         if (fallbackError) {
+          if (isTransientNetworkDbError(fallbackError)) {
+            logger.warn("video_call_sfu.answer_call_db_update_transient", { error: fallbackError });
+          } else {
+            releaseLocalMedia();
+            setStatusSynced("idle");
+            throw new VideoCallStartError("db_answer_update_failed");
+          }
+        }
+      } else {
+        if (isTransientNetworkDbError(answerError)) {
+          logger.warn("video_call_sfu.answer_call_db_update_transient", { error: answerError });
+        } else {
           releaseLocalMedia();
           setStatusSynced("idle");
           throw new VideoCallStartError("db_answer_update_failed");
         }
-      } else {
-        releaseLocalMedia();
-        setStatusSynced("idle");
-        throw new VideoCallStartError("db_answer_update_failed");
       }
     }
 
@@ -690,6 +713,38 @@ export function useVideoCallSfu(options: UseVideoCallSfuOptions = {}): UseVideoC
     logger.info("video_call_sfu.answer_call_connecting", { callId: call.id.slice(0, 8) });
   }, [releaseLocalMedia, setConnectionStateSynced, setStatusSynced, user]);
 
+  useEffect(() => {
+    const call = currentCallRef.current;
+    const currentStatus = statusRef.current;
+    if (!call) return;
+    if (currentStatus !== "calling" && currentStatus !== "connected") return;
+    if (localStreamRef.current) return;
+    if (mediaRecoveryInFlightRef.current) return;
+
+    mediaRecoveryInFlightRef.current = true;
+    const shouldUseVideo = call.call_type === "video";
+
+    void (async () => {
+      try {
+        logger.warn("video_call_sfu.local_media_missing_recovering", {
+          callId: call.id,
+          callType: call.call_type,
+        });
+        const recovered = await acquireLocalMedia(shouldUseVideo);
+        setLocalStream(recovered.stream);
+        setIsAudioOnly(recovered.isAudioOnly);
+        setIsVideoOff(recovered.stream.getVideoTracks().length === 0);
+        logger.info("video_call_sfu.local_media_recovered", {
+          callId: call.id,
+          recoveredAudioOnly: recovered.isAudioOnly,
+        });
+      } catch (error) {
+        logger.error("video_call_sfu.local_media_recovery_failed", { error, callId: call.id });
+      } finally {
+        mediaRecoveryInFlightRef.current = false;
+      }
+    })();
+  }, [currentCall, status]);
   const applyCallRowUpdate = useCallback((updated: VideoCall) => {
     if (!updated || !updated.id) return;
 
@@ -781,7 +836,7 @@ export function useVideoCallSfu(options: UseVideoCallSfuOptions = {}): UseVideoC
           });
         }
       })();
-    }, 1500);
+    }, 5000);
 
     return () => {
       window.clearInterval(pollTimer);
