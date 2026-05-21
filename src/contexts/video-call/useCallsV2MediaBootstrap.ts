@@ -355,6 +355,10 @@ export function useCallsV2MediaBootstrap({
       if (!sfuManagerRef.current) {
         sfuManagerRef.current = new SfuMediaManager({
           requireSenderReceiverAccessForE2ee: CallMediaEncryption.isSupported(),
+          onTransportClosed: (transportId, direction) => {
+            logger.error("[VideoCallContext] ICE restart exhausted — transport permanently closed", { transportId, direction });
+            dispatchFsm("ERROR");
+          },
         });
       }
       const sfuManager = sfuManagerRef.current;
@@ -368,15 +372,18 @@ export function useCallsV2MediaBootstrap({
 
       await sfuManager.loadDevice(routerRtpCapabilities as import("mediasoup-client").types.RtpCapabilities);
 
-      await client.transportCreate({ roomId, direction: "send" });
-      const sendCreated = await client.waitFor(
+      // P0-1 fix: subscribe BEFORE sending transportCreate so we never miss the server event.
+      // acceptRecent:false prevents matching a stale cached event from a previous bootstrap.
+      const sendCreatedPromise = client.waitFor(
         "TRANSPORT_CREATED",
         (frame) => {
           const p = frame.payload as { roomId?: string; direction?: string } | undefined;
           return p?.roomId === roomId && p?.direction === "send";
         },
-        { timeoutMs: 5000, acceptRecent: true }
+        { timeoutMs: 5000 }
       );
+      await client.transportCreate({ roomId, direction: "send" });
+      const sendCreated = await sendCreatedPromise;
       const sendParams = sendCreated.payload as import("@/calls-v2/types").TransportCreatedPayload | undefined;
       if (!isValidTransportCreatedPayload(sendParams)) {
         reportMediaBootstrapFailure(
@@ -433,15 +440,17 @@ export function useCallsV2MediaBootstrap({
       );
       callsWsSendTransportRef.current = sendParams.transportId;
 
-      await client.transportCreate({ roomId, direction: "recv" });
-      const recvCreated = await client.waitFor(
+      // P0-1 fix: same pattern for recv — subscribe before sending.
+      const recvCreatedPromise = client.waitFor(
         "TRANSPORT_CREATED",
         (frame) => {
           const p = frame.payload as { roomId?: string; direction?: string } | undefined;
           return p?.roomId === roomId && p?.direction === "recv";
         },
-        { timeoutMs: 5000, acceptRecent: true }
+        { timeoutMs: 5000 }
       );
+      await client.transportCreate({ roomId, direction: "recv" });
+      const recvCreated = await recvCreatedPromise;
       const recvParams = recvCreated.payload as import("@/calls-v2/types").TransportCreatedPayload | undefined;
       if (!isValidTransportCreatedPayload(recvParams)) {
         reportMediaBootstrapFailure(

@@ -25,6 +25,8 @@ interface RTCConfigE2EE extends RTCConfiguration {
  */
 /** Callback invoked when a transport ICE failure cannot be recovered in-place. */
 export type IceRestartCallback = (transportId: string, direction: 'send' | 'recv') => Promise<void>;
+/** Callback invoked when a transport is permanently closed after exhausting ICE restarts. */
+export type TransportClosedCallback = (transportId: string, direction: 'send' | 'recv') => void;
 
 export class SfuMediaManager {
   private device: Device;
@@ -37,6 +39,8 @@ export class SfuMediaManager {
   private _closed = false;
   /** C-1 fix: callback for ICE restart signaling via wsClient */
   private onIceRestartNeeded: IceRestartCallback | null = null;
+  /** P0-3 fix: callback when transport is permanently closed after exhausting ICE restarts */
+  private onTransportClosed: TransportClosedCallback | null = null;
   /** C-1 fix: pending ICE restart timers keyed by transportId */
   private iceRestartTimers: Map<string, number> = new Map();
   /**
@@ -66,11 +70,12 @@ export class SfuMediaManager {
       ?? ((consumer as unknown as { _rtpReceiver?: RTCRtpReceiver })._rtpReceiver ?? null);
   }
 
-  constructor(options?: { requireSenderReceiverAccessForE2ee?: boolean; onIceRestartNeeded?: IceRestartCallback }) {
+  constructor(options?: { requireSenderReceiverAccessForE2ee?: boolean; onIceRestartNeeded?: IceRestartCallback; onTransportClosed?: TransportClosedCallback }) {
     this.device = new Device();
     // C-2 fix: default changed to TRUE — plaintext media is never acceptable
     this.requireSenderReceiverAccessForE2ee = options?.requireSenderReceiverAccessForE2ee ?? true;
     this.onIceRestartNeeded = options?.onIceRestartNeeded ?? null;
+    this.onTransportClosed = options?.onTransportClosed ?? null;
   }
 
   get closed(): boolean {
@@ -118,6 +123,8 @@ export class SfuMediaManager {
       logger.warn(`[SfuMediaManager] ICE restart exhausted after ${MAX_ATTEMPTS} attempts for ${direction} transport ${transportId}`);
       if (!transport.closed) transport.close();
       this.clearIceRestartTimer(transportId);
+      // P0-3 fix: notify caller so FSM can transition to ERROR
+      this.onTransportClosed?.(transportId, direction);
       return;
     }
 

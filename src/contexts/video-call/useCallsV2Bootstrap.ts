@@ -53,6 +53,7 @@ interface UseCallsV2BootstrapParams {
   producerPeerKeyRef: MutableRefObject<Map<string, string>>;
   peerUserIdByDeviceIdRef: MutableRefObject<Map<string, string>>;
   handleE2eePipeBreakRef: MutableRefObject<((info: PipeBreakInfo) => void) | null>;
+  consumeUnsubTimerRef: MutableRefObject<number | null>;
   isCallStillActiveForBootstrap: (callId: string) => boolean;
 }
 
@@ -83,6 +84,7 @@ export function useCallsV2Bootstrap({
   producerPeerKeyRef,
   peerUserIdByDeviceIdRef,
   handleE2eePipeBreakRef,
+  consumeUnsubTimerRef,
   isCallStillActiveForBootstrap,
 }: UseCallsV2BootstrapParams) {
   const { initializeCallsV2E2ee } = useCallsV2E2eeBootstrap({
@@ -107,7 +109,16 @@ export function useCallsV2Bootstrap({
       logger.warn("[VideoCallContext] calls-v2 disabled: no WS endpoint configured");
       return null;
     }
-    if (callsWsRef.current) return callsWsRef.current;
+    // P2-8 fix: return existing client only if it's actually connected, not in a broken state
+    if (callsWsRef.current) {
+      const state = callsWsRef.current.connectionState;
+      if (state === "connected" || state === "connecting" || state === "reconnecting") {
+        return callsWsRef.current;
+      }
+      // Client is in failed/disconnected state — discard and create a new one
+      callsWsRef.current.close();
+      callsWsRef.current = null;
+    }
 
     const rawEndpoints = CALLS_V2_WS_URLS.length > 0 ? CALLS_V2_WS_URLS : (CALLS_V2_WS_URL ? [CALLS_V2_WS_URL] : []);
     const endpoints = expandWsEndpoints(rawEndpoints);
@@ -138,6 +149,7 @@ export function useCallsV2Bootstrap({
         logger.info("[VideoCallContext] calls-v2 ws-state", { state });
       });
       await client.connect();
+      offState(); // P1-5 fix: unsubscribe after connect — state changes are logged by wsClient internally
       logger.info("[VideoCallContext] calls-v2 connect:ok", { state: client.connectionState });
 
       const { data } = await supabase.auth.getSession();
@@ -420,7 +432,12 @@ export function useCallsV2Bootstrap({
           });
         });
 
-        setTimeout(() => {
+        // P2-10 fix: store timer in ref so closeCallsV2 can cancel it
+        if (consumeUnsubTimerRef.current !== null) {
+          window.clearTimeout(consumeUnsubTimerRef.current);
+        }
+        consumeUnsubTimerRef.current = window.setTimeout(() => {
+          consumeUnsubTimerRef.current = null;
           consumeUnsub();
         }, 10 * 60_000);
 
@@ -478,6 +495,7 @@ export function useCallsV2Bootstrap({
       callsWsRef,
       callsWsRoomRef,
       callsWsSendTransportRef,
+      consumeUnsubTimerRef,
       e2eeEpochRef,
       epochGuardRef,
       ensureCallsV2Connected,

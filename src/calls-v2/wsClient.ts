@@ -282,10 +282,35 @@ export class CallsWsClient {
       try {
         this.setConnectionState('connecting');
         await this.connectWithFailover();
+        // P1-6 fix: replay pending ACKs on the new socket so in-flight messages aren't lost
+        this.replayPendingAcks();
       } catch {
         this.handleDisconnect();
       }
     }, delay);
+  }
+
+  private replayPendingAcks() {
+    for (const [msgId, pending] of this.pendingAcks) {
+      window.clearTimeout(pending.timer);
+      try {
+        this.send(pending.frame);
+        pending.timer = window.setTimeout(() => {
+          const p = this.pendingAcks.get(msgId);
+          if (!p) return;
+          if (p.retries < p.maxRetries) {
+            p.retries += 1;
+            try { this.send(p.frame); } catch { /* handled below */ }
+            return;
+          }
+          this.pendingAcks.delete(msgId);
+          p.reject(new Error(`ACK timeout for replayed message`));
+        }, pending.timeoutMs);
+      } catch {
+        this.pendingAcks.delete(msgId);
+        pending.reject(new Error(`ACK replay send failed`));
+      }
+    }
   }
 
   disconnect(): void {

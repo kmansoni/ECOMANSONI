@@ -133,6 +133,7 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
   const epochGuardRef = useRef<EpochGuard | null>(null);
   const lastCallsBootstrapErrorRef = useRef<Error | null>(null);
   const consumerAddedUnsubRef = useRef<(() => void) | null>(null);
+  const consumeUnsubTimerRef = useRef<number | null>(null);
   const mediaBootstrapBlockedUntilRef = useRef<Map<string, number>>(new Map());
   const mediaBootstrapErrorLogAtRef = useRef<Map<string, number>>(new Map());
   const mediaBootstrapToastShownRef = useRef<Set<string>>(new Set());
@@ -319,6 +320,11 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
       consumerAddedUnsubRef.current();
       consumerAddedUnsubRef.current = null;
     }
+    // P2-10 fix: clear the deferred consumeUnsub timer so it doesn't fire after call ends
+    if (consumeUnsubTimerRef.current !== null) {
+      window.clearTimeout(consumeUnsubTimerRef.current);
+      consumeUnsubTimerRef.current = null;
+    }
     setRemoteMediaStream(null);
     setRemoteScreenStream(null);
     sfuRouterRtpCapabilitiesRef.current = null;
@@ -476,6 +482,7 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
     producerPeerKeyRef,
     peerUserIdByDeviceIdRef,
     handleE2eePipeBreakRef,
+    consumeUnsubTimerRef,
     isCallStillActiveForBootstrap: (callId) => activeCallsV2BootstrapCallIdRef.current === callId,
   });
 
@@ -605,6 +612,37 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
     );
   };
 
+  const bootstrapCallsV2RoomWithRetry = useCallback(async (
+    call: VideoCall & { calls_v2_room_id?: string | null; calls_v2_join_token?: string | null },
+    role: "caller" | "callee",
+    maxAttempts = 3,
+  ): Promise<boolean> => {
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      const ok = await bootstrapCallsV2Room(call, role);
+      if (ok) return true;
+      if (attempt >= maxAttempts) return false;
+
+      logger.warn("[VideoCallContext] calls_v2 bootstrap retry scheduled", {
+        callId: call.id,
+        role,
+        attempt,
+      });
+
+      // P1-7 fix: if WS client is in a broken state, close it so ensureCallsV2Connected
+      // creates a fresh connection on the next attempt instead of reusing a failed one.
+      const ws = callsWsRef.current;
+      if (ws && ws.connectionState !== "connected") {
+        ws.close();
+        callsWsRef.current = null;
+      }
+
+      await new Promise<void>((resolve) => {
+        window.setTimeout(resolve, 1000 * attempt);
+      });
+    }
+    return false;
+  }, [bootstrapCallsV2Room, callsWsRef]);
+
   const answerCall = useCallback(async (call: VideoCall) => {
     const configIssue = getCallsConfigIssue();
     if (configIssue) {
@@ -654,7 +692,37 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
         logger.warn("[VideoCallContext] answerCall room-hints refresh failed", roomHintError);
       }
 
-      const roomBootstrapOk = await bootstrapCallsV2Room(resolvedCall, "callee");
+      // In unstable production networks the caller may persist room hints slightly later.
+      // Give DB a short grace window before concluding "no SFU hints" in sfu_only mode.
+      if (!resolvedCall.calls_v2_room_id) {
+        for (let attempt = 1; attempt <= 4 && !resolvedCall.calls_v2_room_id; attempt++) {
+          await new Promise<void>((resolve) => {
+            window.setTimeout(resolve, 1200 * attempt);
+          });
+          try {
+            const { data: delayedHints } = await supabase
+              .from("video_calls")
+              .select("id, calls_v2_room_id, calls_v2_join_token")
+              .eq("id", call.id)
+              .maybeSingle();
+            if (delayedHints?.calls_v2_room_id) {
+              resolvedCall = {
+                ...resolvedCall,
+                calls_v2_room_id: delayedHints.calls_v2_room_id,
+                calls_v2_join_token: delayedHints.calls_v2_join_token ?? null,
+              };
+              logger.info("[VideoCallContext] answerCall room-hints resolved after retry", {
+                callId: call.id,
+                attempt,
+              });
+            }
+          } catch (retryError) {
+            logger.warn("[VideoCallContext] answerCall delayed room-hints fetch failed", retryError);
+          }
+        }
+      }
+
+      const roomBootstrapOk = await bootstrapCallsV2RoomWithRetry(resolvedCall, "callee");
       if (roomBootstrapOk && callStateRef.current === "bootstrapping") dispatchFsm("BOOTSTRAP_OK");
       if (!roomBootstrapOk) {
         if (activeCallsV2BootstrapCallIdRef.current !== call.id) {
@@ -726,7 +794,7 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
       }
       setIsCallUiActive(false); // Release UI-lock on error
     }
-  }, [answerVideoCall, bootstrapCallsV2Room, clearIncomingCall, endVideoCall,
+  }, [answerVideoCall, bootstrapCallsV2RoomWithRetry, clearIncomingCall, endVideoCall,
     closeCallsV2, releaseMediaWithoutDbUpdate, legacyAnswerVideoCall, dispatchFsm]);
 
   const declineCall = useCallback(async () => {
@@ -836,7 +904,7 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
         }).catch((e) => logger.warn("[VideoCallContext] callInvite WS send failed", e));
       }
       dispatchFsm("BOOTSTRAP_START");
-      const roomBootstrapOk = await bootstrapCallsV2Room(result, "caller");
+      const roomBootstrapOk = await bootstrapCallsV2RoomWithRetry(result, "caller");
       if (roomBootstrapOk && callStateRef.current === "bootstrapping") dispatchFsm("BOOTSTRAP_OK");
       if (!roomBootstrapOk) {
         if (activeCallsV2BootstrapCallIdRef.current !== result.id) {
@@ -886,7 +954,7 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
       }
       return null;
     }
-  }, [user, startVideoCall, bootstrapCallsV2Room, endVideoCall, closeCallsV2,
+  }, [user, startVideoCall, bootstrapCallsV2RoomWithRetry, endVideoCall, closeCallsV2,
     releaseMediaWithoutDbUpdate, dispatchFsm]);
 
   const retryConnection = useCallback(async () => {
