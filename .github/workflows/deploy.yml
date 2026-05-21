@@ -129,6 +129,11 @@ jobs:
           name: dist-${{ github.sha }}
           path: dist/
 
+      - name: Checkout scripts
+        uses: actions/checkout@v4
+        with:
+          sparse-checkout: scripts/
+
       - name: SCP dist → VPS
         uses: appleboy/scp-action@v0.1.7
         with:
@@ -141,6 +146,18 @@ jobs:
           strip_components: 1
           overwrite: true
           rm: true
+
+      - name: SCP scripts → VPS
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.ADMINVPS_HOST }}
+          username: ${{ secrets.ADMINVPS_USER }}
+          key: ${{ secrets.ADMINVPS_SSH_KEY }}
+          port: 22
+          source: "scripts/blue-green-deploy.sh"
+          target: "${{ secrets.ADMINVPS_APP_DIR }}/scripts/"
+          strip_components: 1
+          overwrite: true
 
       - name: Write .env.production on VPS
         uses: appleboy/ssh-action@v0.1.7
