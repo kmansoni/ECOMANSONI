@@ -521,7 +521,6 @@ export function useCallsV2Bootstrap({
       callsWsCallIdRef,
       callsWsRef,
       callsWsRoomRef,
-      consumeUnsubTimerRef,
       e2eeEpochRef,
       epochGuardRef,
       ensureCallsV2Connected,
