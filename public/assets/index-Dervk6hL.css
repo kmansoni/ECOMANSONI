@@ -1,0 +1,5 @@
+/* Compatibility shim for stale cached HTML shells. */
+/* Real CSS is injected by /assets/index-CSQVm3ks.js after it resolves latest index.html. */
+html, body {
+  min-height: 100%;
+}
