@@ -3,6 +3,12 @@
 const SELF_ENTRY_NAME = 'index-CG0j1Im8.js';
 const RECOVERY_FLAG = '__compat_shim_recovered_index_cg0__';
 
+function makeFreshShellUrl() {
+  const shellUrl = new URL('/index.html', window.location.origin);
+  shellUrl.searchParams.set('__entry_probe', String(Date.now()));
+  return shellUrl;
+}
+
 async function forceShellRecovery(reason) {
   try {
     if (sessionStorage.getItem(RECOVERY_FLAG) === '1') {
@@ -30,7 +36,13 @@ async function forceShellRecovery(reason) {
 
 (async function bootstrapFromLatestIndex() {
   try {
-    const response = await fetch('/index.html', { cache: 'no-store' });
+    const response = await fetch(makeFreshShellUrl().toString(), {
+      cache: 'no-store',
+      headers: {
+        'cache-control': 'no-cache, no-store, max-age=0',
+        pragma: 'no-cache',
+      },
+    });
     if (!response.ok) throw new Error('index_html_unavailable');
 
     const html = await response.text();
