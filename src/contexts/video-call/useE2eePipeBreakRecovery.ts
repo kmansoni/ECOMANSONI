@@ -89,7 +89,7 @@ export function useE2eePipeBreakRecovery(
         if (sender) {
           encryption.setupSenderTransform(sender, newProducer.id);
         }
-        if ((track.kind === 'audio' || track.kind === 'video') && localProducerIdsRef.current[track.kind] === trackId) {
+        if (localProducerIdsRef.current[track.kind] === trackId) {
           localProducerIdsRef.current[track.kind] = newProducer.id;
         }
 

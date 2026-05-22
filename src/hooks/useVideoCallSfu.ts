@@ -385,11 +385,10 @@ export function useVideoCallSfu(options: UseVideoCallSfuOptions = {}): UseVideoC
       trackCount: stream?.getTracks().length ?? 0,
     });
     if (hasLiveRemoteTracks) {
-      setStatusSynced((prev) => (prev === "idle" ? prev : "connected"));
       setConnectionStateSynced("connected");
       logger.info("video_call_sfu.connection_promoted_by_remote_tracks", {});
     }
-  }, [setConnectionStateSynced, setStatusSynced]);
+  }, [setConnectionStateSynced]);
 
   const markMediaBootstrapFailed = useCallback((reason = "media_bootstrap_failed", details?: unknown) => {
     logger.error("video_call_sfu.media_bootstrap_failed", { reason, details });
@@ -664,7 +663,7 @@ export function useVideoCallSfu(options: UseVideoCallSfuOptions = {}): UseVideoC
     const answeredCall: VideoCall = { ...call, status: "answered" };
     setCurrentCall(answeredCall);
     mediaBootstrapSignalsRef.current.clear();
-    setStatusSynced("connected");
+    setStatusSynced("calling");
     // Keep call active, but do not report final media connectivity before SFU bootstrap succeeds.
     setConnectionStateSynced("connecting");
     logger.info("video_call_sfu.answer_call_connecting", { callId: call.id.slice(0, 8) });

@@ -16,6 +16,7 @@ interface UseCallsV2E2eeBootstrapParams {
   e2eeEpochRef: MutableRefObject<number>;
   e2eeLeaderDeviceRef: MutableRefObject<string | null>;
   keyPackageNonceRef: MutableRefObject<Set<string>>;
+  keyPackageNonceTimestampsRef: MutableRefObject<Map<string, number>>;
   callKeyExchangeRef: MutableRefObject<CallKeyExchange | null>;
   callMediaEncryptionRef: MutableRefObject<CallMediaEncryption | null>;
   rekeyMachineRef: MutableRefObject<RekeyStateMachine | null>;
@@ -23,6 +24,7 @@ interface UseCallsV2E2eeBootstrapParams {
   producerPeerKeyRef: MutableRefObject<Map<string, string>>;
   peerUserIdByDeviceIdRef: MutableRefObject<Map<string, string>>;
   handleE2eePipeBreakRef: MutableRefObject<((info: PipeBreakInfo) => void) | null>;
+  onE2eeActivated?: () => void;
 }
 
 export function useCallsV2E2eeBootstrap({
@@ -32,6 +34,7 @@ export function useCallsV2E2eeBootstrap({
   e2eeEpochRef,
   e2eeLeaderDeviceRef,
   keyPackageNonceRef,
+  keyPackageNonceTimestampsRef,
   callKeyExchangeRef,
   callMediaEncryptionRef,
   rekeyMachineRef,
@@ -39,6 +42,7 @@ export function useCallsV2E2eeBootstrap({
   producerPeerKeyRef,
   peerUserIdByDeviceIdRef,
   handleE2eePipeBreakRef,
+  onE2eeActivated,
 }: UseCallsV2E2eeBootstrapParams) {
   const { attachCallsV2E2eeSignals } = useCallsV2E2eeSignals({
     user,
@@ -47,12 +51,14 @@ export function useCallsV2E2eeBootstrap({
     e2eeEpochRef,
     e2eeLeaderDeviceRef,
     keyPackageNonceRef,
+    keyPackageNonceTimestampsRef,
     callKeyExchangeRef,
     callMediaEncryptionRef,
     rekeyMachineRef,
     epochGuardRef,
     producerPeerKeyRef,
     peerUserIdByDeviceIdRef,
+    onE2eeActivated,
   });
 
   const initializeCallsV2E2ee = useCallback(async (client: CallsWsClient): Promise<void> => {

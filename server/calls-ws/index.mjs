@@ -1510,7 +1510,7 @@ wss.on("connection", (ws, req) => {
               msgId: uuid(),
               ts: nowMs(),
               payload: {
-                roomId: room.roomId,
+                roomId: pRoomId,
                 participantId: conn.userId,
                 streamAction: "upsert",
                 hasVideo: kind === "video",
@@ -1584,7 +1584,7 @@ wss.on("connection", (ws, req) => {
               msgId: uuid(),
               ts: nowMs(),
               payload: {
-                roomId: room.roomId,
+                roomId: pRoomId,
                 participantId: conn.userId,
                 streamAction: "remove",
                 hasVideo: false,

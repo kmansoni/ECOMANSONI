@@ -128,6 +128,7 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
   const turnIceExpiryRef = useRef<number>(0); // Unix seconds
   const e2eeLeaderDeviceRef = useRef<string | null>(null);
   const keyPackageNonceRef = useRef<Set<string>>(new Set());
+  const keyPackageNonceTimestampsRef = useRef<Map<string, number>>(new Map());
   const callKeyExchangeRef = useRef<CallKeyExchange | null>(null);
   const callMediaEncryptionRef = useRef<CallMediaEncryption | null>(null);
   const rekeyMachineRef = useRef<RekeyStateMachine | null>(null);
@@ -139,9 +140,11 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
   const mediaBootstrapErrorLogAtRef = useRef<Map<string, number>>(new Map());
   const mediaBootstrapToastShownRef = useRef<Set<string>>(new Set());
   const mediaBootstrapRetryAttemptsRef = useRef<Map<string, number>>(new Map());
-  const startCallInFlightRef = useRef(false);
-  const answerCallInFlightRef = useRef(false);
-  const endCallInFlightRef = useRef(false);
+const startCallInFlightRef = useRef(false);
+const answerCallInFlightRef = useRef(false);
+const endCallInFlightRef = useRef(false);
+const mediaBootstrapCompletedRef = useRef<Map<string, boolean>>(new Map());
+const unansweredCallTimerRef = useRef<number | null>(null);
 
 // E2EE pipe break recovery: stored consumer params for re-consume + debounce
    const consumerCreateParamsRef = useRef<Map<string, import('@/calls-v2/types').ConsumedPayload>>(new Map());
@@ -157,6 +160,7 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
    // UI-lock: keeps call UI visible even during transient status changes (permission prompts, etc.)
   const [isCallUiActive, setIsCallUiActive] = useState(false);
   const isCallUiActiveRef = useRef(false);
+  const [isE2eeActive, setIsE2eeActive] = useState(false);
 
   // Profile of the callee shown immediately on the call screen before the call record loads from DB
   const [pendingCalleeProfile, setPendingCalleeProfile] = useState<CalleeProfile | null>(null);
@@ -207,6 +211,13 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
       usingProdSfuDefaults: SHOULD_USE_PROD_SFU_DEFAULTS,
       issue,
     });
+    if (!hasInsertableStreamsSupport()) {
+      logger.warn("[VideoCallContext] Insertable Streams not supported — E2EE media encryption unavailable in this browser");
+      toast.warning("Шифрование недоступно", {
+        description: "Ваш браузер не поддерживает Insertable Streams. Обновите браузер для E2EE-защиты звонков.",
+        duration: 8000,
+      });
+    }
   }, []);
 
   const {
@@ -316,6 +327,10 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
   // ──────────────────────────────────────────────────────────────────────────
 
   const closeCallsV2 = useCallback(() => {
+    if (unansweredCallTimerRef.current) {
+      window.clearTimeout(unansweredCallTimerRef.current);
+      unansweredCallTimerRef.current = null;
+    }
     if (relayMetricsTimerRef.current) {
       window.clearInterval(relayMetricsTimerRef.current);
       relayMetricsTimerRef.current = null;
@@ -365,6 +380,8 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
     callsWsRecvTransportRef.current = null;
     e2eeLeaderDeviceRef.current = null;
     keyPackageNonceRef.current.clear();
+    keyPackageNonceTimestampsRef.current.clear();
+    setIsE2eeActive(false);
     lastCallsBootstrapErrorRef.current = null;
     mediaBootstrapBlockedUntilRef.current.clear();
     mediaBootstrapErrorLogAtRef.current.clear();
@@ -490,6 +507,7 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
     turnIceServersRef,
     e2eeLeaderDeviceRef,
     keyPackageNonceRef,
+    keyPackageNonceTimestampsRef,
     callKeyExchangeRef,
     callMediaEncryptionRef,
     rekeyMachineRef,
@@ -500,42 +518,45 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
     handleE2eePipeBreakRef,
     producerAddedUnsubRef,
     isCallStillActiveForBootstrap: (callId) => activeCallsV2BootstrapCallIdRef.current === callId,
+    onE2eeActivated: () => setIsE2eeActive(true),
   });
 
-  const { rebuildRemoteStream, bootstrapCallsV2Media } = useCallsV2MediaBootstrap({
-    user,
-    ensureCallsV2Connected,
-    callsWsRef,
-    sfuManagerRef,
-    sfuRouterRtpCapabilitiesRef,
-    callsWsCallIdRef,
-    callsWsRoomRef,
-    callsWsMediaRoomRef,
-    callsWsMediaBootstrapInFlightRoomRef,
-    callsWsSendTransportRef,
-    callsWsRecvTransportRef,
-    turnIceServersRef,
-    epochGuardRef,
-    e2eeEpochRef,
-    callKeyExchangeRef,
-    callMediaEncryptionRef,
-    localProducerIdsRef,
-    consumerAddedUnsubRef,
-    consumerCreateParamsRef,
-    producerPeerKeyRef,
-    mediaBootstrapBlockedUntilRef,
-    mediaBootstrapErrorLogAtRef,
-    mediaBootstrapToastShownRef,
-    isScreenSharing,
-    screenStream,
-    setRemoteMediaStream,
-    setRemoteScreenStream,
-    callStateRef,
-    dispatchFsm,
-    isCallConnecting,
-    markMediaBootstrapProgress,
-    markMediaBootstrapFailed,
-});
+   const { rebuildRemoteStream, bootstrapCallsV2Media } = useCallsV2MediaBootstrap({
+     user,
+     ensureCallsV2Connected,
+     callsWsRef,
+     sfuManagerRef,
+     sfuRouterRtpCapabilitiesRef,
+     callsWsCallIdRef,
+     callsWsRoomRef,
+     callsWsMediaRoomRef,
+     callsWsMediaBootstrapInFlightRoomRef,
+     callsWsSendTransportRef,
+     callsWsRecvTransportRef,
+     turnIceServersRef,
+     epochGuardRef,
+     e2eeEpochRef,
+     callKeyExchangeRef,
+     callMediaEncryptionRef,
+     localProducerIdsRef,
+     consumerAddedUnsubRef,
+     consumerCreateParamsRef,
+     producerPeerKeyRef,
+     mediaBootstrapBlockedUntilRef,
+     mediaBootstrapErrorLogAtRef,
+     mediaBootstrapToastShownRef,
+     mediaBootstrapCompletedRef,
+     isScreenSharing,
+     screenStream,
+     setRemoteMediaStream,
+     setRemoteScreenStream,
+     callStateRef,
+     dispatchFsm,
+     isCallConnecting,
+     canPromoteInCall: () => isCallActive(callState) || isCallConnecting(callState),
+     markMediaBootstrapProgress,
+     markMediaBootstrapFailed,
+   });
 
   useE2eePipeBreakRecovery(
     sfuManagerRef,
@@ -565,8 +586,7 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
     },
   });
 
-  // Sync incoming call state - prioritize pendingIncomingCall to avoid flicker
-  // Only show incoming call when we're truly idle AND UI-lock is not active
+  // Sync incoming call state — show incoming call when truly idle without UI-lock
   const activeStatus = legacyEngineActive ? legacyStatus : status;
   const incomingCall = (activeStatus === "idle" && !isCallUiActive) ? pendingIncomingCall : null;
 
@@ -591,11 +611,12 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (legacyEngineActive) return;
     if (connectionState !== "connected") return;
+    if (status !== "connected") return;
     const s = callStateRef.current;
     if (isCallConnecting(s)) {
       dispatchFsm("PROMOTE_IN_CALL");
     }
-  }, [connectionState, legacyEngineActive, dispatchFsm]);
+  }, [connectionState, legacyEngineActive, status, dispatchFsm]);
 
   // ─── FSM drift detection (legacy vs FSM) ───────────────────────────────────
   useEffect(() => {
@@ -666,6 +687,10 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
       return;
     }
     answerCallInFlightRef.current = true;
+    if (unansweredCallTimerRef.current) {
+      window.clearTimeout(unansweredCallTimerRef.current);
+      unansweredCallTimerRef.current = null;
+    }
 
     const configIssue = getCallsConfigIssue();
     if (configIssue) {
@@ -755,7 +780,7 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
       }
 
       const roomBootstrapOk = await bootstrapCallsV2RoomWithRetry(resolvedCall, "callee");
-      if (roomBootstrapOk && callStateRef.current === "bootstrapping") dispatchFsm("BOOTSTRAP_OK");
+      if (roomBootstrapOk && isCallConnecting(callStateRef.current)) dispatchFsm("BOOTSTRAP_OK");
       if (!roomBootstrapOk) {
         if (activeCallsV2BootstrapCallIdRef.current !== call.id) {
           logger.info("[VideoCallContext] answerCall bootstrap result ignored: stale call", { callId: call.id });
@@ -867,6 +892,10 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
       return;
     }
     endCallInFlightRef.current = true;
+    if (unansweredCallTimerRef.current) {
+      window.clearTimeout(unansweredCallTimerRef.current);
+      unansweredCallTimerRef.current = null;
+    }
 
     logger.info("[VideoCallContext] endCall called");
     try {
@@ -945,6 +974,21 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
         return null;
       }
       activeCallsV2BootstrapCallIdRef.current = result.id;
+
+      // Auto-end unanswered outgoing call after 60s
+      if (unansweredCallTimerRef.current) window.clearTimeout(unansweredCallTimerRef.current);
+      unansweredCallTimerRef.current = window.setTimeout(() => {
+        unansweredCallTimerRef.current = null;
+        if (callStateRef.current === "outgoing_ringing" || callStateRef.current === "bootstrapping") {
+          logger.info("[VideoCallContext] Unanswered call timeout — ending call");
+          void endVideoCall("ended").then(() => closeCallsV2());
+          setPendingCalleeProfile(null);
+          setIsCallUiActive(false);
+          dispatchFsm("CALL_END");
+          toast.info("Нет ответа", { duration: 3000 });
+        }
+      }, 60_000);
+
       // B: deliver call.invite via WS relay so caller doesn't need DB polling
       const ws = callsWsRef.current ?? await ensureCallsV2Connected();
       if (ws) {
@@ -1050,57 +1094,58 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
     void bootstrapCallsV2Media(currentCall, localStream);
   }, [currentCall, localStream, bootstrapCallsV2Media, dispatchFsm]);
 
-  useEffect(() => {
-    if (!currentCall || !localStream) return;
+   useEffect(() => {
+     if (!currentCall || !localStream) return;
 
-    if (!mediaBootstrapRetryAttemptsRef.current.has(currentCall.id)) {
-      mediaBootstrapRetryAttemptsRef.current.set(currentCall.id, 0);
-    }
+     if (!mediaBootstrapRetryAttemptsRef.current.has(currentCall.id)) {
+       mediaBootstrapRetryAttemptsRef.current.set(currentCall.id, 0);
+     }
 
-    const retryTimer = window.setInterval(() => {
-      const call = currentCall;
-      const stream = localStream;
-      if (!call || !stream) return;
+     const retryTimer = window.setInterval(() => {
+       const call = currentCall;
+       const stream = localStream;
+       if (!call || !stream) return;
 
-      const currentAttempts = mediaBootstrapRetryAttemptsRef.current.get(call.id) ?? 0;
-      if (currentAttempts >= MEDIA_BOOTSTRAP_MAX_RETRIES) {
-        window.clearInterval(retryTimer);
-        logger.error("[VideoCallContext] calls-v2 media-bootstrap retries exhausted", {
-          callId: call.id,
-          maxRetries: MEDIA_BOOTSTRAP_MAX_RETRIES,
-          wsCallId: callsWsCallIdRef.current,
-          wsRoomId: callsWsRoomRef.current,
-          mediaRoomId: callsWsMediaRoomRef.current,
-        });
-        dispatchFsm("ERROR");
-        void endVideoCall("ended").catch((error) => {
-          logger.warn("[VideoCallContext] endVideoCall failed after media-bootstrap retries exhausted", error);
-        });
-        closeCallsV2();
-        toast.error("Сервер звонков недоступен", {
-          description: "Не удалось инициализировать медиа после нескольких попыток. Попробуйте завершить звонок и начать заново.",
-          duration: 5000,
-        });
-        return;
-      }
+       const currentAttempts = mediaBootstrapRetryAttemptsRef.current.get(call.id) ?? 0;
+       if (currentAttempts >= MEDIA_BOOTSTRAP_MAX_RETRIES) {
+         window.clearInterval(retryTimer);
+         logger.error("[VideoCallContext] calls-v2 media-bootstrap retries exhausted", {
+           callId: call.id,
+           maxRetries: MEDIA_BOOTSTRAP_MAX_RETRIES,
+           wsCallId: callsWsCallIdRef.current,
+           wsRoomId: callsWsRoomRef.current,
+           mediaRoomId: callsWsMediaRoomRef.current,
+         });
+         dispatchFsm("ERROR");
+         void endVideoCall("ended").catch((error) => {
+           logger.warn("[VideoCallContext] endVideoCall failed after media-bootstrap retries exhausted", error);
+         });
+         closeCallsV2();
+         toast.error("Сервер звонков недоступен", {
+           description: "Не удалось инициализировать медиа после нескольких попыток. Попробуйте завершить звонок и начать заново.",
+           duration: 5000,
+         });
+         return;
+       }
 
-      if (callsWsCallIdRef.current !== call.id) return;
-      if (!callsWsRoomRef.current) return;
+       if (callsWsCallIdRef.current !== call.id) return;
+       if (!callsWsRoomRef.current) return;
 
-      if (callsWsMediaRoomRef.current === callsWsRoomRef.current) {
-        mediaBootstrapRetryAttemptsRef.current.delete(call.id);
-        window.clearInterval(retryTimer);
-        return;
-      }
+       // Check if media bootstrap has completed successfully instead of comparing room IDs
+       if (mediaBootstrapCompletedRef.current.get(call.id)) {
+         mediaBootstrapRetryAttemptsRef.current.delete(call.id);
+         window.clearInterval(retryTimer);
+         return;
+       }
 
-      mediaBootstrapRetryAttemptsRef.current.set(call.id, currentAttempts + 1);
-      void bootstrapCallsV2Media(call, stream);
-    }, 2000);
+       mediaBootstrapRetryAttemptsRef.current.set(call.id, currentAttempts + 1);
+       void bootstrapCallsV2Media(call, stream);
+     }, 2000);
 
-    return () => {
-      window.clearInterval(retryTimer);
-    };
-  }, [currentCall, localStream, bootstrapCallsV2Media, dispatchFsm, endVideoCall, closeCallsV2]);
+     return () => {
+       window.clearInterval(retryTimer);
+     };
+   }, [currentCall, localStream, bootstrapCallsV2Media, dispatchFsm, endVideoCall, closeCallsV2]);
 
   useEffect(() => {
     if (legacyEngineActive) return;
@@ -1165,12 +1210,20 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
       const matchesCurrent = currentCall?.id === action.callId;
 
       if ((actionType === "accept" || actionType === "answer") && incomingLike && matchesIncoming) {
-        await answerCall(incomingLike);
+        try {
+          await answerCall(incomingLike);
+        } catch (err) {
+          logger.error("[VideoCallContext] answerCall failed in native handler", err);
+        }
         return;
       }
 
       if ((actionType === "decline" || actionType === "reject") && matchesIncoming) {
-        await declineCall();
+        try {
+          await declineCall();
+        } catch (err) {
+          logger.error("[VideoCallContext] declineCall failed in native handler", err);
+        }
         return;
       }
 
@@ -1228,6 +1281,7 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
     declineCall,
     endCall,
     retryConnection,
+    isE2eeActive,
   }), [
     activeStatus,
     callState,
@@ -1243,6 +1297,7 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
     declineCall,
     endCall,
     retryConnection,
+    isE2eeActive,
   ]);
 
   const mediaValue: VideoCallMediaContextType = useMemo(() => ({

@@ -4,7 +4,7 @@ import { logger } from "@/lib/logger";
 import {
   ChevronLeft,
   Volume2,
-  Headphones,
+  VolumeX,
   Video,
   VideoOff,
   Mic,
@@ -92,23 +92,18 @@ export function VideoCallScreen({
   const audioOutRef = useRef<HTMLAudioElement>(null);
   const remoteScreenRef = useRef<HTMLVideoElement>(null);
   const [callDuration, setCallDuration] = useState(0);
-  const [isSpeakerOn, setIsSpeakerOn] = useState(true);
+  const [isRemoteAudioOn, setIsRemoteAudioOn] = useState(true);
   const [isSelfMain, setIsSelfMain] = useState(true);
 
   useEffect(() => {
     const audioEl = audioOutRef.current;
     if (!audioEl) return;
-    if (isSpeakerOn) {
+    if (isRemoteAudioOn) {
       audioEl.muted = false;
-      if (typeof audioEl.setSinkId === "function") {
-        audioEl.setSinkId("default").catch((err) => {
-          logger.debug("video-call-screen: setSinkId failed", { error: err.message });
-        });
-      }
     } else {
       audioEl.muted = true;
     }
-  }, [isSpeakerOn]);
+  }, [isRemoteAudioOn]);
 
   const shouldPlayRingtone = isCallRinging(callState);
   const isInitiator = call ? call.caller_id === user?.id : false;
@@ -345,8 +340,8 @@ export function VideoCallScreen({
         </div>
 
         <VideoCallControls
-          isSpeakerOn={isSpeakerOn}
-          onToggleSpeaker={() => setIsSpeakerOn(!isSpeakerOn)}
+          isRemoteAudioOn={isRemoteAudioOn}
+          onToggleRemoteAudio={() => setIsRemoteAudioOn(!isRemoteAudioOn)}
           isVideoOff={isVideoOff}
           onToggleVideo={onToggleVideo}
           isMuted={isMuted}
@@ -427,8 +422,8 @@ export function VideoCallScreen({
         <audio ref={audioOutRef} autoPlay playsInline style={{ display: "none" }} />
 
         <VideoCallControls
-          isSpeakerOn={isSpeakerOn}
-          onToggleSpeaker={() => setIsSpeakerOn(!isSpeakerOn)}
+          isRemoteAudioOn={isRemoteAudioOn}
+          onToggleRemoteAudio={() => setIsRemoteAudioOn(!isRemoteAudioOn)}
           isVideoOff={isVideoOff}
           onToggleVideo={onToggleVideo}
           isMuted={isMuted}
@@ -450,8 +445,8 @@ export function VideoCallScreen({
 }
 
 interface VideoCallControlsProps {
-  isSpeakerOn: boolean;
-  onToggleSpeaker: () => void;
+  isRemoteAudioOn: boolean;
+  onToggleRemoteAudio: () => void;
   isVideoOff: boolean;
   onToggleVideo: () => void;
   isMuted: boolean;
@@ -472,7 +467,7 @@ interface VideoCallControlsProps {
 }
 
 function VideoCallControls({
-  isSpeakerOn, onToggleSpeaker,
+  isRemoteAudioOn, onToggleRemoteAudio,
   isVideoOff, onToggleVideo,
   isMuted, onToggleMute,
   onEnd,
@@ -525,10 +520,10 @@ function VideoCallControls({
       )}
       <div className="flex items-center justify-around">
         <GlassControlButton
-          icon={isSpeakerOn ? <Volume2 className="w-6 h-6" /> : <Headphones className="w-6 h-6" />}
-          label={isSpeakerOn ? "Динамик включен" : "Динамик выключен"}
-          isActive={isSpeakerOn}
-          onClick={onToggleSpeaker}
+          icon={isRemoteAudioOn ? <Volume2 className="w-6 h-6" /> : <VolumeX className="w-6 h-6" />}
+          label={isRemoteAudioOn ? "Звук собеседника включен" : "Звук собеседника выключен"}
+          isActive={isRemoteAudioOn}
+          onClick={onToggleRemoteAudio}
         />
         <GlassControlButton
           icon={isVideoOff ? <VideoOff className="w-6 h-6" /> : <Video className="w-6 h-6" />}

@@ -116,7 +116,7 @@ function ParticipantTile({ participant, isPinned, isActiveSpeaker, isFeatured, o
   return (
     <div
       className={cn(
-        "relative flex items-center justify-center rounded-xl overflow-hidden bg-zinc-800 select-none",
+        "group relative flex items-center justify-center rounded-xl overflow-hidden bg-zinc-800 select-none",
         isFeatured ? "col-span-2 row-span-2 min-h-[300px]" : "min-h-[120px]",
         isActiveSpeaker && "ring-2 ring-green-500 ring-offset-1 ring-offset-zinc-900",
       )}

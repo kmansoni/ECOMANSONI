@@ -27,10 +27,12 @@ function toLocalProducerKind(value: string, fallback: LocalProducerKind): LocalP
  */
 export function resolveLocalProducerIdForTrack(input: ResolveLocalProducerIdInput): ResolveLocalProducerIdResult {
   const resolvedKind = toLocalProducerKind(input.trackKind, input.declaredKind);
+  const fallbackKind = input.declaredKind;
 
   const primaryId = input.localProducerIds[resolvedKind];
+  let primaryKind: LocalProducerKind | null = null;
   if (primaryId) {
-    const primaryKind = input.getProducerKind(primaryId);
+    primaryKind = input.getProducerKind(primaryId);
     if (primaryKind === resolvedKind) {
       return {
         producerId: primaryId,
@@ -40,12 +42,11 @@ export function resolveLocalProducerIdForTrack(input: ResolveLocalProducerIdInpu
     }
   }
 
-  const fallbackKind = input.declaredKind;
-  if (fallbackKind !== resolvedKind) {
+  if (fallbackKind !== resolvedKind || primaryKind === null) {
     const fallbackId = input.localProducerIds[fallbackKind];
     if (fallbackId) {
       const fallbackProducerKind = input.getProducerKind(fallbackId);
-      if (fallbackProducerKind === resolvedKind) {
+      if (fallbackProducerKind === fallbackKind || fallbackProducerKind === null) {
         return {
           producerId: fallbackId,
           resolvedKind,

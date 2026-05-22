@@ -147,7 +147,8 @@ describe("useVideoCallSfu", () => {
     const { result } = renderHook(() => useVideoCallSfu());
     mockGetUserMedia(false);
     await act(async () => { await result.current.answerCall(makeIncomingCall("audio")); });
-    expect(result.current.status).toBe("connected");
+    expect(result.current.status).toBe("calling");
+    expect(result.current.currentCall?.status).toBe("answered");
     expect(result.current.connectionState).toBe("connecting");
   });
 
@@ -257,13 +258,14 @@ describe("useVideoCallSfu", () => {
     expect(result.current.status).toBe("calling");
   });
 
-  it("promotes connectionState immediately when connected call receives both bootstrap signals", async () => {
+  it("promotes connectionState when answered call receives remote media after bootstrap", async () => {
     const { useVideoCallSfu } = await import("@/hooks/useVideoCallSfu");
     const { result } = renderHook(() => useVideoCallSfu());
     mockGetUserMedia(false);
 
     await act(async () => { await result.current.answerCall(makeIncomingCall("audio")); });
-    expect(result.current.status).toBe("connected");
+    expect(result.current.status).toBe("calling");
+    expect(result.current.currentCall?.status).toBe("answered");
     expect(result.current.connectionState).toBe("connecting");
 
     act(() => { result.current.markMediaBootstrapProgress("send_transport_created"); });

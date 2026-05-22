@@ -172,7 +172,7 @@ export function extractRouterCapsFromJoinPayload(payload: unknown): RtpCapabilit
   if (!Array.isArray(caps.codecs) || caps.codecs.length === 0) {
     logger.warn("[VideoCallContext] ROOM_JOIN_OK/ROOM_JOINED routerRtpCapabilities received but codecs is empty", {
       hasCodecs: Array.isArray(caps.codecs),
-      codeсsLength: Array.isArray(caps.codecs) ? caps.codecs.length : "n/a",
+      codecsLength: Array.isArray(caps.codecs) ? caps.codecs.length : "n/a",
       hasHeaderExtensions: Array.isArray((caps as Record<string, unknown>).headerExtensions),
     });
     return null;

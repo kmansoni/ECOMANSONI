@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, type MutableRefObject } from "react";
 import { toast } from "sonner";
 import { logger } from "@/lib/logger";
+import { getStableCallsDeviceId } from "@/lib/platform/device";
 import { SfuMediaManager } from "@/calls-v2/sfuMediaManager";
 import { CallMediaEncryption } from "@/calls-v2/callMediaEncryption";
 import type { CallsWsClient } from "@/calls-v2/wsClient";
@@ -43,6 +44,7 @@ interface UseCallsV2MediaBootstrapParams {
   mediaBootstrapBlockedUntilRef: MutableRefObject<Map<string, number>>;
   mediaBootstrapErrorLogAtRef: MutableRefObject<Map<string, number>>;
   mediaBootstrapToastShownRef: MutableRefObject<Set<string>>;
+  mediaBootstrapCompletedRef: MutableRefObject<Map<string, boolean>>;
   isScreenSharing: boolean;
   screenStream: MediaStream | null;
   setRemoteMediaStream: (stream: MediaStream | null) => void;
@@ -50,6 +52,7 @@ interface UseCallsV2MediaBootstrapParams {
   callStateRef: MutableRefObject<CallState>;
   dispatchFsm: (event: CallEvent) => CallState;
   isCallConnecting: (state: CallState) => boolean;
+  canPromoteInCall: () => boolean;
   markMediaBootstrapProgress: (signal: "send_transport_created" | "recv_transport_created") => void;
   markMediaBootstrapFailed: (
     reason: string,
@@ -81,6 +84,7 @@ export function useCallsV2MediaBootstrap({
   mediaBootstrapBlockedUntilRef,
   mediaBootstrapErrorLogAtRef,
   mediaBootstrapToastShownRef,
+  mediaBootstrapCompletedRef,
   isScreenSharing,
   screenStream,
   setRemoteMediaStream,
@@ -88,6 +92,7 @@ export function useCallsV2MediaBootstrap({
   callStateRef,
   dispatchFsm,
   isCallConnecting,
+  canPromoteInCall,
   markMediaBootstrapProgress,
   markMediaBootstrapFailed,
 }: UseCallsV2MediaBootstrapParams) {
@@ -119,11 +124,18 @@ export function useCallsV2MediaBootstrap({
     const screenVideoTrack = videoTracks.find((track) => manager.getRemoteTrackSource(track) === "screen") ?? null;
     const primaryVideoTrack = videoTracks.find((track) => track !== screenVideoTrack) ?? null;
     const primaryTracks = primaryVideoTrack ? [...audioTracks, primaryVideoTrack] : [...audioTracks];
+    const state = callStateRef.current;
 
     setRemoteMediaStream(primaryTracks.length > 0 ? new MediaStream(primaryTracks) : null);
     setRemoteScreenStream(screenVideoTrack ? new MediaStream([screenVideoTrack]) : null);
 
-    const state = callStateRef.current;
+    if (!canPromoteInCall()) {
+      logger.debug("[VideoCallContext] rebuildRemoteStream: promotion deferred until call status is connected", {
+        state,
+      });
+      return;
+    }
+
     if (state === "media_ready") {
       dispatchFsm("REMOTE_MEDIA_READY");
       return;
@@ -131,7 +143,7 @@ export function useCallsV2MediaBootstrap({
     if (isCallConnecting(state)) {
       dispatchFsm("PROMOTE_IN_CALL");
     }
-  }, [callStateRef, dispatchFsm, isCallConnecting, setRemoteMediaStream, setRemoteScreenStream, sfuManagerRef]);
+  }, [callStateRef, canPromoteInCall, dispatchFsm, isCallConnecting, setRemoteMediaStream, setRemoteScreenStream, sfuManagerRef]);
 
   const screenShareProducerIdsRef = useRef<string[]>([]);
 
@@ -524,6 +536,31 @@ export function useCallsV2MediaBootstrap({
         const p = frame.payload as import("@/calls-v2/types").ConsumedPayload | undefined;
         if (!p || p.roomId !== roomId) return;
 
+        const localDeviceId = getStableCallsDeviceId();
+        const localProducerIds = localProducerIdsRef.current;
+        const isLocalProducer =
+          p.producerId === localProducerIds.audio
+          || p.producerId === localProducerIds.video
+          || screenShareProducerIdsRef.current.includes(p.producerId);
+
+        const rawPeerId = typeof p.peerId === "string" ? p.peerId : "";
+        const peerSep = rawPeerId.indexOf(":");
+        const peerUserId = peerSep > 0 ? rawPeerId.slice(0, peerSep) : rawPeerId;
+        const peerDeviceId = peerSep > 0 ? rawPeerId.slice(peerSep + 1) : "";
+        const isSelfPeer = !!user?.id && peerUserId === user.id && (!peerDeviceId || peerDeviceId === localDeviceId);
+
+        if (isLocalProducer || isSelfPeer) {
+          logger.warn("[VideoCallContext] skip self-consumer payload", {
+            roomId,
+            consumerId: p.consumerId,
+            producerId: p.producerId,
+            peerId: p.peerId,
+            isLocalProducer,
+            isSelfPeer,
+          });
+          return;
+        }
+
         if (typeof p.peerId === "string" && p.peerId.length > 0) {
           producerPeerKeyRef.current.set(p.producerId, p.peerId);
         }
@@ -655,15 +692,19 @@ hasEncryption: enc?.hasOutboundKey() ?? false,
       mediaBootstrapBlockedUntilRef.current.delete(roomId);
       mediaBootstrapErrorLogAtRef.current.delete(roomId);
       mediaBootstrapToastShownRef.current.delete(roomId);
-      logger.info("[VideoCallContext] calls-v2 media-bootstrap:done", { roomId, trackCount: tracks.length });
-    } catch (err) {
-      logger.error("[VideoCallContext] calls-v2 media bootstrap failed", err);
-      reportMediaBootstrapFailure(roomId, callId, err);
-    } finally {
-      if (callsWsMediaBootstrapInFlightRoomRef.current === roomId) {
-        callsWsMediaBootstrapInFlightRoomRef.current = null;
-      }
-    }
+       logger.info("[VideoCallContext] calls-v2 media-bootstrap:done", { roomId, trackCount: tracks.length });
+       // Mark media bootstrap as completed for this call
+       if (user) {
+         mediaBootstrapCompletedRef.current.set(call.id, true);
+       }
+     } catch (err) {
+       logger.error("[VideoCallContext] calls-v2 media bootstrap failed", err);
+       reportMediaBootstrapFailure(roomId, callId, err);
+     } finally {
+       if (callsWsMediaBootstrapInFlightRoomRef.current === roomId) {
+         callsWsMediaBootstrapInFlightRoomRef.current = null;
+       }
+     }
   }, [
     callKeyExchangeRef,
     callMediaEncryptionRef,

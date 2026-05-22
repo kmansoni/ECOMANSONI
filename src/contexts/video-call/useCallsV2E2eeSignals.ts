@@ -15,12 +15,14 @@ interface UseCallsV2E2eeSignalsParams {
   e2eeEpochRef: { current: number };
   e2eeLeaderDeviceRef: { current: string | null };
   keyPackageNonceRef: { current: Set<string> };
+  keyPackageNonceTimestampsRef: { current: Map<string, number> };
   callKeyExchangeRef: { current: CallKeyExchange | null };
   callMediaEncryptionRef: { current: CallMediaEncryption | null };
   rekeyMachineRef: { current: RekeyStateMachine | null };
   epochGuardRef: { current: EpochGuard | null };
   producerPeerKeyRef: { current: Map<string, string> };
   peerUserIdByDeviceIdRef: { current: Map<string, string> };
+  onE2eeActivated?: () => void;
 }
 
 export function useCallsV2E2eeSignals({
@@ -30,15 +32,32 @@ export function useCallsV2E2eeSignals({
   e2eeEpochRef,
   e2eeLeaderDeviceRef,
   keyPackageNonceRef,
+  keyPackageNonceTimestampsRef,
   callKeyExchangeRef,
   callMediaEncryptionRef,
   rekeyMachineRef,
   epochGuardRef,
   producerPeerKeyRef,
   peerUserIdByDeviceIdRef,
+  onE2eeActivated,
 }: UseCallsV2E2eeSignalsParams) {
   const attachedSignalsClientRef = useRef<CallsWsClient | null>(null);
   const detachSignalsRef = useRef<(() => void) | null>(null);
+
+  // TTL = 5 min; evict expired nonces to prevent unbounded growth
+  const NONCE_TTL_MS = 5 * 60 * 1000;
+  const addNonce = useCallback((nonce: string) => {
+    const now = Date.now();
+    keyPackageNonceRef.current.add(nonce);
+    keyPackageNonceTimestampsRef.current.set(nonce, now);
+    // Evict expired entries
+    for (const [key, ts] of keyPackageNonceTimestampsRef.current) {
+      if (now - ts > NONCE_TTL_MS) {
+        keyPackageNonceRef.current.delete(key);
+        keyPackageNonceTimestampsRef.current.delete(key);
+      }
+    }
+  }, [keyPackageNonceRef, keyPackageNonceTimestampsRef]);
 
   const base64ToBytes = useCallback((b64: string): Uint8Array => {
     return Uint8Array.from(atob(b64), (char) => char.charCodeAt(0));
@@ -184,11 +203,7 @@ export function useCallsV2E2eeSignals({
 
       const nonce = `${roomId}:${epoch}:${myDeviceId}`;
       if (keyPackageNonceRef.current.has(nonce)) return;
-      keyPackageNonceRef.current.add(nonce);
-      if (keyPackageNonceRef.current.size > 2000) {
-        const keep = Array.from(keyPackageNonceRef.current).slice(-1000);
-        keyPackageNonceRef.current = new Set(keep);
-      }
+      addNonce(nonce);
 
       const keyExchange = callKeyExchangeRef.current;
       const mediaEncryption = callMediaEncryptionRef.current;
@@ -404,13 +419,7 @@ export function useCallsV2E2eeSignals({
                 });
                 return;
               }
-              keyPackageNonceRef.current.add(replayNonceKey);
-              if (keyPackageNonceRef.current.size > 2000) {
-                const keep = Array.from(keyPackageNonceRef.current).slice(-1000);
-                keyPackageNonceRef.current = new Set(keep);
-              }
-
-              const leaderDeviceId = e2eeLeaderDeviceRef.current;
+              addNonce(replayNonceKey);
               if (leaderDeviceId !== myDeviceId || !senderDeviceId) {
                 return;
               }
@@ -539,11 +548,7 @@ export function useCallsV2E2eeSignals({
                 });
                 return;
               }
-              keyPackageNonceRef.current.add(semanticReplayKey);
-              if (keyPackageNonceRef.current.size > 2000) {
-                const keep = Array.from(keyPackageNonceRef.current).slice(-1000);
-                keyPackageNonceRef.current = new Set(keep);
-              }
+              addNonce(semanticReplayKey);
             }
 
             let keyExchangeSuccess = false;
@@ -602,6 +607,7 @@ export function useCallsV2E2eeSignals({
         e2eeEpochRef.current = nextEpoch;
         rekeyMachineRef.current?.activateEpoch(nextEpoch);
         epochGuardRef.current?.markE2eeReady(nextEpoch);
+        onE2eeActivated?.();
         const activeRoomId = callsWsRoomRef.current;
         if (activeRoomId) {
           void client.e2eeReady({ roomId: activeRoomId, epoch: nextEpoch }).catch((err) => {
@@ -679,11 +685,7 @@ export function useCallsV2E2eeSignals({
           });
           return;
         }
-        keyPackageNonceRef.current.add(semanticReplayKey);
-        if (keyPackageNonceRef.current.size > 2000) {
-          const keep = Array.from(keyPackageNonceRef.current).slice(-1000);
-          keyPackageNonceRef.current = new Set(keep);
-        }
+        addNonce(semanticReplayKey);
 
         const machine = rekeyMachineRef.current;
         const peerUserId = peerUserIdByDeviceIdRef.current.get(fromDeviceId);
@@ -725,6 +727,7 @@ export function useCallsV2E2eeSignals({
     };
     attachedSignalsClientRef.current = client;
   }, [
+    addNonce,
     attachedSignalsClientRef,
     callKeyExchangeRef,
     callMediaEncryptionRef,
@@ -736,6 +739,7 @@ export function useCallsV2E2eeSignals({
     deriveSenderKeyId,
     keyPackageNonceRef,
     lastSnapshotRoomVersionRef,
+    onE2eeActivated,
     peerUserIdByDeviceIdRef,
     resolvePeerIdentity,
     rekeyMachineRef,

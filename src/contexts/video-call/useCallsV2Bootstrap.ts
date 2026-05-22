@@ -45,6 +45,7 @@ interface UseCallsV2BootstrapParams {
   turnIceServersRef: MutableRefObject<RTCIceServer[] | null>;
   e2eeLeaderDeviceRef: MutableRefObject<string | null>;
   keyPackageNonceRef: MutableRefObject<Set<string>>;
+  keyPackageNonceTimestampsRef: MutableRefObject<Map<string, number>>;
   callKeyExchangeRef: MutableRefObject<CallKeyExchange | null>;
   callMediaEncryptionRef: MutableRefObject<CallMediaEncryption | null>;
   rekeyMachineRef: MutableRefObject<RekeyStateMachine | null>;
@@ -55,6 +56,7 @@ interface UseCallsV2BootstrapParams {
   handleE2eePipeBreakRef: MutableRefObject<((info: PipeBreakInfo) => void) | null>;
   producerAddedUnsubRef: MutableRefObject<(() => void) | null>;
   isCallStillActiveForBootstrap: (callId: string) => boolean;
+  onE2eeActivated?: () => void;
 }
 
 export function useCallsV2Bootstrap({
@@ -76,6 +78,7 @@ export function useCallsV2Bootstrap({
   turnIceServersRef,
   e2eeLeaderDeviceRef,
   keyPackageNonceRef,
+  keyPackageNonceTimestampsRef,
   callKeyExchangeRef,
   callMediaEncryptionRef,
   rekeyMachineRef,
@@ -86,6 +89,7 @@ export function useCallsV2Bootstrap({
   handleE2eePipeBreakRef,
   producerAddedUnsubRef,
   isCallStillActiveForBootstrap,
+  onE2eeActivated,
 }: UseCallsV2BootstrapParams) {
   const { initializeCallsV2E2ee } = useCallsV2E2eeBootstrap({
     user,
@@ -94,6 +98,7 @@ export function useCallsV2Bootstrap({
     e2eeEpochRef,
     e2eeLeaderDeviceRef,
     keyPackageNonceRef,
+    keyPackageNonceTimestampsRef,
     callKeyExchangeRef,
     callMediaEncryptionRef,
     rekeyMachineRef,
@@ -101,6 +106,7 @@ export function useCallsV2Bootstrap({
     producerPeerKeyRef,
     peerUserIdByDeviceIdRef,
     handleE2eePipeBreakRef,
+    onE2eeActivated,
   });
 
   const ensureCallsV2Connected = useCallback(async (): Promise<CallsWsClient | null> => {
@@ -238,12 +244,12 @@ export function useCallsV2Bootstrap({
         logger.info("[VideoCallContext] WS call.invite received", { callId: callId.slice(0, 8) });
         setPendingIncomingCall((prev) => {
           if (prev?.id === syntheticCall.id) return prev;
+          // Different or no previous call - accept the new one
           if (prev) {
-            logger.warn("[VideoCallContext] WS call.invite ignored: pending call already set", {
+            logger.warn("[VideoCallContext] WS call.invite replacing pending call", {
               existingCallId: prev.id,
               incomingCallId: syntheticCall.id,
             });
-            return prev;
           }
           return syntheticCall;
         });
@@ -450,6 +456,16 @@ export function useCallsV2Bootstrap({
           if (!producerId) return;
 
           const peerDeviceId = typeof payload.peerDeviceId === "string" ? payload.peerDeviceId : "";
+          const localDeviceId = getStableCallsDeviceId();
+          if (peerDeviceId && peerDeviceId === localDeviceId) {
+            logger.debug("[VideoCallContext] calls-v2 consume skipped for local producer", {
+              roomId,
+              producerId,
+              peerDeviceId,
+            });
+            return;
+          }
+
           const peerUserId = peerDeviceId ? peerUserIdByDeviceIdRef.current.get(peerDeviceId) : "";
           if (peerUserId && peerDeviceId) {
             producerPeerKeyRef.current.set(producerId, `${peerUserId}:${peerDeviceId}`);
