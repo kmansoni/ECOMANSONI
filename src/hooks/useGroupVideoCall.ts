@@ -19,6 +19,7 @@ import { useState, useRef, useCallback, useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { logger } from "@/lib/logger";
+import { SfuMediaManager } from "@/calls-v2/sfuMediaManager";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -141,30 +142,259 @@ export function useGroupVideoCall(roomId: string) {
   });
 
   const wsRef = useRef<WebSocket | null>(null);
+  const sfuManagerRef = useRef<SfuMediaManager | null>(null);
+  const localProducerIdsRef = useRef<{ audio: string | null; video: string | null }>({ audio: null, video: null });
+  const routerCapsRef = useRef<Record<string, unknown> | null>(null);
+  const pendingSignalWaitersRef = useRef<Array<{
+    type: string;
+    timeoutId: ReturnType<typeof setTimeout>;
+    predicate: (payload: Record<string, unknown>, parsed: Record<string, unknown>) => boolean;
+    resolve: (value: { payload: Record<string, unknown>; parsed: Record<string, unknown> }) => void;
+    reject: (reason?: unknown) => void;
+  }>>([]);
   const localStreamRef = useRef<MediaStream | null>(null);
   const screenStreamRef = useRef<MediaStream | null>(null);
   const vadRef = useRef<VoiceActivityDetector | null>(null);
   const durationTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const startTimeRef = useRef<number>(0);
   const realtimeChannelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
+  const manualWsCloseRef = useRef(false);
+  const wsSeqRef = useRef(1);
+  const wsDeviceIdRef = useRef<string>(`grp_${crypto.randomUUID().slice(0, 8)}`);
+
+  const rejectPendingSignalWaiters = useCallback((reason: string) => {
+    const waiters = pendingSignalWaitersRef.current;
+    pendingSignalWaitersRef.current = [];
+    for (const waiter of waiters) {
+      window.clearTimeout(waiter.timeoutId);
+      waiter.reject(new Error(reason));
+    }
+  }, []);
+
+  const waitForSignal = useCallback((
+    type: string,
+    predicate: (payload: Record<string, unknown>, parsed: Record<string, unknown>) => boolean,
+    timeoutMs = 5000,
+  ) => {
+    return new Promise<{ payload: Record<string, unknown>; parsed: Record<string, unknown> }>((resolve, reject) => {
+      const timeoutId = window.setTimeout(() => {
+        pendingSignalWaitersRef.current = pendingSignalWaitersRef.current.filter((entry) => entry !== waiter);
+        reject(new Error(`Timeout waiting for ${type}`));
+      }, timeoutMs);
+
+      const waiter = {
+        type,
+        timeoutId,
+        predicate,
+        resolve,
+        reject,
+      };
+      pendingSignalWaitersRef.current.push(waiter);
+    });
+  }, []);
+
+  const resolveSignalWaiters = useCallback((type: string, payload: Record<string, unknown>, parsed: Record<string, unknown>) => {
+    if (pendingSignalWaitersRef.current.length === 0) return;
+
+    const remaining: typeof pendingSignalWaitersRef.current = [];
+    for (const waiter of pendingSignalWaitersRef.current) {
+      if (waiter.type !== type) {
+        remaining.push(waiter);
+        continue;
+      }
+      if (!waiter.predicate(payload, parsed)) {
+        remaining.push(waiter);
+        continue;
+      }
+      window.clearTimeout(waiter.timeoutId);
+      waiter.resolve({ payload, parsed });
+    }
+    pendingSignalWaitersRef.current = remaining;
+  }, []);
+
+  const extractRouterCaps = useCallback((payload: Record<string, unknown>): Record<string, unknown> | null => {
+    const directCaps = payload.routerRtpCapabilities;
+    if (directCaps && typeof directCaps === "object") {
+      const codecs = (directCaps as { codecs?: unknown }).codecs;
+      if (Array.isArray(codecs) && codecs.length > 0) return directCaps as Record<string, unknown>;
+    }
+
+    const mediasoup = payload.mediasoup;
+    if (mediasoup && typeof mediasoup === "object") {
+      const nestedCaps = (mediasoup as { routerRtpCapabilities?: unknown }).routerRtpCapabilities;
+      if (nestedCaps && typeof nestedCaps === "object") {
+        const codecs = (nestedCaps as { codecs?: unknown }).codecs;
+        if (Array.isArray(codecs) && codecs.length > 0) return nestedCaps as Record<string, unknown>;
+      }
+    }
+
+    return null;
+  }, []);
+
+  const upsertRemoteTrack = useCallback((participantId: string, track: MediaStreamTrack) => {
+    setState((s) => {
+      const existing = s.participants.find((p) => p.id === participantId) ?? null;
+      const baseStream = existing?.stream ?? new MediaStream();
+
+      const clonedTrack = track.clone();
+      const nextStream = new MediaStream(baseStream.getTracks());
+      if (track.kind === "audio") {
+        nextStream.getAudioTracks().forEach((t) => nextStream.removeTrack(t));
+      } else if (track.kind === "video") {
+        nextStream.getVideoTracks().forEach((t) => nextStream.removeTrack(t));
+      }
+      nextStream.addTrack(clonedTrack);
+
+      const nextParticipant: Participant = existing
+        ? {
+            ...existing,
+            stream: nextStream,
+            isCameraOff: track.kind === "video" ? false : existing.isCameraOff,
+          }
+        : {
+            id: participantId,
+            displayName: "Участник",
+            avatarUrl: null,
+            stream: nextStream,
+            isMuted: false,
+            isCameraOff: track.kind === "video" ? false : true,
+            isScreenSharing: false,
+            isHandRaised: false,
+            isSpeaking: false,
+          };
+
+      return {
+        ...s,
+        participants: existing
+          ? s.participants.map((p) => (p.id === participantId ? nextParticipant : p))
+          : [...s.participants, nextParticipant],
+      };
+    });
+  }, []);
+
+  const bootstrapSfuMedia = useCallback(async (stream: MediaStream) => {
+    // Vitest/jsdom и старые webview не имеют WebRTC-транспорта для mediasoup.
+    if (typeof RTCPeerConnection === "undefined") {
+      logger.info("group_call.sfu_media_bootstrap_skipped_no_webrtc");
+      return;
+    }
+    if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
+
+    const routerCaps = routerCapsRef.current;
+    if (!routerCaps) {
+      logger.warn("group_call.sfu_media_bootstrap_skipped_missing_router_caps", { roomId });
+      return;
+    }
+
+    const manager = new SfuMediaManager();
+    sfuManagerRef.current = manager;
+
+    await manager.loadDevice(routerCaps as import("mediasoup-client").types.RtpCapabilities);
+
+    const sendCreatedPromise = waitForSignal(
+      "TRANSPORT_CREATED",
+      (payload) => payload.roomId === roomId && payload.direction === "send",
+      6000,
+    );
+    sendSignal("TRANSPORT_CREATE", { direction: "send" });
+    const { payload: sendPayload } = await sendCreatedPromise;
+
+    const sendTransportId = typeof sendPayload.transportId === "string" ? sendPayload.transportId : "";
+    if (!sendTransportId) {
+      throw new Error("TRANSPORT_CREATED(send) without transportId");
+    }
+
+    manager.createSendTransport(
+      {
+        id: sendTransportId,
+        iceParameters: sendPayload.iceParameters as import("mediasoup-client").types.IceParameters,
+        iceCandidates: (sendPayload.iceCandidates as import("mediasoup-client").types.IceCandidate[]) ?? [],
+        dtlsParameters: sendPayload.dtlsParameters as import("mediasoup-client").types.DtlsParameters,
+      },
+      async (dtlsParameters) => {
+        sendSignal("TRANSPORT_CONNECT", {
+          transportId: sendTransportId,
+          dtlsParameters,
+        });
+      },
+      async ({ kind, rtpParameters, appData }) => {
+        const producedPromise = waitForSignal(
+          "PRODUCED",
+          (payload) => payload.roomId === roomId && typeof payload.producerId === "string",
+          6000,
+        );
+        sendSignal("PRODUCE", {
+          transportId: sendTransportId,
+          kind,
+          rtpParameters,
+          appData,
+        });
+        const { payload } = await producedPromise;
+        return payload.producerId as string;
+      },
+    );
+
+    const recvCreatedPromise = waitForSignal(
+      "TRANSPORT_CREATED",
+      (payload) => payload.roomId === roomId && payload.direction === "recv",
+      6000,
+    );
+    sendSignal("TRANSPORT_CREATE", { direction: "recv" });
+    const { payload: recvPayload } = await recvCreatedPromise;
+
+    const recvTransportId = typeof recvPayload.transportId === "string" ? recvPayload.transportId : "";
+    if (!recvTransportId) {
+      throw new Error("TRANSPORT_CREATED(recv) without transportId");
+    }
+
+    manager.createRecvTransport(
+      {
+        id: recvTransportId,
+        iceParameters: recvPayload.iceParameters as import("mediasoup-client").types.IceParameters,
+        iceCandidates: (recvPayload.iceCandidates as import("mediasoup-client").types.IceCandidate[]) ?? [],
+        dtlsParameters: recvPayload.dtlsParameters as import("mediasoup-client").types.DtlsParameters,
+      },
+      async (dtlsParameters) => {
+        sendSignal("TRANSPORT_CONNECT", {
+          transportId: recvTransportId,
+          dtlsParameters,
+        });
+      },
+    );
+
+    for (const track of stream.getTracks()) {
+      if (track.readyState !== "live") continue;
+      const source = track.kind === "video" ? "camera" : "microphone";
+      const producer = await manager.produce(track, { source, trackId: track.id });
+      if (track.kind === "audio") localProducerIdsRef.current.audio = producer.id;
+      if (track.kind === "video") localProducerIdsRef.current.video = producer.id;
+    }
+  }, [roomId, waitForSignal]);
 
   // ---------------------------------------------------------------------------
   // Signaling helpers
   // ---------------------------------------------------------------------------
 
-  /** Отправить сообщение на SFU WS с nonce для replay protection */
-  const sendSignal = useCallback((type: string, payload: Record<string, unknown>) => {
-    if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
+  /** Отправить сообщение в calls-v2 envelope v1 (seq/msgId/ts). */
+  const sendSignal = useCallback((
+    type: string,
+    payload: Record<string, unknown>,
+    options?: { includeRoomId?: boolean }
+  ): string | null => {
+    if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return null;
+    const includeRoomId = options?.includeRoomId !== false;
+    const msgId = crypto.randomUUID();
     const msg = JSON.stringify({
+      v: 1,
       type,
-      roomId,
-      senderId: user?.id,
-      nonce: crypto.randomUUID(),
+      msgId,
       ts: Date.now(),
-      ...payload,
+      seq: wsSeqRef.current++,
+      payload: includeRoomId ? { roomId, ...payload } : payload,
     });
     wsRef.current.send(msg);
-  }, [roomId, user?.id]);
+    return msgId;
+  }, [roomId]);
 
   // ---------------------------------------------------------------------------
   // Presence (raise hand, mute state) через Supabase Realtime
@@ -183,6 +413,8 @@ export function useGroupVideoCall(roomId: string) {
     if (!user?.id || state.isJoined || state.isJoining) return;
 
     setState(s => ({ ...s, isJoining: true, error: null }));
+    manualWsCloseRef.current = false;
+    let pendingRealtimeChannel: ReturnType<typeof supabase.channel> | null = null;
 
     try {
       // 1. Получить локальный медиа-поток
@@ -205,7 +437,7 @@ export function useGroupVideoCall(roomId: string) {
         const audioStream = new MediaStream(audioTracks);
         vadRef.current = new VoiceActivityDetector(audioStream, (speaking) => {
           // Сигналим другим участникам через WS
-          sendSignal("speaking", { speaking });
+          sendSignal("SPEAKING", { speaking });
         });
         vadRef.current.start();
       }
@@ -214,6 +446,7 @@ export function useGroupVideoCall(roomId: string) {
       const channel = supabase.channel(`group-call:${roomId}`, {
         config: { presence: { key: user.id } },
       });
+      pendingRealtimeChannel = channel;
 
       channel
         .on("presence", { event: "sync" }, () => {
@@ -283,39 +516,273 @@ export function useGroupVideoCall(roomId: string) {
       realtimeChannelRef.current = channel;
 
       // 4. WS подключение к SFU
-      // В реальном деплое URL берётся из env VITE_SFU_WS_URL
-      const sfuUrl = import.meta.env.VITE_SFU_WS_URL ?? "wss://sfu.example.com";
+      // В проде endpoint должен приходить из env; для localhost разрешаем auto-derived dev URL.
+      const configuredSfuUrl = String(import.meta.env.VITE_SFU_WS_URL ?? "").trim();
+      const isLocalDevHost =
+        typeof window !== "undefined" &&
+        (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1");
+      const derivedDevUrl =
+        typeof window !== "undefined"
+          ? `${window.location.protocol === "https:" ? "wss" : "ws"}://${window.location.host}`
+          : "";
+      const sfuUrl = configuredSfuUrl || (isLocalDevHost ? derivedDevUrl : "");
+      if (!sfuUrl) {
+        throw new Error("VITE_SFU_WS_URL is required for group calls outside localhost dev");
+      }
+
       const { data: sessionData } = await supabase.auth.getSession();
       const token = sessionData.session?.access_token ?? "";
+      if (!token) {
+        throw new Error("Отсутствует токен сессии для подключения к серверу звонков");
+      }
+
       const ws = new WebSocket(`${sfuUrl}/calls-v2?room=${roomId}&token=${encodeURIComponent(token)}`);
+      wsRef.current = ws;
+      wsSeqRef.current = 1;
+      routerCapsRef.current = null;
+      let roomJoinMsgId: string | null = null;
+      let joinResolved = false;
+
+      let joinResolve: (() => void) | null = null;
+      let joinReject: ((reason?: unknown) => void) | null = null;
+      const joinReadyPromise = new Promise<void>((resolve, reject) => {
+        joinResolve = resolve;
+        joinReject = reject;
+      });
+
+      const resolveJoin = () => {
+        if (joinResolved) return;
+        joinResolved = true;
+        joinResolve?.();
+      };
+
+      const rejectJoin = (message: string) => {
+        if (joinResolved) return;
+        joinResolved = true;
+        joinReject?.(new Error(message));
+      };
 
       ws.onopen = () => {
-        sendSignal("join-room", { roomId });
+        sendSignal("HELLO", {
+          client: {
+            platform: "web",
+            appVersion: "group-call",
+            deviceId: wsDeviceIdRef.current,
+          },
+        }, { includeRoomId: false });
+        sendSignal("AUTH", { accessToken: token }, { includeRoomId: false });
+        sendSignal(
+          "E2EE_CAPS",
+          {
+            insertableStreams:
+              typeof RTCRtpSender !== "undefined" &&
+              (typeof (RTCRtpSender.prototype as { createEncodedStreams?: unknown }).createEncodedStreams === "function" ||
+                "RTCRtpScriptTransform" in globalThis),
+            sframe: "RTCRtpScriptTransform" in globalThis,
+            doubleRatchet: !!globalThis.crypto?.subtle,
+          },
+          { includeRoomId: false }
+        );
+        roomJoinMsgId = sendSignal("ROOM_JOIN", { deviceId: wsDeviceIdRef.current }, { includeRoomId: true });
       };
 
       ws.onmessage = (event: MessageEvent) => {
         try {
-          const msg = JSON.parse(event.data as string) as {
+          const parsed = (() => {
+            if (typeof event.data === "string") {
+              return JSON.parse(event.data) as Record<string, unknown>;
+            }
+            if (event.data && typeof event.data === "object") {
+              return event.data as Record<string, unknown>;
+            }
+            return null;
+          })();
+          if (!parsed || typeof parsed.type !== "string") return;
+
+          const payload = parsed.payload && typeof parsed.payload === "object"
+            ? parsed.payload as Record<string, unknown>
+            : {};
+
+          resolveSignalWaiters(parsed.type, payload, parsed);
+
+          const ack = parsed.ack && typeof parsed.ack === "object"
+            ? parsed.ack as { ackOfMsgId?: string; ok?: boolean; error?: { message?: string } }
+            : null;
+
+          if (ack && roomJoinMsgId && ack.ackOfMsgId === roomJoinMsgId && ack.ok === false) {
+            rejectJoin(ack.error?.message ?? "ROOM_JOIN rejected by server");
+            return;
+          }
+
+          const msg = parsed as {
             type: string;
             participantId?: string;
             speaking?: boolean;
-            stream?: MediaStream;
+            stream?: MediaStream | null;
+            streamAction?: "upsert" | "remove";
+            hasVideo?: boolean;
           };
+
+          if (msg.type === "ERROR") {
+            rejectJoin(typeof payload.message === "string" ? payload.message : "Ошибка протокола звонка");
+            return;
+          }
+
+          if (msg.type === "ROOM_JOIN_OK") {
+            routerCapsRef.current = extractRouterCaps(payload);
+            resolveJoin();
+            return;
+          }
+
+          if (msg.type === "PRODUCER_ADDED") {
+            const producerId = typeof payload.producerId === "string" ? payload.producerId : null;
+            const peerDeviceId = typeof payload.peerDeviceId === "string" ? payload.peerDeviceId : null;
+            const manager = sfuManagerRef.current;
+            if (manager && producerId && peerDeviceId !== wsDeviceIdRef.current && manager.rtpCapabilities) {
+              sendSignal("CONSUME", {
+                producerId,
+                rtpCapabilities: manager.rtpCapabilities,
+              });
+            }
+            return;
+          }
+
+          if (msg.type === "CONSUMER_ADDED") {
+            const manager = sfuManagerRef.current;
+            const consumerId = typeof payload.consumerId === "string" ? payload.consumerId : null;
+            const producerId = typeof payload.producerId === "string" ? payload.producerId : null;
+            const kind = payload.kind === "audio" || payload.kind === "video" ? payload.kind : null;
+            if (manager && consumerId && producerId && kind) {
+              void (async () => {
+                try {
+                  const consumer = await manager.consume({
+                    id: consumerId,
+                    producerId,
+                    kind,
+                    rtpParameters: (payload.rtpParameters as import("mediasoup-client").types.RtpParameters) ?? ({ codecs: [] } as import("mediasoup-client").types.RtpParameters),
+                    source: typeof payload.source === "string" ? payload.source : undefined,
+                  });
+                  await manager.resumeConsumer(consumer.id);
+                  sendSignal("CONSUMER_RESUME", { consumerId: consumer.id });
+
+                  const peerId = typeof payload.peerId === "string" ? payload.peerId : "";
+                  const participantId = peerId.includes(":") ? peerId.split(":")[0] : peerId;
+                  if (participantId) {
+                    upsertRemoteTrack(participantId, consumer.track);
+                  }
+                } catch (error) {
+                  logger.warn("group_call.consume_failed", { error, roomId });
+                }
+              })();
+            }
+            return;
+          }
+
+          const participantIdRaw = typeof payload.participantId === "string"
+            ? payload.participantId
+            : msg.participantId;
+          const participantId = typeof participantIdRaw === "string" && participantIdRaw.trim().length > 0
+            ? participantIdRaw
+            : null;
+          const speaking = typeof payload.speaking === "boolean"
+            ? payload.speaking
+            : msg.speaking;
+          const streamAction = payload.streamAction === "upsert" || payload.streamAction === "remove"
+            ? payload.streamAction
+            : msg.streamAction;
+          const hasVideo = typeof payload.hasVideo === "boolean"
+            ? payload.hasVideo
+            : msg.hasVideo;
+          const stream = payload.stream instanceof MediaStream
+            ? payload.stream
+            : (msg.stream instanceof MediaStream || msg.stream === null ? msg.stream : undefined);
 
           switch (msg.type) {
             case "participant-speaking":
-              if (msg.participantId) {
-                setState(s => ({
-                  ...s,
-                  activeSpeakerId: msg.speaking ? msg.participantId! : s.activeSpeakerId,
-                  participants: s.participants.map(p =>
-                    p.id === msg.participantId ? { ...p, isSpeaking: !!msg.speaking } : p,
-                  ),
-                }));
+              if (participantId && typeof speaking === "boolean") {
+                setState(s => {
+                  const existing = s.participants.find((p) => p.id === participantId) ?? null;
+                  const nextParticipant: Participant = existing
+                    ? { ...existing, isSpeaking: speaking }
+                    : {
+                        id: participantId,
+                        displayName: "Участник",
+                        avatarUrl: null,
+                        stream: null,
+                        isMuted: false,
+                        isCameraOff: true,
+                        isScreenSharing: false,
+                        isHandRaised: false,
+                        isSpeaking: speaking,
+                      };
+
+                  return {
+                    ...s,
+                    activeSpeakerId: speaking
+                      ? participantId
+                      : (s.activeSpeakerId === participantId ? null : s.activeSpeakerId),
+                    participants: existing
+                      ? s.participants.map((p) => (p.id === participantId ? nextParticipant : p))
+                      : [...s.participants, nextParticipant],
+                  };
+                });
               }
               break;
             case "participant-stream":
-              // В реальной mediasoup интеграции тут consumer.track → MediaStream
+              if (participantId) {
+                const hasStreamPayload = stream instanceof MediaStream || stream === null;
+                const hasStreamActionPayload = streamAction === "upsert" || streamAction === "remove";
+                const hasVideoPayload = typeof hasVideo === "boolean";
+                if (!hasStreamPayload && !hasStreamActionPayload && !hasVideoPayload) {
+                  break;
+                }
+
+                setState(s => {
+                  const existing = s.participants.find((p) => p.id === participantId) ?? null;
+                  const shouldRemoveStream = streamAction === "remove" || stream === null;
+                  if (!existing && shouldRemoveStream) {
+                    return s;
+                  }
+
+                  const streamFromPayload = stream instanceof MediaStream
+                    ? stream
+                    : stream === null
+                      ? null
+                      : undefined;
+                  const nextStream = shouldRemoveStream
+                    ? null
+                    : (streamFromPayload !== undefined ? streamFromPayload : (existing?.stream ?? null));
+                  const resolvedHasVideo = streamFromPayload
+                    ? streamFromPayload.getVideoTracks().length > 0
+                    : typeof hasVideo === "boolean"
+                      ? hasVideo
+                      : (nextStream ? nextStream.getVideoTracks().length > 0 : false);
+                  const nextParticipant: Participant = existing
+                    ? {
+                        ...existing,
+                        stream: nextStream,
+                        isCameraOff: !resolvedHasVideo,
+                      }
+                    : {
+                      id: participantId,
+                        displayName: "Участник",
+                        avatarUrl: null,
+                        stream: nextStream,
+                        isMuted: false,
+                        isCameraOff: !resolvedHasVideo,
+                        isScreenSharing: false,
+                        isHandRaised: false,
+                        isSpeaking: false,
+                      };
+
+                  return {
+                    ...s,
+                    participants: existing
+                      ? s.participants.map((p) => (p.id === participantId ? nextParticipant : p))
+                      : [...s.participants, nextParticipant],
+                  };
+                });
+              }
               break;
           }
         } catch (error) {
@@ -328,10 +795,64 @@ export function useGroupVideoCall(roomId: string) {
       };
 
       ws.onclose = () => {
-        setState(s => ({ ...s, isJoined: false }));
+        if (!joinResolved) {
+          rejectJoin("Соединение закрыто до завершения ROOM_JOIN");
+        }
+        rejectPendingSignalWaiters("WebSocket closed");
+        const wasManualClose = manualWsCloseRef.current;
+        manualWsCloseRef.current = false;
+
+        if (durationTimerRef.current) {
+          clearInterval(durationTimerRef.current);
+          durationTimerRef.current = null;
+        }
+
+        vadRef.current?.stop();
+        vadRef.current = null;
+
+        localStreamRef.current?.getTracks().forEach(t => t.stop());
+        localStreamRef.current = null;
+        screenStreamRef.current?.getTracks().forEach(t => t.stop());
+        screenStreamRef.current = null;
+
+        realtimeChannelRef.current?.untrack();
+        if (realtimeChannelRef.current) {
+          supabase.removeChannel(realtimeChannelRef.current);
+          realtimeChannelRef.current = null;
+        }
+
+        wsRef.current = null;
+        sfuManagerRef.current?.close();
+        sfuManagerRef.current = null;
+        localProducerIdsRef.current = { audio: null, video: null };
+        routerCapsRef.current = null;
+
+        setState({
+          participants: [],
+          localStream: null,
+          screenStream: null,
+          isMuted: false,
+          isCameraOn: true,
+          isScreenSharing: false,
+          isHandRaised: false,
+          activeSpeakerId: null,
+          pinnedParticipantId: null,
+          duration: 0,
+          isJoined: false,
+          isJoining: false,
+          error: wasManualClose ? null : "Соединение с сервером звонков разорвано",
+        });
       };
 
-      wsRef.current = ws;
+      const joinTimeout = window.setTimeout(() => {
+        rejectJoin("Таймаут ROOM_JOIN");
+      }, 10000);
+      await joinReadyPromise;
+      window.clearTimeout(joinTimeout);
+
+      await bootstrapSfuMedia(stream).catch((error) => {
+        logger.warn("group_call.sfu_media_bootstrap_failed", { error, roomId });
+      });
 
       // 5. Таймер длительности звонка
       startTimeRef.current = Date.now();
@@ -348,7 +869,47 @@ export function useGroupVideoCall(roomId: string) {
       }));
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Не удалось подключиться к звонку";
-      setState(s => ({ ...s, isJoining: false, error: msg }));
+
+      if (durationTimerRef.current) {
+        clearInterval(durationTimerRef.current);
+        durationTimerRef.current = null;
+      }
+
+      vadRef.current?.stop();
+      vadRef.current = null;
+
+      localStreamRef.current?.getTracks().forEach(t => t.stop());
+      localStreamRef.current = null;
+      screenStreamRef.current?.getTracks().forEach(t => t.stop());
+      screenStreamRef.current = null;
+
+      wsRef.current?.close();
+      wsRef.current = null;
+      rejectPendingSignalWaiters("joinCall failed");
+      sfuManagerRef.current?.close();
+      sfuManagerRef.current = null;
+      localProducerIdsRef.current = { audio: null, video: null };
+      routerCapsRef.current = null;
+      manualWsCloseRef.current = false;
+
+      const channelToCleanup = realtimeChannelRef.current ?? pendingRealtimeChannel;
+      channelToCleanup?.untrack();
+      if (channelToCleanup) {
+        supabase.removeChannel(channelToCleanup);
+      }
+      realtimeChannelRef.current = null;
+
+      setState(s => ({
+        ...s,
+        participants: [],
+        localStream: null,
+        screenStream: null,
+        isScreenSharing: false,
+        isJoined: false,
+        isJoining: false,
+        duration: 0,
+        error: msg,
+      }));
     }
   }, [user?.id, roomId, state.isJoined, state.isJoining, sendSignal]);
 
@@ -358,7 +919,10 @@ export function useGroupVideoCall(roomId: string) {
 
   const leaveCall = useCallback(() => {
     // Остановить таймер
-    if (durationTimerRef.current) clearInterval(durationTimerRef.current);
+    if (durationTimerRef.current) {
+      clearInterval(durationTimerRef.current);
+      durationTimerRef.current = null;
+    }
 
     // VAD
     vadRef.current?.stop();
@@ -371,14 +935,22 @@ export function useGroupVideoCall(roomId: string) {
     screenStreamRef.current = null;
 
     // WS
-    sendSignal("leave-room", {});
+    manualWsCloseRef.current = true;
+    sendSignal("ROOM_LEAVE", { reason: "client_leave" });
     wsRef.current?.close();
     wsRef.current = null;
+    rejectPendingSignalWaiters("leaveCall");
+    sfuManagerRef.current?.close();
+    sfuManagerRef.current = null;
+    localProducerIdsRef.current = { audio: null, video: null };
+    routerCapsRef.current = null;
 
     // Presence
     realtimeChannelRef.current?.untrack();
-    supabase.removeChannel(realtimeChannelRef.current!);
-    realtimeChannelRef.current = null;
+    if (realtimeChannelRef.current) {
+      supabase.removeChannel(realtimeChannelRef.current);
+      realtimeChannelRef.current = null;
+    }
 
     setState({
       participants: [],
@@ -395,7 +967,7 @@ export function useGroupVideoCall(roomId: string) {
       isJoining: false,
       error: null,
     });
-  }, [sendSignal]);
+  }, [rejectPendingSignalWaiters, sendSignal]);
 
   // ---------------------------------------------------------------------------
   // toggleMute
@@ -405,11 +977,10 @@ export function useGroupVideoCall(roomId: string) {
     setState(s => {
       const newMuted = !s.isMuted;
       localStreamRef.current?.getAudioTracks().forEach(t => { t.enabled = !newMuted; });
-      sendSignal("mute-state", { isMuted: newMuted });
       syncPresence({ isMuted: newMuted });
       return { ...s, isMuted: newMuted };
     });
-  }, [sendSignal, syncPresence]);
+  }, [syncPresence]);
 
   // ---------------------------------------------------------------------------
   // toggleCamera
@@ -419,11 +990,10 @@ export function useGroupVideoCall(roomId: string) {
     setState(s => {
       const newCameraOn = !s.isCameraOn;
       localStreamRef.current?.getVideoTracks().forEach(t => { t.enabled = newCameraOn; });
-      sendSignal("camera-state", { isCameraOn: newCameraOn });
       syncPresence({ isCameraOff: !newCameraOn });
       return { ...s, isCameraOn: newCameraOn };
     });
-  }, [sendSignal, syncPresence]);
+  }, [syncPresence]);
 
   // ---------------------------------------------------------------------------
   // toggleScreenShare
@@ -433,7 +1003,6 @@ export function useGroupVideoCall(roomId: string) {
     if (state.isScreenSharing) {
       screenStreamRef.current?.getTracks().forEach(t => t.stop());
       screenStreamRef.current = null;
-      sendSignal("screen-share-stop", {});
       setState(s => ({ ...s, isScreenSharing: false, screenStream: null }));
       return;
     }
@@ -446,20 +1015,19 @@ export function useGroupVideoCall(roomId: string) {
 
       // Автоматически остановить при нажатии "Стоп" в браузере
       screenStream.getVideoTracks()[0].onended = () => {
+        if (screenStreamRef.current !== screenStream) return;
         screenStreamRef.current = null;
-        sendSignal("screen-share-stop", {});
         setState(s => ({ ...s, isScreenSharing: false, screenStream: null }));
       };
 
       screenStreamRef.current = screenStream;
-      sendSignal("screen-share-start", {});
       setState(s => ({ ...s, isScreenSharing: true, screenStream }));
     } catch (err) {
       if (err instanceof Error && err.name !== "NotAllowedError") {
         setState(s => ({ ...s, error: "Не удалось начать демонстрацию экрана" }));
       }
     }
-  }, [state.isScreenSharing, sendSignal]);
+  }, [state.isScreenSharing]);
 
   // ---------------------------------------------------------------------------
   // raiseHand
@@ -468,11 +1036,10 @@ export function useGroupVideoCall(roomId: string) {
   const raiseHand = useCallback(() => {
     setState(s => {
       const newHandRaised = !s.isHandRaised;
-      sendSignal("raise-hand", { isHandRaised: newHandRaised });
       syncPresence({ isHandRaised: newHandRaised });
       return { ...s, isHandRaised: newHandRaised };
     });
-  }, [sendSignal, syncPresence]);
+  }, [syncPresence]);
 
   // ---------------------------------------------------------------------------
   // pinParticipant

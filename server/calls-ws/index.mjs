@@ -28,6 +28,7 @@ const MAX_PARTICIPANTS_PER_ROOM = readPositiveIntEnv("CALLS_MAX_PARTICIPANTS_PER
 const REQUIRE_SFRAME_CAPS = process.env.CALLS_REQUIRE_SFRAME_CAPS !== "0";
 const REQUIRE_DOUBLE_RATCHET_CAPS = process.env.CALLS_REQUIRE_DOUBLE_RATCHET_CAPS !== "0";
 const REQUIRE_SECURE_TRANSPORT = IS_PROD_LIKE && process.env.CALLS_WS_REQUIRE_SECURE_TRANSPORT !== "0";
+const ENABLE_MEDIA_TRANSPORT_STUBS = !IS_PROD_LIKE && process.env.CALLS_WS_ENABLE_MEDIA_STUBS !== "0";
 
 // Default RTP codecs used in ROOM_JOIN_OK and GET_ROUTER_RTP_CAPABILITIES responses.
 // When a real mediasoup SFU is fronted by this gateway, the SFU should supply these
@@ -1233,6 +1234,43 @@ wss.on("connection", (ws, req) => {
         return ack(ws, frame.msgId, true);
       }
 
+      case "SPEAKING": {
+        if (!conn.authenticated) {
+          ack(ws, frame.msgId, false, wsError("UNAUTHENTICATED", "AUTH required", {}, true));
+          return;
+        }
+        const p = frame.payload ?? {};
+        const roomId = typeof p.roomId === "string" && p.roomId.trim() ? p.roomId.trim() : conn.roomId;
+        const room = roomId ? rooms.get(roomId) : null;
+        if (!room || !conn.deviceId || !room.peers.has(conn.deviceId)) {
+          ack(ws, frame.msgId, false, wsError("UNAUTHORIZED", "Not a room member", {}, false));
+          return;
+        }
+        if (typeof p.speaking !== "boolean") {
+          ack(ws, frame.msgId, false, wsError("VALIDATION_FAILED", "speaking must be boolean", {}, false));
+          return;
+        }
+
+        for (const [peerDeviceId] of room.peers.entries()) {
+          if (peerDeviceId === conn.deviceId) continue;
+          const targetWs = deviceSockets.get(peerDeviceId);
+          if (!targetWs || targetWs.readyState !== WebSocket.OPEN) continue;
+          send(targetWs, {
+            v: 1,
+            type: "participant-speaking",
+            msgId: uuid(),
+            ts: nowMs(),
+            payload: {
+              roomId,
+              participantId: conn.userId,
+              speaking: p.speaking,
+            },
+          });
+        }
+
+        return ack(ws, frame.msgId, true);
+      }
+
       case "REKEY_BEGIN": {
         if (!conn.authenticated) {
           ack(ws, frame.msgId, false, wsError("UNAUTHENTICATED", "AUTH required", {}, true));
@@ -1376,6 +1414,15 @@ wss.on("connection", (ws, req) => {
       // In production the client should point VITE_CALLS_V2_WS_URL to the
       // mediasoup SFU endpoint (server/sfu/index.mjs) where real transport is done.
       case "TRANSPORT_CREATE": {
+        if (!ENABLE_MEDIA_TRANSPORT_STUBS) {
+          ack(ws, frame.msgId, false, wsError(
+            "SFU_REQUIRED",
+            "Media transport is disabled on calls-ws. Connect to the SFU endpoint.",
+            {},
+            false
+          ));
+          return;
+        }
         if (!conn.authenticated) {
           ack(ws, frame.msgId, false, wsError("UNAUTHENTICATED", "AUTH required", {}, true));
           return;
@@ -1409,6 +1456,15 @@ wss.on("connection", (ws, req) => {
       }
 
       case "TRANSPORT_CONNECT": {
+        if (!ENABLE_MEDIA_TRANSPORT_STUBS) {
+          ack(ws, frame.msgId, false, wsError(
+            "SFU_REQUIRED",
+            "Media transport is disabled on calls-ws. Connect to the SFU endpoint.",
+            {},
+            false
+          ));
+          return;
+        }
         if (!conn.authenticated) {
           ack(ws, frame.msgId, false, wsError("UNAUTHENTICATED", "AUTH required", {}, true));
           return;
@@ -1417,6 +1473,15 @@ wss.on("connection", (ws, req) => {
       }
 
       case "PRODUCE": {
+        if (!ENABLE_MEDIA_TRANSPORT_STUBS) {
+          ack(ws, frame.msgId, false, wsError(
+            "SFU_REQUIRED",
+            "Media transport is disabled on calls-ws. Connect to the SFU endpoint.",
+            {},
+            false
+          ));
+          return;
+        }
         if (!conn.authenticated) {
           ack(ws, frame.msgId, false, wsError("UNAUTHENTICATED", "AUTH required", {}, true));
           return;
@@ -1432,10 +1497,41 @@ wss.on("connection", (ws, req) => {
           seq: conn.nextOutboundSeq++,
           payload: { roomId: pRoomId, producerId, kind },
         });
+
+        const room = pRoomId ? rooms.get(pRoomId) : (conn.roomId ? rooms.get(conn.roomId) : null);
+        if (room && conn.deviceId && room.peers.has(conn.deviceId)) {
+          for (const [peerDeviceId] of room.peers.entries()) {
+            if (peerDeviceId === conn.deviceId) continue;
+            const targetWs = deviceSockets.get(peerDeviceId);
+            if (!targetWs || targetWs.readyState !== WebSocket.OPEN) continue;
+            send(targetWs, {
+              v: 1,
+              type: "participant-stream",
+              msgId: uuid(),
+              ts: nowMs(),
+              payload: {
+                roomId: room.roomId,
+                participantId: conn.userId,
+                streamAction: "upsert",
+                hasVideo: kind === "video",
+              },
+            });
+          }
+        }
+
         return ack(ws, frame.msgId, true);
       }
 
       case "CONSUME": {
+        if (!ENABLE_MEDIA_TRANSPORT_STUBS) {
+          ack(ws, frame.msgId, false, wsError(
+            "SFU_REQUIRED",
+            "Media transport is disabled on calls-ws. Connect to the SFU endpoint.",
+            {},
+            false
+          ));
+          return;
+        }
         if (!conn.authenticated) {
           ack(ws, frame.msgId, false, wsError("UNAUTHENTICATED", "AUTH required", {}, true));
           return;
@@ -1444,6 +1540,72 @@ wss.on("connection", (ws, req) => {
       }
 
       case "CONSUMER_RESUME": {
+        if (!ENABLE_MEDIA_TRANSPORT_STUBS) {
+          ack(ws, frame.msgId, false, wsError(
+            "SFU_REQUIRED",
+            "Media transport is disabled on calls-ws. Connect to the SFU endpoint.",
+            {},
+            false
+          ));
+          return;
+        }
+        if (!conn.authenticated) {
+          ack(ws, frame.msgId, false, wsError("UNAUTHENTICATED", "AUTH required", {}, true));
+          return;
+        }
+        return ack(ws, frame.msgId, true);
+      }
+
+      case "PRODUCER_CLOSE": {
+        if (!ENABLE_MEDIA_TRANSPORT_STUBS) {
+          ack(ws, frame.msgId, false, wsError(
+            "SFU_REQUIRED",
+            "Media transport is disabled on calls-ws. Connect to the SFU endpoint.",
+            {},
+            false
+          ));
+          return;
+        }
+        if (!conn.authenticated) {
+          ack(ws, frame.msgId, false, wsError("UNAUTHENTICATED", "AUTH required", {}, true));
+          return;
+        }
+
+        const pRoomId = frame.payload?.roomId;
+        const room = pRoomId ? rooms.get(pRoomId) : (conn.roomId ? rooms.get(conn.roomId) : null);
+        if (room && conn.deviceId && room.peers.has(conn.deviceId)) {
+          for (const [peerDeviceId] of room.peers.entries()) {
+            if (peerDeviceId === conn.deviceId) continue;
+            const targetWs = deviceSockets.get(peerDeviceId);
+            if (!targetWs || targetWs.readyState !== WebSocket.OPEN) continue;
+            send(targetWs, {
+              v: 1,
+              type: "participant-stream",
+              msgId: uuid(),
+              ts: nowMs(),
+              payload: {
+                roomId: room.roomId,
+                participantId: conn.userId,
+                streamAction: "remove",
+                hasVideo: false,
+              },
+            });
+          }
+        }
+
+        return ack(ws, frame.msgId, true);
+      }
+
+      case "CONSUMER_CLOSE": {
+        if (!ENABLE_MEDIA_TRANSPORT_STUBS) {
+          ack(ws, frame.msgId, false, wsError(
+            "SFU_REQUIRED",
+            "Media transport is disabled on calls-ws. Connect to the SFU endpoint.",
+            {},
+            false
+          ));
+          return;
+        }
         if (!conn.authenticated) {
           ack(ws, frame.msgId, false, wsError("UNAUTHENTICATED", "AUTH required", {}, true));
           return;

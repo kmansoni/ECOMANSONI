@@ -79,8 +79,10 @@ export type CallsWsEvent =
   | 'TRANSPORT_CONNECTED'
   | 'PRODUCED'
   | 'PRODUCER_ADDED'
+  | 'PRODUCER_REMOVED'
   | 'CONSUMED'
   | 'CONSUMER_ADDED'
+  | 'CONSUMER_REMOVED'
   | 'CONSUMER_RESUMED'
   | 'ERROR'
   | 'PONG'
@@ -241,6 +243,16 @@ export interface ConsumerResumePayload {
   consumerId: string;
 }
 
+export interface ProducerClosePayload {
+  roomId: string;
+  producerId: string;
+}
+
+export interface ConsumerClosePayload {
+  roomId: string;
+  consumerId: string;
+}
+
 export interface IceRestartPayload {
   roomId: string;
   transportId: string;
@@ -294,6 +306,9 @@ export interface RekeyCommitPayload {
 
 export interface KeyPackagePayload {
   roomId: string;
+  fromDeviceId?: string;
+  toDeviceId?: string;
+  senderKeyId?: string;
   targetDeviceId: string;
   epoch: number;
   ciphertext: string;           // encrypted key material (base64)
@@ -333,6 +348,8 @@ export interface KeyAckPayload {
   roomId: string;
   epoch: number;
   fromDeviceId: string;
+  toDeviceId?: string;
+  senderKeyId?: string;
   refId?: string;
 }
 
@@ -461,6 +478,8 @@ export interface ClientMessageMap {
   PRODUCE: ProducePayload;
   CONSUME: ConsumePayload;
   CONSUMER_RESUME: ConsumerResumePayload;
+  PRODUCER_CLOSE: ProducerClosePayload;
+  CONSUMER_CLOSE: ConsumerClosePayload;
   ICE_RESTART: IceRestartPayload;
   OFFER: OfferPayload;
   ANSWER: AnswerPayload;

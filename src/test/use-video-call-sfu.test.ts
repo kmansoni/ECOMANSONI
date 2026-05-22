@@ -270,6 +270,14 @@ describe("useVideoCallSfu", () => {
     expect(result.current.connectionState).toBe("connecting");
 
     act(() => { result.current.markMediaBootstrapProgress("recv_transport_created"); });
+    expect(result.current.connectionState).toBe("connecting");
+
+    act(() => {
+      result.current.setRemoteStream(new TestMediaStream([
+        mediaProcessorState.makeTrack("remote-audio-1", "audio"),
+      ]) as unknown as MediaStream);
+    });
+
     expect(result.current.connectionState).toBe("connected");
   });
 
@@ -299,6 +307,30 @@ describe("useVideoCallSfu", () => {
     expect(result.current.connectionState).toBe("connecting");
 
     act(() => { result.current.markMediaBootstrapProgress("send_transport_created"); });
+    expect(result.current.connectionState).toBe("connecting");
+
+    act(() => {
+      result.current.setRemoteStream(new TestMediaStream([
+        mediaProcessorState.makeTrack("remote-audio-2", "audio"),
+      ]) as unknown as MediaStream);
+    });
+
     expect(result.current.connectionState).toBe("connected");
+  });
+
+  it("does not promote connected from bootstrap signals alone after grace time elapses", async () => {
+    const { useVideoCallSfu } = await import("@/hooks/useVideoCallSfu");
+    const { result } = renderHook(() => useVideoCallSfu());
+    mockGetUserMedia(false);
+
+    await act(async () => { await result.current.answerCall(makeIncomingCall("audio")); });
+    act(() => { result.current.markMediaBootstrapProgress("send_transport_created"); });
+    act(() => { result.current.markMediaBootstrapProgress("recv_transport_created"); });
+
+    act(() => {
+      vi.advanceTimersByTime(4000);
+    });
+
+    expect(result.current.connectionState).toBe("connecting");
   });
 });

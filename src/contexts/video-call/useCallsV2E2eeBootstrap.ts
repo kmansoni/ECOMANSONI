@@ -53,11 +53,14 @@ export function useCallsV2E2eeBootstrap({
     epochGuardRef,
     producerPeerKeyRef,
     peerUserIdByDeviceIdRef,
-    handleE2eePipeBreakRef,
   });
 
   const initializeCallsV2E2ee = useCallback(async (client: CallsWsClient): Promise<void> => {
     if (!user) return;
+
+    if (!epochGuardRef.current) {
+      epochGuardRef.current = new EpochGuard(true);
+    }
 
     if (!callKeyExchangeRef.current) {
       const identity: CallIdentity = {
@@ -81,29 +84,24 @@ export function useCallsV2E2eeBootstrap({
           handleE2eePipeBreakRef.current?.(info);
         },
       });
-      if (epochGuardRef.current) {
-        callMediaEncryptionRef.current.setEpochGuard(epochGuardRef.current);
-      }
       logger.info("[VideoCallContext] calls-v2 CallMediaEncryption initialized");
+    }
+
+    if (epochGuardRef.current && callMediaEncryptionRef.current) {
+      callMediaEncryptionRef.current.setEpochGuard(epochGuardRef.current);
     }
 
     if (!rekeyMachineRef.current) {
       rekeyMachineRef.current = new RekeyStateMachine();
-    }
-    if (!epochGuardRef.current) {
-      epochGuardRef.current = new EpochGuard(true);
     }
     epochGuardRef.current.markAuthenticated();
     attachCallsV2E2eeSignals(client);
   }, [
     callKeyExchangeRef,
     callMediaEncryptionRef,
-    callsWsRoomRef,
-    e2eeEpochRef,
-    e2eeLeaderDeviceRef,
     epochGuardRef,
     attachCallsV2E2eeSignals,
-    peerUserIdByDeviceIdRef,
+    handleE2eePipeBreakRef,
     rekeyMachineRef,
     user,
   ]);

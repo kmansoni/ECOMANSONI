@@ -10,7 +10,7 @@ export const CALLS_V2_ENABLED = CALLS_V2_ENABLED_RAW === "" ? true : CALLS_V2_EN
 const CALLS_V2_WS_URL_RAW = (import.meta.env.VITE_CALLS_V2_WS_URL ?? "").trim();
 const CALLS_V2_WS_URLS_RAW = (import.meta.env.VITE_CALLS_V2_WS_URLS ?? "")
   .split(",")
-  .map((value) => value.trim())
+  .map((value: string) => value.trim())
   .filter(Boolean);
 
 const DEFAULT_PROD_SFU_ENDPOINTS = [

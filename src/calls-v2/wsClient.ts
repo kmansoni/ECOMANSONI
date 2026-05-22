@@ -15,6 +15,8 @@ import type {
   ProducePayload,
   ConsumePayload,
   ConsumerResumePayload,
+  ProducerClosePayload,
+  ConsumerClosePayload,
   IceRestartPayload,
   OfferPayload,
   AnswerPayload,
@@ -94,6 +96,7 @@ export class CallsWsClient {
   private lastHeartbeatSentAt = 0;
   private readonly seenServerMsgIds = new Set<string>();
   private readonly seenServerMsgIdQueue: string[] = [];
+  private seenServerMsgIdsCleanupTimer: number | null = null;
   private heartbeatTimer: number | null = null;
   private readonly pendingAcks = new Map<string, PendingAck>();
   private readonly listeners = new Map<CallsWsEvent, Set<CallsWsEventHandler>>();
@@ -106,7 +109,12 @@ export class CallsWsClient {
   private _connectionState: ConnectionState = 'disconnected';
   private readonly connectionStateHandlers = new Set<ConnectionStateHandler>();
 
-  constructor(private readonly config: CallsWsConfig) {}
+  constructor(private readonly config: CallsWsConfig) {
+    this.seenServerMsgIdsCleanupTimer = window.setInterval(
+      () => this.cleanupSeenServerMsgIds(),
+      30_000
+    );
+  }
 
   get connectionState(): ConnectionState {
     return this._connectionState;
@@ -320,6 +328,10 @@ export class CallsWsClient {
       window.clearTimeout(this.reconnectTimer);
       this.reconnectTimer = null;
     }
+    if (this.seenServerMsgIdsCleanupTimer !== null) {
+      window.clearInterval(this.seenServerMsgIdsCleanupTimer);
+      this.seenServerMsgIdsCleanupTimer = null;
+    }
     if (this.ws) {
       this.ws.removeEventListener('close', this.onWsClose);
       this.ws.close();
@@ -376,6 +388,14 @@ export class CallsWsClient {
 
   consumerResume(payload: ConsumerResumePayload, timeoutMs?: number): Promise<void> {
     return this.sendOrderedAcked('CONSUMER_RESUME', payload, timeoutMs);
+  }
+
+  producerClose(payload: ProducerClosePayload, timeoutMs?: number): Promise<void> {
+    return this.sendOrderedAcked('PRODUCER_CLOSE', payload, timeoutMs);
+  }
+
+  consumerClose(payload: ConsumerClosePayload, timeoutMs?: number): Promise<void> {
+    return this.sendOrderedAcked('CONSUMER_CLOSE', payload, timeoutMs);
   }
 
   iceRestart(payload: IceRestartPayload, timeoutMs?: number): Promise<void> {
@@ -608,6 +628,22 @@ export class CallsWsClient {
     });
   }
 
+  private cleanupSeenServerMsgIds(): void {
+    const capacity = this.config.dedupWindowSize ?? 10_000;
+    if (this.seenServerMsgIds.size <= capacity) return;
+    const targetSize = Math.floor(capacity * 0.5);
+    const allIds = Array.from(this.seenServerMsgIds);
+    const toRemove = allIds.slice(0, allIds.length - targetSize);
+    for (const id of toRemove) {
+      this.seenServerMsgIds.delete(id);
+    }
+    logger.debug("[CallsWsClient] seenServerMsgIds cleanup", {
+      before: allIds.length,
+      after: this.seenServerMsgIds.size,
+      removed: toRemove.length,
+    });
+  }
+
   private onMessage(raw: unknown) {
     const msg = this.parseIncomingMessage(raw);
     if (!msg) {
@@ -728,3 +764,8 @@ export class CallsWsClient {
     this.heartbeatTimer = null;
   }
 }
+
+
+
+
+

@@ -43,6 +43,38 @@ export class CallMediaEncryption {
   /** M-6: optional EpochGuard — wenn gesetzt, assertMediaAllowed() wird aufgerufen */
   private epochGuard: EpochGuard | null = null;
 
+  private buildPeerAliases(peerId: string): string[] {
+    const trimmed = peerId.trim();
+    if (!trimmed) return [];
+
+    const aliases = new Set<string>([trimmed]);
+    const sepIndex = trimmed.indexOf(':');
+    if (sepIndex > 0 && sepIndex < trimmed.length - 1) {
+      const userId = trimmed.slice(0, sepIndex).trim();
+      const deviceId = trimmed.slice(sepIndex + 1).trim();
+      if (userId) aliases.add(userId);
+      if (deviceId) aliases.add(deviceId);
+    }
+
+    return Array.from(aliases);
+  }
+
+  private resolveReceiverPeerId(peerId: string): string {
+    if (this.peerDecryptionEpochs.has(peerId)) return peerId;
+
+    for (const alias of this.buildPeerAliases(peerId)) {
+      if (this.peerDecryptionEpochs.has(alias)) return alias;
+    }
+
+    // 1:1 calls may receive producerId-style peer keys before identity mapping settles.
+    if (this.peerDecryptionEpochs.size === 1) {
+      const [onlyPeerId] = this.peerDecryptionEpochs.keys();
+      if (onlyPeerId) return onlyPeerId;
+    }
+
+    return peerId;
+  }
+
   constructor(config: CallMediaEncryptionConfig = {}) {
     const encryptorConfig: InsertableStreamsConfig = {
       onError: config.onError,
@@ -92,9 +124,14 @@ export class CallMediaEncryption {
   async setDecryptionKey(peerId: string, epochKey: EpochKeyMaterial): Promise<void> {
     // MediaEncryptor.setDecryptionKey(CryptoKey, keyId: number, peerId: string)
     const keyId = epochKey.epoch & 0xff;
-    logger.debug(`[CallMediaEncryption] setDecryptionKey: peer=${peerId} epoch=${epochKey.epoch} keyId=${keyId}`);
-    await this.encryptor.setDecryptionKey(epochKey.key, keyId, peerId);
-    this.peerDecryptionEpochs.set(peerId, epochKey.epoch);
+    const aliases = this.buildPeerAliases(peerId);
+    logger.debug(`[CallMediaEncryption] setDecryptionKey: peer=${peerId} aliases=${JSON.stringify(aliases)} epoch=${epochKey.epoch} keyId=${keyId}`);
+
+    for (const alias of aliases) {
+      await this.encryptor.setDecryptionKey(epochKey.key, keyId, alias);
+      this.peerDecryptionEpochs.set(alias, epochKey.epoch);
+    }
+
     logger.debug(`[CallMediaEncryption] Decryption key set for peer ${peerId} epoch ${epochKey.epoch}, total keys=${this.peerDecryptionEpochs.size}`);
   }
 
@@ -141,18 +178,19 @@ export class CallMediaEncryption {
     // M-6: assert epoch guard allows media
     this.epochGuard?.assertMediaAllowed('setupReceiverTransform');
 
-    const hasKey = this.peerDecryptionEpochs.has(peerId);
+    const resolvedPeerId = this.resolveReceiverPeerId(peerId);
+    const hasKey = this.peerDecryptionEpochs.has(resolvedPeerId);
     const knownKeys = Array.from(this.peerDecryptionEpochs.keys());
     if (!hasKey) {
       logger.warn(
-        `[CallMediaEncryption] No decryption key for peer ${peerId} — frames will be dropped until key arrives. ` +
+        `[CallMediaEncryption] No decryption key for peer ${peerId} (resolved=${resolvedPeerId}) — frames will be dropped until key arrives. ` +
         `known peers: ${JSON.stringify(knownKeys)}`
       );
     }
     // MediaEncryptor.setupReceiverTransform(receiver, trackId, peerId) — note arg order difference
     // MediaEncryptor throws if browser doesn't support transforms (C-4)
-    this.encryptor.setupReceiverTransform(receiver, trackId, peerId);
-    logger.debug(`[CallMediaEncryption] Receiver transform attached, peer=${peerId} track=${trackId}`);
+    this.encryptor.setupReceiverTransform(receiver, trackId, resolvedPeerId);
+    logger.debug(`[CallMediaEncryption] Receiver transform attached, peer=${peerId} resolved=${resolvedPeerId} track=${trackId}`);
   }
 
   /**

@@ -11,7 +11,7 @@ const SUPABASE_URL = process.env.E2E_SUPABASE_URL ?? process.env.VITE_SUPABASE_U
 const SUPABASE_KEY = process.env.E2E_SUPABASE_KEY ?? process.env.VITE_SUPABASE_PUBLISHABLE_KEY ?? "";
 const STORAGE_KEY = `sb-${SUPABASE_URL.match(/\/\/([a-z0-9]+)\./)?.[1] ?? "unknown"}-auth-token`;
 const E2E_PASSWORD = process.env.E2E_PASSWORD ?? "";
-const BASE_URL = "http://localhost:8080";
+const BASE_URL = process.env.E2E_BASE_URL ?? "http://localhost:8080";
 
 function makeSb(): SupabaseClient {
   return createClient(SUPABASE_URL, SUPABASE_KEY, {
@@ -46,15 +46,31 @@ async function signupAndInject(
   meta: Record<string, string>,
 ): Promise<{ userId: string; accessToken: string; sb: SupabaseClient }> {
   const sb = makeSb();
-  const { data, error } = await sb.auth.signUp({
-    email,
-    password: E2E_PASSWORD,
-    options: { data: meta },
-  });
-  if (error || !data.session) {
-    throw new Error(`Signup failed for ${email}: ${error?.message ?? "no session"}`);
+  let lastError: unknown = null;
+  let session: NonNullable<Awaited<ReturnType<typeof sb.auth.signUp>>["data"]["session"]> | null = null;
+
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    const { data, error } = await sb.auth.signUp({
+      email,
+      password: E2E_PASSWORD,
+      options: { data: meta },
+    });
+
+    if (!error && data.session) {
+      session = data.session;
+      break;
+    }
+
+    lastError = error?.message ?? "no session";
+    if (attempt < 3) {
+      await page.waitForTimeout(1200 * attempt);
+    }
   }
-  const session = data.session;
+
+  if (!session) {
+    throw new Error(`Signup failed for ${email}: ${String(lastError ?? "no session")}`);
+  }
+
   const serialized = JSON.stringify({
     access_token: session.access_token,
     refresh_token: session.refresh_token,
@@ -64,7 +80,18 @@ async function signupAndInject(
     user: session.user,
   });
 
-  await page.goto(BASE_URL, { waitUntil: "commit" });
+  let bootstrapNavOk = false;
+  for (let attempt = 1; attempt <= 3 && !bootstrapNavOk; attempt++) {
+    try {
+      await page.goto(BASE_URL, { waitUntil: "commit", timeout: 30_000 });
+      bootstrapNavOk = true;
+    } catch {
+      await page.waitForTimeout(1200 * attempt);
+    }
+  }
+  if (!bootstrapNavOk) {
+    throw new Error(`Bootstrap navigation failed for ${email}`);
+  }
   await page.evaluate(
     ({ key, value }) => localStorage.setItem(key, value),
     { key: STORAGE_KEY, value: serialized },
@@ -96,6 +123,152 @@ function attachMonitor(page: Page, who: string) {
   const cdp = (page as any)._delegate?._mainFrame?._page?._delegate;
   // Playwright не даёт прямой доступ к WS через CDP,
   // но мы ловим все WS через console — callsWsClient логирует в logger
+}
+
+async function openDmConversation(page: Page, convId: string, peerHints: string[]): Promise<boolean> {
+  const openUrls = [
+    `${BASE_URL}/chats?openDmId=${convId}`,
+    `${BASE_URL}/chats?open=${convId}`,
+  ];
+
+  for (const openUrl of openUrls) {
+    await page.goto(openUrl, { waitUntil: "commit", timeout: 30_000 }).catch(() => undefined);
+    await page.waitForTimeout(2500);
+
+    const callBtn = page.locator('[data-testid="video-call-btn"], button[aria-label="Видеозвонок"], button[aria-label="Video call"]').first();
+    if (await callBtn.isVisible({ timeout: 2000 }).catch(() => false)) return true;
+
+    const itemSelectors = [
+      `[data-conversation-id="${convId}"]`,
+      `a[href*="${convId}"]`,
+      ...peerHints.flatMap((hint) => [
+        `button:has-text("${hint}")`,
+        `text=${hint}`,
+      ]),
+    ];
+
+    for (const sel of itemSelectors) {
+      const candidate = page.locator(sel).first();
+      if (await candidate.isVisible({ timeout: 1500 }).catch(() => false)) {
+        await candidate.click({ force: true }).catch(() => undefined);
+        await page.waitForTimeout(1200);
+        if (await callBtn.isVisible({ timeout: 1000 }).catch(() => false)) return true;
+      }
+    }
+  }
+
+  return false;
+}
+
+async function startCallFromA(pageA: Page) {
+  const callSelectors = [
+    '[data-testid="video-call-btn"]',
+    'button[aria-label="Видеозвонок"]',
+    'button[aria-label="Video call"]',
+    'button[aria-label="Групповой видеозвонок"]',
+    'button:has(svg.lucide-video)',
+  ];
+
+  for (const sel of callSelectors) {
+    const btn = pageA.locator(sel).first();
+    if (await btn.isVisible({ timeout: 2000 }).catch(() => false)) {
+      await btn.click();
+      return sel;
+    }
+  }
+
+  throw new Error("Call button not found on caller side");
+}
+
+async function hasOutgoingCallUi(page: Page): Promise<boolean> {
+  const selectors = [
+    "text=Вызов",
+    "text=Соединение",
+    "text=Звонок",
+    "text=Настраиваем аудио и видео",
+    "button:has(.lucide-phone-off)",
+    "button.bg-destructive",
+  ];
+  for (const sel of selectors) {
+    const el = page.locator(sel).first();
+    if (await el.isVisible({ timeout: 500 }).catch(() => false)) return true;
+  }
+  return false;
+}
+
+async function ensureChatsReady(page: Page, url: string): Promise<void> {
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    const body = await page.locator("body").innerText().catch(() => "");
+    const loading = body.includes("Загрузка…") || body.includes("Загрузка...") || body.includes("Если страница не открывается");
+    const hasChats = await page.locator("text=Чаты").first().isVisible({ timeout: 800 }).catch(() => false);
+    if (!loading && hasChats) return;
+
+    await page.goto(url, { waitUntil: "commit", timeout: 30_000 }).catch(() => undefined);
+    await page.waitForTimeout(1800 * attempt);
+  }
+}
+
+async function waitForLatestCallRoomHints(
+  sb: SupabaseClient,
+  callerId: string,
+  calleeId: string,
+): Promise<boolean> {
+  for (let attempt = 1; attempt <= 8; attempt++) {
+    const { data, error } = await sb
+      .from("video_calls")
+      .select("id,calls_v2_room_id,calls_v2_join_token")
+      .eq("caller_id", callerId)
+      .eq("callee_id", calleeId)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (!error && data?.calls_v2_room_id) {
+      return true;
+    }
+
+    await new Promise<void>((resolve) => setTimeout(resolve, 700 * attempt));
+  }
+
+  return false;
+}
+
+type MediaStats = {
+  liveVideoTracksBound: number;
+  liveAudioTracksBound: number;
+  playingVideos: number;
+  callState: string | null;
+  connectionState: string | null;
+};
+
+async function collectMediaStats(page: Page): Promise<MediaStats> {
+  return page.evaluate(() => {
+    const mediaEls = Array.from(document.querySelectorAll("video, audio")) as Array<HTMLVideoElement | HTMLAudioElement>;
+    let liveVideoTracksBound = 0;
+    let liveAudioTracksBound = 0;
+    let playingVideos = 0;
+
+    for (const el of mediaEls) {
+      const stream = el.srcObject instanceof MediaStream ? el.srcObject : null;
+      if (stream) {
+        liveVideoTracksBound += stream.getVideoTracks().filter((t) => t.readyState === "live").length;
+        liveAudioTracksBound += stream.getAudioTracks().filter((t) => t.readyState === "live").length;
+      }
+      if (el.tagName.toLowerCase() === "video") {
+        const video = el as HTMLVideoElement;
+        if (!video.paused && video.readyState >= 2 && video.currentTime > 0) playingVideos += 1;
+      }
+    }
+
+    const root = document.querySelector("[data-call-state]");
+    return {
+      liveVideoTracksBound,
+      liveAudioTracksBound,
+      playingVideos,
+      callState: root?.getAttribute("data-call-state") ?? null,
+      connectionState: root?.getAttribute("data-connection-state") ?? null,
+    };
+  });
 }
 
 test.use({
@@ -165,16 +338,21 @@ test.describe("Живой мониторинг звонков (production SFU)",
       if (dmErr) throw new Error(`DM failed: ${dmErr.message}`);
       console.log(`>>> [${ts()}] DM создан: ${convId}`);
 
-      // ─── 4. Навигация — оба открывают конкретный чат ─────────────────────
-      console.log(`>>> [${ts()}] Навигация: оба → /chats?open=${convId} (мобильный viewport 375×812)`);
-      await Promise.all([
-        pageA.goto(`${BASE_URL}/chats?open=${convId}`, { waitUntil: "domcontentloaded", timeout: 30_000 }),
-        pageB.goto(`${BASE_URL}/chats?open=${convId}`, { waitUntil: "domcontentloaded", timeout: 30_000 }),
+      // ─── 4. Навигация — открываем DM и проверяем доступность call UI ─────
+      console.log(`>>> [${ts()}] Навигация: оба → /chats?openDmId=${convId} (мобильный viewport 375×812)`);
+      const [dmOpenedA] = await Promise.all([
+        openDmConversation(pageA, String(convId), ["Live Caller B", emailB]),
+        pageB.goto(`${BASE_URL}/chats?openDmId=${convId}`, { waitUntil: "commit", timeout: 30_000 }).catch(() => undefined),
       ]);
+      console.log(`>>> [${ts()}] DM opened on A: ${dmOpenedA}`);
 
       // Даём SPA загрузиться, auth, WS, Realtime подключиться
       console.log(`>>> [${ts()}] Жду инициализацию SPA обоих (12 сек)...`);
       await pageA.waitForTimeout(12_000);
+      await Promise.all([
+        ensureChatsReady(pageA, `${BASE_URL}/chats?openDmId=${convId}`),
+        ensureChatsReady(pageB, `${BASE_URL}/chats?openDmId=${convId}`),
+      ]);
       console.log(`>>> [${ts()}] A URL: ${pageA.url()}`);
       console.log(`>>> [${ts()}] B URL: ${pageB.url()}`);
 
@@ -184,56 +362,40 @@ test.describe("Живой мониторинг звонков (production SFU)",
       console.log(`>>> [${ts()}] A body (300):`, bodyA_init.slice(0, 300));
       console.log(`>>> [${ts()}] B body (300):`, bodyB_init.slice(0, 300));
 
-      // ─── 5. Ищем кнопку звонка в header чата у A ─────────────────────────
-      console.log(`>>> [${ts()}] Ищу кнопку звонка у A...`);
-      const btnsA = await pageA.locator("button").allInnerTexts().catch(() => [] as string[]);
-      console.log(`>>> [${ts()}] A buttons:`, btnsA.slice(0, 20));
-
-      // Кнопка может быть: иконка Phone/Video в header, aria-label, или data-testid
-      const callSelectors = [
-        'button[aria-label="Видеозвонок"]',
-        'button[aria-label="Video call"]',
-        'button[aria-label="Аудиозвонок"]',
-        'button[aria-label="Audio call"]',
-        'button:has(svg.lucide-video)',
-        'button:has(svg.lucide-phone)',
-        '[data-testid="video-call-btn"]',
-        '[data-testid="call-btn"]',
-      ];
-
-      let callBtnClicked = false;
-      for (const sel of callSelectors) {
-        const btn = pageA.locator(sel).first();
-        if (await btn.isVisible({ timeout: 3000 }).catch(() => false)) {
-          console.log(`>>> [${ts()}] НАШЁЛ кнопку звонка: ${sel}`);
-          await btn.click();
-          callBtnClicked = true;
-          break;
-        }
+      // ─── 5. Инициируем звонок ────────────────────────────────────────────
+      console.log(`>>> [${ts()}] Инициирую звонок у A...`);
+      let clickedBy = "";
+      try {
+        clickedBy = await startCallFromA(pageA);
+        console.log(`>>> [${ts()}] Клик по кнопке звонка: ${clickedBy}`);
+      } catch {
+        console.log(`>>> [${ts()}] Кнопка звонка не найдена, fallback через deeplink startCall`);
+        await pageA.goto(`${BASE_URL}/chats?startCall=${authB.userId}&callType=video`, {
+          waitUntil: "domcontentloaded",
+          timeout: 30_000,
+        });
       }
 
-      if (!callBtnClicked) {
-        // Попробуем fallback — все SVG кнопки в header-area
-        console.log(`>>> [${ts()}] Стандартные селекторы не сработали, ищу SVG кнопки в верхней части...`);
-        const headerHtml = await pageA.locator("header, [class*=header], [class*=Header], [class*=ChatHeader]").first().innerHTML().catch(() => "no header found");
-        console.log(`>>> [${ts()}] HEADER HTML (500):`, headerHtml.slice(0, 500));
-        
-        // Попробуем любую кнопку с SVG в header
-        const svgBtns = pageA.locator("header button, [class*=header] button, [class*=Header] button");
-        const svgCount = await svgBtns.count();
-        console.log(`>>> [${ts()}] Кнопок в header: ${svgCount}`);
-        for (let i = 0; i < svgCount; i++) {
-          const b = svgBtns.nth(i);
-          const html = await b.innerHTML().catch(() => "");
-          console.log(`>>> [${ts()}]   btn[${i}]:`, html.slice(0, 100));
-        }
+      // Если UI исходящего не появился, повторяем deeplink-инициацию несколько раз.
+      let outgoingOk = await hasOutgoingCallUi(pageA);
+      for (let attempt = 1; !outgoingOk && attempt <= 2; attempt++) {
+        console.log(`>>> [${ts()}] Исходящий не виден, retry startCall #${attempt}`);
+        await pageA.goto(`${BASE_URL}/chats?startCall=${authB.userId}&callType=video`, {
+          waitUntil: "domcontentloaded",
+          timeout: 30_000,
+        });
+        await pageA.waitForTimeout(2500);
+        outgoingOk = await hasOutgoingCallUi(pageA);
+      }
+      if (!outgoingOk) {
+        console.log(`>>> [${ts()}] ⚠ Исходящий UI не виден, продолжаю по входящему сигналу на B`);
       }
 
       // Ждём после клика
       console.log(`>>> [${ts()}] Жду после клика / попытки звонка (5 сек)...`);
       await pageA.waitForTimeout(5000);
 
-      // ─── 6. User B: ждём входящий ────────────────────────────────────────
+      // ─── 6. User B: ждём входящий (с retry старта) ───────────────────────
       console.log(`>>> [${ts()}] Проверяю входящий звонок у B...`);
 
       const incomingIndicators = [
@@ -247,60 +409,134 @@ test.describe("Живой мониторинг звонков (production SFU)",
       ];
 
       let incomingFound = false;
-      for (const sel of incomingIndicators) {
-        const el = pageB.locator(sel).first();
-        if (await el.isVisible({ timeout: 3000 }).catch(() => false)) {
-          console.log(`>>> [${ts()}] B ВИДИТ ВХОДЯЩИЙ: selector="${sel}"`);
-          incomingFound = true;
-          break;
+      for (let inviteAttempt = 1; inviteAttempt <= 3 && !incomingFound; inviteAttempt++) {
+        const incomingDeadline = Date.now() + 16_000;
+        while (!incomingFound && Date.now() < incomingDeadline) {
+          for (const sel of incomingIndicators) {
+            const el = pageB.locator(sel).first();
+            if (await el.isVisible({ timeout: 1200 }).catch(() => false)) {
+              console.log(`>>> [${ts()}] B ВИДИТ ВХОДЯЩИЙ: selector="${sel}"`);
+              incomingFound = true;
+              break;
+            }
+          }
+          if (!incomingFound) await pageB.waitForTimeout(800);
+        }
+
+        if (!incomingFound && inviteAttempt < 3) {
+          console.log(`>>> [${ts()}] Входящий не пришёл, перезапускаю invite (attempt ${inviteAttempt + 1})`);
+          const callerHangup = pageA.locator("button:has(.lucide-phone-off), button.bg-destructive, button.bg-red-500").first();
+          if (await callerHangup.isVisible({ timeout: 1000 }).catch(() => false)) {
+            await callerHangup.click().catch(() => undefined);
+            await pageA.waitForTimeout(1200);
+          }
+          await pageA.goto(`${BASE_URL}/chats?startCall=${authB.userId}&callType=video`, {
+            waitUntil: "domcontentloaded",
+            timeout: 30_000,
+          });
+          await pageA.waitForTimeout(2500);
         }
       }
 
       if (!incomingFound) {
-        // Может быть Auto-accept или overlay
-        console.log(`>>> [${ts()}] Входящий НЕ обнаружен за 15с. Проверяю что видит B...`);
-        const bodyB = await pageB.locator("body").innerText().catch(() => "");
-        const allBtnsB = await pageB.locator("button").allInnerTexts();
-        console.log(`>>> [${ts()}] Текст B (первые 500):`, bodyB.slice(0, 500));
-        console.log(`>>> [${ts()}] КНОПКИ B:`, allBtnsB.slice(0, 15));
-
-        // Подождём ещё
-        for (const sel of incomingIndicators) {
-          const el = pageB.locator(sel).first();
-          if (await el.isVisible({ timeout: 15_000 }).catch(() => false)) {
-            console.log(`>>> [${ts()}] B УВИДЕЛ (с задержкой): selector="${sel}"`);
-            incomingFound = true;
-            break;
-          }
-        }
+        console.log(`>>> [${ts()}] Входящий не появился в окне ожидания`);
+        throw new Error("Incoming call UI not visible on callee side");
       }
 
       if (incomingFound) {
+        let hintsReady = await waitForLatestCallRoomHints(authA.sb, authA.userId, authB.userId);
+        console.log(`>>> [${ts()}] Room hints before accept: ${hintsReady}`);
+
+        if (!hintsReady) {
+          console.log(`>>> [${ts()}] Room hints пустые, делаю recovery startCall и повторную проверку`);
+          await pageA
+            .goto(`${BASE_URL}/chats?startCall=${authB.userId}&callType=video`, {
+              waitUntil: "domcontentloaded",
+              timeout: 30_000,
+            })
+            .catch(() => undefined);
+          await pageA.waitForTimeout(2800);
+
+          const incomingRetrySel = ["text=Входящий звонок", "text=Incoming call", "[data-testid='incoming-call-modal']"];
+          for (const sel of incomingRetrySel) {
+            const incomingRetry = pageB.locator(sel).last();
+            if (await incomingRetry.isVisible({ timeout: 4000 }).catch(() => false)) {
+              break;
+            }
+          }
+
+          hintsReady = await waitForLatestCallRoomHints(authA.sb, authA.userId, authB.userId);
+          console.log(`>>> [${ts()}] Room hints after recovery: ${hintsReady}`);
+        }
+
         // ─── 7. Принимаем ──────────────────────────────────────────────────
         const acceptBtns = [
-          "text=Ответить",
-          "text=Accept",
+          "button[aria-label='Ответить']",
+          "button[aria-label='Accept']",
           "button:has(.lucide-phone)",
           "button.bg-green-500",
           "[data-testid='accept-call']",
         ];
+        let accepted = false;
         for (const sel of acceptBtns) {
-          const btn = pageB.locator(sel).first();
+          const btn = pageB.locator(sel).last();
           if (await btn.isVisible({ timeout: 3000 }).catch(() => false)) {
             console.log(`>>> [${ts()}] Принимаю звонок: ${sel}`);
             await btn.click();
+            accepted = true;
             break;
           }
         }
+        if (!accepted) {
+          // На мобильном UI кнопка может отрисоваться позже.
+          const delayed = pageB.locator("button[aria-label='Ответить'], button[aria-label='Accept']").last();
+          await delayed.waitFor({ state: "visible", timeout: 10_000 });
+          await delayed.click();
+        }
 
-        // ─── 8. Ждём соединение ────────────────────────────────────────────
-        console.log(`>>> [${ts()}] Жду установку соединения...`);
-        await pageA.waitForTimeout(8000);
+        // ─── 8. Ждём двустороннюю передачу аудио/видео ─────────────────────
+        console.log(`>>> [${ts()}] Жду установку двустороннего медиа...`);
+        const mediaDeadline = Date.now() + 25_000;
+        let statsA: MediaStats | null = null;
+        let statsB: MediaStats | null = null;
+        while (Date.now() < mediaDeadline) {
+          [statsA, statsB] = await Promise.all([collectMediaStats(pageA), collectMediaStats(pageB)]);
+          const okA = statsA.liveVideoTracksBound >= 1 && statsA.liveAudioTracksBound >= 1;
+          const okB = statsB.liveVideoTracksBound >= 1 && statsB.liveAudioTracksBound >= 1;
+          if (okA && okB) break;
+          await pageA.waitForTimeout(1000);
+        }
 
-        // Проверяем видео элементы
-        const videosA = await pageA.locator("video").count();
-        const videosB = await pageB.locator("video").count();
-        console.log(`>>> [${ts()}] VIDEO ЭЛЕМЕНТЫ: A=${videosA}, B=${videosB}`);
+        // Production network is flaky: if media didn't bind in first window,
+        // retry accept once and give SFU bootstrap extra time.
+        const firstOkA = !!statsA && statsA.liveVideoTracksBound >= 1 && statsA.liveAudioTracksBound >= 1;
+        const firstOkB = !!statsB && statsB.liveVideoTracksBound >= 1 && statsB.liveAudioTracksBound >= 1;
+        if (!firstOkA || !firstOkB) {
+          const acceptAgain = pageB.locator("button[aria-label='Ответить'], button[aria-label='Accept']").first();
+          if (await acceptAgain.isVisible({ timeout: 1200 }).catch(() => false)) {
+            console.log(`>>> [${ts()}] Медиа не поднялось, повторяю accept на B`);
+            await acceptAgain.click().catch(() => undefined);
+          }
+
+          const extraDeadline = Date.now() + 12_000;
+          while (Date.now() < extraDeadline) {
+            [statsA, statsB] = await Promise.all([collectMediaStats(pageA), collectMediaStats(pageB)]);
+            const okA = statsA.liveVideoTracksBound >= 1 && statsA.liveAudioTracksBound >= 1;
+            const okB = statsB.liveVideoTracksBound >= 1 && statsB.liveAudioTracksBound >= 1;
+            if (okA && okB) break;
+            await pageA.waitForTimeout(1000);
+          }
+        }
+
+        statsA = statsA ?? await collectMediaStats(pageA);
+        statsB = statsB ?? await collectMediaStats(pageB);
+        console.log(`>>> [${ts()}] MEDIA A:`, JSON.stringify(statsA));
+        console.log(`>>> [${ts()}] MEDIA B:`, JSON.stringify(statsB));
+
+        expect(statsA.liveVideoTracksBound).toBeGreaterThanOrEqual(1);
+        expect(statsA.liveAudioTracksBound).toBeGreaterThanOrEqual(1);
+        expect(statsB.liveVideoTracksBound).toBeGreaterThanOrEqual(1);
+        expect(statsB.liveAudioTracksBound).toBeGreaterThanOrEqual(1);
 
         // Держим звонок 5 секунд
         console.log(`>>> [${ts()}] Звонок активен, держу 5 секунд...`);

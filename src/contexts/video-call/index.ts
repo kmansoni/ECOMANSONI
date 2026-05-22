@@ -74,7 +74,7 @@ import type { VideoCallContextType } from "./types";
  * re-render on any change. For components that only use a subset, prefer
  * the specialized hooks.
  */
-// eslint-disable-next-line react-refresh/only-export-components
+ 
 export function useVideoCallContext(): VideoCallContextType {
   const signaling = useVideoCallSignaling();
   const media = useVideoCallMedia();

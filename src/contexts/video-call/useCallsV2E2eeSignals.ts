@@ -1,4 +1,4 @@
-import { useCallback } from "react";
+import { useCallback, useRef } from "react";
 import { logger } from "@/lib/logger";
 import { getStableCallsDeviceId } from "@/lib/platform/device";
 import { CallKeyExchange, type KeyPackageData } from "../../calls-v2/callKeyExchange";
@@ -6,7 +6,6 @@ import { CallMediaEncryption } from "../../calls-v2/callMediaEncryption";
 import { RekeyStateMachine } from "../../calls-v2/rekeyStateMachine";
 import { EpochGuard } from "@/calls-v2/epochGuard";
 import type { CallsWsClient } from "@/calls-v2/wsClient";
-import type { PipeBreakInfo } from "@/lib/e2ee/insertableStreams";
 import { getOrCreateIdentityKeyPair, signIdentity, exportPublicKey as exportEcdsaPublicKey, verifyIdentity, importPublicKey } from "@/calls-v2/ecdsaIdentity";
 
 interface UseCallsV2E2eeSignalsParams {
@@ -22,7 +21,6 @@ interface UseCallsV2E2eeSignalsParams {
   epochGuardRef: { current: EpochGuard | null };
   producerPeerKeyRef: { current: Map<string, string> };
   peerUserIdByDeviceIdRef: { current: Map<string, string> };
-  handleE2eePipeBreakRef: { current: ((info: PipeBreakInfo) => void) | null };
 }
 
 export function useCallsV2E2eeSignals({
@@ -38,14 +36,88 @@ export function useCallsV2E2eeSignals({
   epochGuardRef,
   producerPeerKeyRef,
   peerUserIdByDeviceIdRef,
-  handleE2eePipeBreakRef,
 }: UseCallsV2E2eeSignalsParams) {
+  const attachedSignalsClientRef = useRef<CallsWsClient | null>(null);
+  const detachSignalsRef = useRef<(() => void) | null>(null);
+
+  const base64ToBytes = useCallback((b64: string): Uint8Array => {
+    return Uint8Array.from(atob(b64), (char) => char.charCodeAt(0));
+  }, []);
+
+  const deriveSenderKeyId = useCallback(async (senderPublicKeyB64: string): Promise<string> => {
+    const senderPublicKeyBytes = base64ToBytes(senderPublicKeyB64);
+    const keyMaterial = senderPublicKeyBytes.length > 65
+      ? senderPublicKeyBytes.slice(senderPublicKeyBytes.length - 65)
+      : senderPublicKeyBytes;
+    const firstEight = keyMaterial.slice(0, 8);
+    const digest = await crypto.subtle.digest("SHA-256", firstEight);
+    const view = new DataView(digest);
+    const keyId = view.getUint32(0, false);
+    return `sk-${keyId.toString(16).padStart(8, "0")}`;
+  }, [base64ToBytes]);
+
+  const resolvePeerIdentity = useCallback((params: {
+    payloadPeerId?: string;
+    payloadUserId?: string;
+    payloadDeviceId?: string;
+    fallbackUserId?: string;
+  }): { peerId: string; userId: string; deviceId?: string } | null => {
+    const payloadPeerId = params.payloadPeerId?.trim() ?? "";
+    const payloadUserId = params.payloadUserId?.trim() ?? "";
+    const payloadDeviceId = params.payloadDeviceId?.trim() ?? "";
+    const fallbackUserId = params.fallbackUserId?.trim() ?? "";
+
+    if (payloadPeerId) {
+      const sep = payloadPeerId.indexOf(":");
+      if (sep > 0 && sep < payloadPeerId.length - 1) {
+        const userId = payloadPeerId.slice(0, sep).trim();
+        const deviceId = payloadPeerId.slice(sep + 1).trim();
+        if (userId && deviceId) {
+          return { peerId: `${userId}:${deviceId}`, userId, deviceId };
+        }
+      }
+      if (payloadDeviceId) {
+        return { peerId: `${payloadPeerId}:${payloadDeviceId}`, userId: payloadPeerId, deviceId: payloadDeviceId };
+      }
+      return { peerId: payloadPeerId, userId: payloadPeerId };
+    }
+
+    const effectiveUserId = payloadUserId || fallbackUserId;
+    if (effectiveUserId && payloadDeviceId) {
+      return { peerId: `${effectiveUserId}:${payloadDeviceId}`, userId: effectiveUserId, deviceId: payloadDeviceId };
+    }
+    if (effectiveUserId) {
+      return { peerId: effectiveUserId, userId: effectiveUserId };
+    }
+    if (payloadDeviceId) {
+      return { peerId: payloadDeviceId, userId: payloadDeviceId, deviceId: payloadDeviceId };
+    }
+    return null;
+  }, []);
+
   const attachCallsV2E2eeSignals = useCallback((client: CallsWsClient): void => {
-    client.on("AUTH_FAIL", (frame) => {
+    if (attachedSignalsClientRef.current === client) {
+      return;
+    }
+
+    if (detachSignalsRef.current) {
+      detachSignalsRef.current();
+      detachSignalsRef.current = null;
+    }
+
+    const unsubs: Array<() => void> = [];
+    const on = (
+      event: Parameters<CallsWsClient["on"]>[0],
+      handler: Parameters<CallsWsClient["on"]>[1]
+    ) => {
+      unsubs.push(client.on(event, handler));
+    };
+
+    on("AUTH_FAIL", (frame) => {
       logger.warn("[VideoCallContext] calls-v2 auth-fail", { payload: frame.payload });
     });
 
-    client.on("ERROR", (frame) => {
+    on("ERROR", (frame) => {
       logger.warn("[VideoCallContext] calls-v2 server-error", {
         type: frame.type,
         payload: frame.payload,
@@ -53,11 +125,11 @@ export function useCallsV2E2eeSignals({
       });
     });
 
-    client.on("ROOM_LEFT", (frame) => {
+    on("ROOM_LEFT", (frame) => {
       logger.warn("[VideoCallContext] calls-v2 room-left", { payload: frame.payload });
     });
 
-    client.on("ROOM_SNAPSHOT", (frame) => {
+    on("ROOM_SNAPSHOT", (frame) => {
       const snapshot = frame.payload as {
         roomVersion?: number | string;
         e2ee?: { leaderDeviceId?: string };
@@ -96,7 +168,7 @@ export function useCallsV2E2eeSignals({
       }
     });
 
-    client.on("REKEY_BEGIN", (frame) => {
+    on("REKEY_BEGIN", (frame) => {
       const activeRoomId = callsWsRoomRef.current;
       const rekeyPayload = frame.payload as { roomId?: string; epoch?: number | string } | undefined;
       const roomId = rekeyPayload?.roomId;
@@ -136,6 +208,7 @@ export function useCallsV2E2eeSignals({
           await mediaEncryption.setEncryptionKey(epochKey);
 
           const senderPublicKey = await keyExchange.getPublicKeyBase64();
+          const senderKeyId = await deriveSenderKeyId(senderPublicKey);
           const sessionIdForDiscovery = keyExchange.getSessionId();
           if (!sessionIdForDiscovery) {
             logger.error("[VideoCallContext] KEY_PACKAGE discovery aborted: CallKeyExchange.getSessionId() returned empty");
@@ -160,6 +233,9 @@ export function useCallsV2E2eeSignals({
           const mySigningPublicKey = await keyExchange.getSigningPublicKeyBase64();
           void client.keyPackage({
             roomId,
+            fromDeviceId: getStableCallsDeviceId(),
+            toDeviceId: leaderDeviceId,
+            senderKeyId,
             targetDeviceId: leaderDeviceId,
             epoch,
             keyPackageType: "DISCOVERY",
@@ -186,18 +262,19 @@ export function useCallsV2E2eeSignals({
       })();
     });
 
-    client.on("KEY_PACKAGE", (frame) => {
+    on("KEY_PACKAGE", (frame) => {
       const activeRoomId = callsWsRoomRef.current;
       const keyPkgPayload = frame.payload as {
         roomId?: string;
         targetDeviceId?: string;
+        toDeviceId?: string;
         epoch?: number | string;
       } | undefined;
       const roomId = keyPkgPayload?.roomId;
       if (!activeRoomId || !roomId || roomId !== activeRoomId) return;
 
       const myDeviceId = getStableCallsDeviceId();
-      const targetDeviceId = keyPkgPayload?.targetDeviceId;
+      const targetDeviceId = keyPkgPayload?.targetDeviceId ?? keyPkgPayload?.toDeviceId;
       if (!targetDeviceId || targetDeviceId !== myDeviceId) return;
 
       const epochRaw = keyPkgPayload?.epoch;
@@ -222,6 +299,7 @@ export function useCallsV2E2eeSignals({
           const senderPublicKeyB64 = rawPayload?.senderPublicKey as string | undefined;
           const ciphertextB64 = rawPayload?.ciphertext as string | undefined;
           const sigB64 = rawPayload?.sig as string | undefined;
+          const senderKeyIdFromPayload = rawPayload?.senderKeyId as string | undefined;
           const keyPackageType = rawPayload?.keyPackageType as string | undefined;
           const discoveryNonce = rawPayload?.discoveryNonce as string | undefined;
           const payloadRoomId = (rawPayload?.roomId as string | undefined) ?? "";
@@ -248,23 +326,39 @@ export function useCallsV2E2eeSignals({
             const senderIdentityObj = rawPayload?.senderIdentity as
               | { userId?: string; deviceId?: string; sessionId?: string }
               | undefined;
-            const senderUserId = senderIdentityObj?.userId
-              ?? (rawPayload?.fromUserId as string | undefined)
-              ?? (rawPayload?.fromDeviceId as string | undefined)
-              ?? "unknown";
-            const senderDeviceId = senderIdentityObj?.deviceId
+            const senderDeviceId =
+              senderIdentityObj?.deviceId
               ?? (rawPayload?.fromDeviceId as string | undefined)
               ?? "";
+            const senderUserIdFallback = senderDeviceId
+              ? (peerUserIdByDeviceIdRef.current.get(senderDeviceId) ?? "")
+              : "";
+            const senderIdentity = resolvePeerIdentity({
+              payloadPeerId: rawPayload?.peerId as string | undefined,
+              payloadUserId: senderIdentityObj?.userId ?? (rawPayload?.fromUserId as string | undefined),
+              payloadDeviceId: senderDeviceId,
+              fallbackUserId: senderUserIdFallback,
+            });
+            const senderUserId = senderIdentity?.userId ?? "unknown";
             const senderSessionId = senderIdentityObj?.sessionId ?? "";
+            const senderKeyId = senderKeyIdFromPayload && senderKeyIdFromPayload.length > 0
+              ? senderKeyIdFromPayload
+              : await deriveSenderKeyId(senderPublicKeyB64);
+            const packageDeliveryKey = [
+              roomId,
+              String(epoch),
+              senderDeviceId || "unknown-sender",
+              targetDeviceId,
+              senderKeyId,
+            ].join(":");
 
             const senderSigningKeyB64 = rawPayload?.senderSigningPublicKey as string | undefined;
-            if (senderSigningKeyB64 && senderDeviceId) {
-              const composedPeerId = `${senderUserId}:${senderDeviceId}`;
+            if (senderSigningKeyB64 && senderIdentity?.peerId) {
               try {
-                await keyExchange.registerPeerSigningKey(composedPeerId, senderSigningKeyB64);
+                await keyExchange.registerPeerSigningKey(senderIdentity.peerId, senderSigningKeyB64);
               } catch (regErr) {
                 logger.warn("[VideoCallContext] registerPeerSigningKey failed", {
-                  peerId: composedPeerId,
+                  peerId: senderIdentity.peerId,
                   error: regErr instanceof Error
                     ? { name: regErr.name, message: regErr.message }
                     : String(regErr),
@@ -273,9 +367,9 @@ export function useCallsV2E2eeSignals({
             }
 
             const pkgData: KeyPackageData = {
-              senderPublicKey: senderPublicKeyB64,
-              ciphertext: ciphertextB64,
-              sig: sigB64,
+              senderPublicKey: senderPublicKeyB64 ?? "",
+              ciphertext: ciphertextB64 ?? "",
+              sig: sigB64 ?? "",
               epoch,
               salt: (rawPayload?.salt as string | undefined) ?? "",
               senderIdentity: {
@@ -379,6 +473,7 @@ export function useCallsV2E2eeSignals({
                   await mediaEncryption.setEncryptionKey(epochKey);
 
                   const pkg = await keyExchange.createKeyPackage(senderPublicKeyB64, epoch);
+                  const senderKeyId = await deriveSenderKeyId(pkg.senderPublicKey);
                   const leaderSessionId = keyExchange.getSessionId();
                   const leaderSigningPublicKey = await keyExchange.getSigningPublicKeyBase64();
                   const identityKeyPair = await getOrCreateIdentityKeyPair();
@@ -396,6 +491,9 @@ export function useCallsV2E2eeSignals({
                   const identitySig = btoa(String.fromCharCode(...new Uint8Array(identitySigRaw)));
                   void client.keyPackage({
                     roomId,
+                    fromDeviceId: getStableCallsDeviceId(),
+                    toDeviceId: senderDeviceId,
+                    senderKeyId,
                     targetDeviceId: senderDeviceId,
                     epoch,
                     keyPackageType: "WRAPPED_EPOCH_KEY",
@@ -429,11 +527,30 @@ export function useCallsV2E2eeSignals({
               return;
             }
 
+            if (!isDiscovery) {
+              const semanticReplayKey = `wrapped:in:${packageDeliveryKey}`;
+              if (keyPackageNonceRef.current.has(semanticReplayKey)) {
+                logger.warn("[VideoCallContext] KEY_PACKAGE wrapped delivery replay rejected", {
+                  epoch,
+                  senderUserId,
+                  senderDeviceId,
+                  senderKeyId,
+                  targetDeviceId,
+                });
+                return;
+              }
+              keyPackageNonceRef.current.add(semanticReplayKey);
+              if (keyPackageNonceRef.current.size > 2000) {
+                const keep = Array.from(keyPackageNonceRef.current).slice(-1000);
+                keyPackageNonceRef.current = new Set(keep);
+              }
+            }
+
             let keyExchangeSuccess = false;
 
             try {
               const peerEpochKey = await keyExchange.processKeyPackage(pkgData);
-              const peerKey = senderDeviceId ? `${senderUserId}:${senderDeviceId}` : senderUserId;
+              const peerKey = senderIdentity?.peerId ?? senderUserId;
               logger.debug("[VideoCallContext] KEY_PACKAGE: about to call setDecryptionKey", {
                 epoch: peerEpochKey.epoch,
                 peerKey,
@@ -462,6 +579,8 @@ export function useCallsV2E2eeSignals({
                 roomId,
                 epoch,
                 fromDeviceId: myDeviceId,
+                toDeviceId: senderDeviceId || undefined,
+                senderKeyId,
                 refId: frame.msgId,
               }).catch((error) => {
                 logger.warn("[VideoCallContext] KEY_ACK send failed", error);
@@ -474,7 +593,7 @@ export function useCallsV2E2eeSignals({
       })();
     });
 
-    client.on("REKEY_COMMIT", (frame) => {
+    on("REKEY_COMMIT", (frame) => {
       const commitPayload = frame.payload as { epoch?: number | string } | undefined;
       const epochRaw = commitPayload?.epoch;
       const nextEpoch = typeof epochRaw === "number" ? epochRaw : Number(epochRaw);
@@ -492,40 +611,133 @@ export function useCallsV2E2eeSignals({
       }
     });
 
-    client.on("PEER_JOINED", (frame) => {
-      const peerId = (frame.payload as Record<string, unknown> | undefined)?.peerId as string | undefined;
-      if (peerId) {
-        rekeyMachineRef.current?.addPeer(peerId);
-      }
-    });
-
-    client.on("PEER_LEFT", (frame) => {
-      const peerId = (frame.payload as Record<string, unknown> | undefined)?.peerId as string | undefined;
-      if (peerId) {
-        rekeyMachineRef.current?.removePeer(peerId);
-      }
-    });
-
-    client.on("KEY_ACK", (frame) => {
+    on("PEER_JOINED", (frame) => {
       const payload = frame.payload as Record<string, unknown> | undefined;
+      const deviceId = payload?.deviceId as string | undefined;
+      const userId = payload?.userId as string | undefined;
+      const identity = resolvePeerIdentity({
+        payloadPeerId: payload?.peerId as string | undefined,
+        payloadUserId: userId,
+        payloadDeviceId: deviceId,
+      });
+      if (identity?.deviceId && identity.userId) {
+        peerUserIdByDeviceIdRef.current.set(identity.deviceId, identity.userId);
+      }
+      if (identity?.peerId) {
+        rekeyMachineRef.current?.addPeer(identity.peerId);
+      }
+    });
+
+    on("PEER_LEFT", (frame) => {
+      const payload = frame.payload as Record<string, unknown> | undefined;
+      const deviceId = payload?.deviceId as string | undefined;
+      const userId = payload?.userId as string | undefined;
+      const identity = resolvePeerIdentity({
+        payloadPeerId: payload?.peerId as string | undefined,
+        payloadUserId: userId,
+        payloadDeviceId: deviceId,
+        fallbackUserId: deviceId ? peerUserIdByDeviceIdRef.current.get(deviceId) : undefined,
+      });
+      if (identity?.deviceId) {
+        peerUserIdByDeviceIdRef.current.delete(identity.deviceId);
+      }
+      if (identity?.peerId) {
+        rekeyMachineRef.current?.removePeer(identity.peerId);
+      }
+    });
+
+    on("KEY_ACK", (frame) => {
+      const payload = frame.payload as Record<string, unknown> | undefined;
+      const myDeviceId = getStableCallsDeviceId();
+      const roomId = payload?.roomId as string | undefined;
       const fromDeviceId = payload?.fromDeviceId as string | undefined;
+      const toDeviceId = payload?.toDeviceId as string | undefined;
+      const senderKeyId = payload?.senderKeyId as string | undefined;
+      const refId = payload?.refId as string | undefined;
+      const payloadPeerId = payload?.peerId as string | undefined;
       const epochRaw = payload?.epoch;
+      if (toDeviceId && toDeviceId !== myDeviceId) return;
       if (epochRaw === undefined || epochRaw === null) return;
       const epoch = typeof epochRaw === "number" ? epochRaw : Number(epochRaw);
       const msgId = frame.msgId ?? (payload?.messageId as string | undefined);
       if (fromDeviceId && Number.isFinite(epoch) && epoch >= 0) {
-        rekeyMachineRef.current?.onKeyAckReceived(fromDeviceId, epoch, msgId);
+        const semanticAckKey = [
+          roomId ?? callsWsRoomRef.current ?? "unknown-room",
+          String(epoch),
+          fromDeviceId,
+          toDeviceId ?? myDeviceId,
+          senderKeyId ?? refId ?? "legacy-ack",
+        ].join(":");
+        const semanticReplayKey = `ack:in:${semanticAckKey}`;
+        if (keyPackageNonceRef.current.has(semanticReplayKey)) {
+          logger.warn("[VideoCallContext] KEY_ACK semantic replay rejected", {
+            epoch,
+            fromDeviceId,
+            toDeviceId: toDeviceId ?? myDeviceId,
+            senderKeyId,
+            refId,
+          });
+          return;
+        }
+        keyPackageNonceRef.current.add(semanticReplayKey);
+        if (keyPackageNonceRef.current.size > 2000) {
+          const keep = Array.from(keyPackageNonceRef.current).slice(-1000);
+          keyPackageNonceRef.current = new Set(keep);
+        }
+
+        const machine = rekeyMachineRef.current;
+        const peerUserId = peerUserIdByDeviceIdRef.current.get(fromDeviceId);
+        const candidatePeerIds = [
+          payloadPeerId,
+          peerUserId ? `${peerUserId}:${fromDeviceId}` : undefined,
+          peerUserId,
+          fromDeviceId,
+        ].filter((value): value is string => typeof value === "string" && value.length > 0);
+
+        const activePeerIds = machine?.getActivePeerIds() ?? new Set<string>();
+        const resolvedPeerId =
+          candidatePeerIds.find((candidate) => activePeerIds.has(candidate)) ?? candidatePeerIds[0];
+
+        if (resolvedPeerId) {
+          if (resolvedPeerId !== fromDeviceId) {
+            logger.debug("[VideoCallContext] KEY_ACK peer resolved", {
+              fromDeviceId,
+              payloadPeerId,
+              resolvedPeerId,
+              activePeersCount: activePeerIds.size,
+            });
+          }
+          machine?.onKeyAckReceived(resolvedPeerId, epoch, msgId);
+        }
       }
     });
+
+    detachSignalsRef.current = () => {
+      for (const off of unsubs) {
+        try {
+          off();
+        } catch (error) {
+          logger.debug("[VideoCallContext] E2EE signal detach handler threw", {
+            error: error instanceof Error ? error.message : String(error),
+          });
+        }
+      }
+    };
+    attachedSignalsClientRef.current = client;
   }, [
+    attachedSignalsClientRef,
     callKeyExchangeRef,
     callMediaEncryptionRef,
     callsWsRoomRef,
+    detachSignalsRef,
     e2eeEpochRef,
     e2eeLeaderDeviceRef,
+    epochGuardRef,
+    deriveSenderKeyId,
     keyPackageNonceRef,
     lastSnapshotRoomVersionRef,
     peerUserIdByDeviceIdRef,
+    resolvePeerIdentity,
     rekeyMachineRef,
     user,
   ]);

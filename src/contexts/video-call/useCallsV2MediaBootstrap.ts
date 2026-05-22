@@ -100,7 +100,7 @@ export function useCallsV2MediaBootstrap({
       return;
     }
 
-    const allTracks = manager.getAllRemoteTracks();
+    const allTracks = manager.getAllRemoteTracks().filter((track) => track.readyState === "live");
     const audioTracks = allTracks.filter((track) => track.kind === "audio");
     const videoTracks = allTracks.filter((track) => track.kind === "video");
     logger.debug("[VideoCallContext] rebuildRemoteStream", {
@@ -137,16 +137,35 @@ export function useCallsV2MediaBootstrap({
 
   const syncScreenShareProducer = useCallback(async () => {
     const manager = sfuManagerRef.current;
+    const client = callsWsRef.current;
     const roomId = callsWsMediaRoomRef.current;
     const stream = screenStream;
 
     if (!manager || !roomId) {
+      if (screenShareProducerIdsRef.current.length > 0) {
+        if (manager) {
+          for (const producerId of screenShareProducerIdsRef.current) {
+            manager.closeProducer(producerId);
+          }
+        }
+        logger.warn("[VideoCallContext] screen-share producer ids reset without active media room", {
+          hadManager: !!manager,
+          hadRoomId: !!roomId,
+          leakedCount: screenShareProducerIdsRef.current.length,
+        });
+        screenShareProducerIdsRef.current = [];
+      }
       return;
     }
 
     if (!isScreenSharing || !stream) {
       if (screenShareProducerIdsRef.current.length > 0) {
         for (const producerId of screenShareProducerIdsRef.current) {
+          if (client && roomId) {
+            await client.producerClose({ roomId, producerId }).catch((error) => {
+              logger.warn("[VideoCallContext] screen-share producerClose failed", { roomId, producerId, error });
+            });
+          }
           manager.closeProducer(producerId);
         }
         screenShareProducerIdsRef.current = [];
@@ -169,14 +188,21 @@ export function useCallsV2MediaBootstrap({
       if (REQUIRE_SFRAME && CallMediaEncryption.isSupported()) {
         const sender = manager.getProducerSender(producer.id);
         if (sender) {
-          callMediaEncryptionRef.current?.setupSenderTransform(sender, producer.id);
+          try {
+            callMediaEncryptionRef.current?.setupSenderTransform(sender, producer.id);
+          } catch (e) {
+            logger.error("[VideoCallContext] E2EE setupSenderTransform failed for screen-share producer", {
+              producerId: producer.id,
+              error: e instanceof Error ? e.message : String(e),
+            });
+          }
         }
       }
       producerIds.push(producer.id);
     }
     screenShareProducerIdsRef.current = producerIds;
     logger.info("[VideoCallContext] calls-v2 screen-share producers ready", { roomId, count: producerIds.length });
-  }, [callMediaEncryptionRef, callsWsMediaRoomRef, isScreenSharing, screenStream, sfuManagerRef]);
+  }, [callMediaEncryptionRef, callsWsMediaRoomRef, callsWsRef, isScreenSharing, screenStream, sfuManagerRef]);
 
   useEffect(() => {
     void syncScreenShareProducer();
@@ -417,6 +443,19 @@ export function useCallsV2MediaBootstrap({
           logger.info("[VideoCallContext] calls-v2 transport-connect:send:ok", { roomId });
         },
         async ({ kind, rtpParameters, appData }) => {
+          const expectedSource = typeof appData?.source === "string" ? appData.source : undefined;
+          const producedPromise = client.waitFor(
+            "PRODUCED",
+            (frame) => {
+              const p = frame.payload as { roomId?: string; producerId?: string; source?: string } | undefined;
+              if (p?.roomId !== roomId || typeof p?.producerId !== "string") return false;
+              // If server reports source, bind ACK to the specific produce request.
+              if (expectedSource && typeof p.source === "string") return p.source === expectedSource;
+              return true;
+            },
+            { timeoutMs: 5000, acceptRecent: false }
+          );
+
           await client.produce({
             roomId,
             transportId: sendParams.transportId,
@@ -424,14 +463,7 @@ export function useCallsV2MediaBootstrap({
             rtpParameters: rtpParameters as import("@/calls-v2/types").RtpParameters,
             appData: appData as Record<string, unknown>,
           });
-          const producedFrame = await client.waitFor(
-            "PRODUCED",
-            (frame) => {
-              const p = frame.payload as { roomId?: string; producerId?: string } | undefined;
-              return p?.roomId === roomId && typeof p?.producerId === "string";
-            },
-            { timeoutMs: 5000, acceptRecent: true }
-          );
+          const producedFrame = await producedPromise;
           const producerId = (producedFrame.payload as { producerId?: string })?.producerId;
           if (!producerId) throw new Error("PRODUCED event missing producerId");
           logger.info("[VideoCallContext] calls-v2 produce:ok", { roomId, kind, producerId });
@@ -492,6 +524,10 @@ export function useCallsV2MediaBootstrap({
         const p = frame.payload as import("@/calls-v2/types").ConsumedPayload | undefined;
         if (!p || p.roomId !== roomId) return;
 
+        if (typeof p.peerId === "string" && p.peerId.length > 0) {
+          producerPeerKeyRef.current.set(p.producerId, p.peerId);
+        }
+
         logger.debug("[VideoCallContext] CONSUMER_ADDED received", {
           consumerId: p.consumerId,
           producerId: p.producerId,
@@ -516,6 +552,24 @@ export function useCallsV2MediaBootstrap({
             trackState: consumer.track?.readyState,
           });
 
+          const consumerTrack = consumer.track;
+          if (consumerTrack) {
+            const onTrackLifecycleChanged = () => {
+              logger.debug("[VideoCallContext] consumer track lifecycle changed", {
+                consumerId: consumer.id,
+                trackId: consumerTrack.id,
+                kind: consumerTrack.kind,
+                readyState: consumerTrack.readyState,
+                muted: consumerTrack.muted,
+              });
+              rebuildRemoteStream();
+            };
+
+            consumerTrack.addEventListener("ended", onTrackLifecycleChanged);
+            consumerTrack.addEventListener("mute", onTrackLifecycleChanged);
+            consumerTrack.addEventListener("unmute", onTrackLifecycleChanged);
+          }
+
           consumerCreateParamsRef.current.set(consumer.id, p);
           if (REQUIRE_SFRAME && CallMediaEncryption.isSupported()) {
             const enc = callMediaEncryptionRef.current;
@@ -530,17 +584,25 @@ export function useCallsV2MediaBootstrap({
               peerIdField: p.peerId,
               fromProducerRef: producerPeerKeyRef.current.get(p.producerId),
               producerId: p.producerId,
-              hasEncryption: enc?.hasOutboundKey() ?? false,
-              decryptionKeysCount: decryptionPeerIds.length,
-              allDecryptionKeys: decryptionPeerIds,
+hasEncryption: enc?.hasOutboundKey() ?? false,
+               decryptionKeysCount: decryptionPeerIds.length,
+               allDecryptionKeys: decryptionPeerIds,
             });
             if (receiver && enc) {
-              enc.setupReceiverTransform(receiver, peerKey, consumer.id);
-              logger.info("[VideoCallContext] E2EE setupReceiverTransform:ok", {
-                peerKey,
-                consumerId: consumer.id,
-                decryptionKeysNow: enc.getDecryptionPeerIds(),
-              });
+              try {
+                enc.setupReceiverTransform(receiver, peerKey, consumer.id);
+                logger.info("[VideoCallContext] E2EE setupReceiverTransform:ok", {
+                  peerKey,
+                  consumerId: consumer.id,
+                  decryptionKeysNow: enc.getDecryptionPeerIds(),
+                });
+              } catch (e) {
+                logger.error("[VideoCallContext] E2EE setupReceiverTransform failed for consumer", {
+                  consumerId: consumer.id,
+                  peerKey,
+                  error: e instanceof Error ? e.message : String(e),
+                });
+              }
             }
           }
           return client.consumerResume({ roomId, consumerId: consumer.id }).then(() => {
@@ -574,7 +636,15 @@ export function useCallsV2MediaBootstrap({
         if (REQUIRE_SFRAME && CallMediaEncryption.isSupported()) {
           const sender = sfuManagerRef.current?.getProducerSender(producer.id);
           if (sender) {
-            callMediaEncryptionRef.current?.setupSenderTransform(sender, producer.id);
+            try {
+              callMediaEncryptionRef.current?.setupSenderTransform(sender, producer.id);
+            } catch (e) {
+              logger.error("[VideoCallContext] E2EE setupSenderTransform failed for producer", {
+                producerId: producer.id,
+                trackId: track.id,
+                error: e instanceof Error ? e.message : String(e),
+              });
+            }
           }
         }
       }

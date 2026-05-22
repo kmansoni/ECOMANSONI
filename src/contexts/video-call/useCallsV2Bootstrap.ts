@@ -53,7 +53,7 @@ interface UseCallsV2BootstrapParams {
   producerPeerKeyRef: MutableRefObject<Map<string, string>>;
   peerUserIdByDeviceIdRef: MutableRefObject<Map<string, string>>;
   handleE2eePipeBreakRef: MutableRefObject<((info: PipeBreakInfo) => void) | null>;
-  consumeUnsubTimerRef: MutableRefObject<number | null>;
+  producerAddedUnsubRef: MutableRefObject<(() => void) | null>;
   isCallStillActiveForBootstrap: (callId: string) => boolean;
 }
 
@@ -84,7 +84,7 @@ export function useCallsV2Bootstrap({
   producerPeerKeyRef,
   peerUserIdByDeviceIdRef,
   handleE2eePipeBreakRef,
-  consumeUnsubTimerRef,
+  producerAddedUnsubRef,
   isCallStillActiveForBootstrap,
 }: UseCallsV2BootstrapParams) {
   const { initializeCallsV2E2ee } = useCallsV2E2eeBootstrap({
@@ -109,14 +109,37 @@ export function useCallsV2Bootstrap({
       logger.warn("[VideoCallContext] calls-v2 disabled: no WS endpoint configured");
       return null;
     }
-    // P2-8 fix: return existing client only if it's actually connected, not in a broken state
+    // Return cached client only when transport is fully ready.
+    // `connecting/reconnecting` is not sufficient for roomCreate/roomJoin.
     if (callsWsRef.current) {
-      const state = callsWsRef.current.connectionState;
-      if (state === "connected" || state === "connecting" || state === "reconnecting") {
-        return callsWsRef.current;
+      const existingClient = callsWsRef.current;
+      const state = existingClient.connectionState;
+      if (state === "connected") {
+        return existingClient;
       }
+
+      if (state === "connecting" || state === "reconnecting") {
+        const becameConnected = await new Promise<boolean>((resolve) => {
+          const timeoutId = window.setTimeout(() => {
+            off();
+            resolve(false);
+          }, 2500);
+
+          const off = existingClient.onConnectionStateChange((nextState) => {
+            if (nextState !== "connected") return;
+            window.clearTimeout(timeoutId);
+            off();
+            resolve(true);
+          });
+        });
+
+        if (becameConnected && callsWsRef.current === existingClient) {
+          return existingClient;
+        }
+      }
+
       // Client is in failed/disconnected state — discard and create a new one
-      callsWsRef.current.close();
+      existingClient.close();
       callsWsRef.current = null;
     }
 
@@ -144,12 +167,14 @@ export function useCallsV2Bootstrap({
       ackRetry: { maxRetries: 1, retryDelayMs: 250 },
     });
 
+    let offState: (() => void) | null = null;
     try {
-      const offState = client.onConnectionStateChange((state) => {
+      offState = client.onConnectionStateChange((state) => {
         logger.info("[VideoCallContext] calls-v2 ws-state", { state });
       });
       await client.connect();
       offState(); // P1-5 fix: unsubscribe after connect — state changes are logged by wsClient internally
+      offState = null;
       logger.info("[VideoCallContext] calls-v2 connect:ok", { state: client.connectionState });
 
       const { data } = await supabase.auth.getSession();
@@ -211,23 +236,34 @@ export function useCallsV2Bootstrap({
           calls_v2_join_token: (p.callsV2JoinToken as string | null | undefined) ?? null,
         };
         logger.info("[VideoCallContext] WS call.invite received", { callId: callId.slice(0, 8) });
-        setPendingIncomingCall(syntheticCall);
+        setPendingIncomingCall((prev) => {
+          if (prev?.id === syntheticCall.id) return prev;
+          if (prev) {
+            logger.warn("[VideoCallContext] WS call.invite ignored: pending call already set", {
+              existingCallId: prev.id,
+              incomingCallId: syntheticCall.id,
+            });
+            return prev;
+          }
+          return syntheticCall;
+        });
       });
 
       callsWsRef.current = client;
       lastCallsBootstrapErrorRef.current = null;
       return client;
     } catch (err) {
+      if (offState) {
+        offState();
+        offState = null;
+      }
       logger.error("[VideoCallContext] calls-v2 connect/bootstrap failed", err);
       lastCallsBootstrapErrorRef.current = err instanceof Error ? err : new Error(String(err));
       client.close();
       return null;
     }
   }, [
-    callKeyExchangeRef,
-    callMediaEncryptionRef,
     callsWsRef,
-    callsWsRoomRef,
     fetchTurnIceServers,
     lastCallsBootstrapErrorRef,
     initializeCallsV2E2ee,
@@ -406,7 +442,8 @@ export function useCallsV2Bootstrap({
           joinedUnsub();
         });
 
-        const consumeUnsub = client.on("PRODUCER_ADDED", (frame) => {
+        producerAddedUnsubRef.current?.();
+        producerAddedUnsubRef.current = client.on("PRODUCER_ADDED", (frame) => {
           const payload = frame.payload as { roomId?: string; producerId?: string; peerDeviceId?: string } | undefined;
           if (payload?.roomId !== roomId) return;
           const producerId = payload?.producerId;
@@ -431,15 +468,6 @@ export function useCallsV2Bootstrap({
             logger.warn("[VideoCallContext] calls-v2 consume failed", err);
           });
         });
-
-        // P2-10 fix: store timer in ref so closeCallsV2 can cancel it
-        if (consumeUnsubTimerRef.current !== null) {
-          window.clearTimeout(consumeUnsubTimerRef.current);
-        }
-        consumeUnsubTimerRef.current = window.setTimeout(() => {
-          consumeUnsubTimerRef.current = null;
-          consumeUnsub();
-        }, 10 * 60_000);
 
         callsWsCallIdRef.current = callId;
         lastSnapshotRoomVersionRef.current = -1;
@@ -483,6 +511,7 @@ export function useCallsV2Bootstrap({
         return true;
       } catch (err) {
         logger.warn("[VideoCallContext] calls-v2 room bootstrap failed", err);
+        lastCallsBootstrapErrorRef.current = err instanceof Error ? err : new Error(String(err));
         return false;
       }
     },
@@ -490,11 +519,8 @@ export function useCallsV2Bootstrap({
       callKeyExchangeRef,
       callMediaEncryptionRef,
       callsWsCallIdRef,
-      callsWsMediaRoomRef,
-      callsWsRecvTransportRef,
       callsWsRef,
       callsWsRoomRef,
-      callsWsSendTransportRef,
       consumeUnsubTimerRef,
       e2eeEpochRef,
       epochGuardRef,

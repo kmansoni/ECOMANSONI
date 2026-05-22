@@ -633,7 +633,7 @@ describe("calls-ws: полный жизненный цикл звонка (ре�
     }
   }, 20000);
 
-  it("SFU transport stubs: TRANSPORT_CREATE/CONNECT, PRODUCE", async () => {
+  it("SFU transport stubs: TRANSPORT_CREATE/CONNECT, PRODUCE, PRODUCER_CLOSE/CONSUMER_CLOSE", async () => {
     const { proc, port } = await startCallsWs();
     runningServers.push(proc);
 
@@ -684,6 +684,20 @@ describe("calls-ws: полный жизненный цикл звонка (ре�
       expect(produced.payload.producerId).toBeDefined();
       expect(produced.payload.kind).toBe("audio");
       await session.waitForAck(produceId);
+
+      const producerCloseId = session.send("PRODUCER_CLOSE", {
+        roomId: "room_any",
+        producerId: produced.payload.producerId,
+      });
+      const producerCloseAck = await session.waitForAck(producerCloseId);
+      expect(producerCloseAck.ack?.ok).toBe(true);
+
+      const consumerCloseId = session.send("CONSUMER_CLOSE", {
+        roomId: "room_any",
+        consumerId: "consumer_stub",
+      });
+      const consumerCloseAck = await session.waitForAck(consumerCloseId);
+      expect(consumerCloseAck.ack?.ok).toBe(true);
     } finally {
       session.close();
     }

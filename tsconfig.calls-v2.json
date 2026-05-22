@@ -1,0 +1,7 @@
+{
+  "extends": "./tsconfig.json",
+  "include": [
+    "src/calls-v2/**/*",
+    "src/contexts/video-call/**/*"
+  ]
+}

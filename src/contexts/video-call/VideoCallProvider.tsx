@@ -28,7 +28,7 @@
  *  - SFU mediasoup transports are lazily initialized per call session.
  */
 
-import { ReactNode, useState, useCallback, useEffect, useRef } from "react";
+import { ReactNode, useState, useCallback, useEffect, useRef, useMemo } from "react";
 import { getStableCallsDeviceId } from "@/lib/platform/device";
 import { useVideoCallSfu, type VideoCall, type VideoCallStatus } from "@/hooks/useVideoCallSfu";
 import { useVideoCall as useLegacyP2pVideoCall } from "@/hooks/useVideoCall";
@@ -69,6 +69,7 @@ import { VideoCallUIContext } from "./VideoCallUIContext";
 import { useCallsV2Bootstrap } from "./useCallsV2Bootstrap";
 import { useCallsV2MediaBootstrap } from "./useCallsV2MediaBootstrap";
 import { useE2eePipeBreakRecovery } from "./useE2eePipeBreakRecovery";
+import { resolveLocalProducerIdForTrack } from "./resolveLocalProducerId";
 import type {
   VideoCallSignalingContextType,
   VideoCallMediaContextType,
@@ -133,11 +134,14 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
   const epochGuardRef = useRef<EpochGuard | null>(null);
   const lastCallsBootstrapErrorRef = useRef<Error | null>(null);
   const consumerAddedUnsubRef = useRef<(() => void) | null>(null);
-  const consumeUnsubTimerRef = useRef<number | null>(null);
+  const producerAddedUnsubRef = useRef<(() => void) | null>(null);
   const mediaBootstrapBlockedUntilRef = useRef<Map<string, number>>(new Map());
   const mediaBootstrapErrorLogAtRef = useRef<Map<string, number>>(new Map());
   const mediaBootstrapToastShownRef = useRef<Set<string>>(new Set());
   const mediaBootstrapRetryAttemptsRef = useRef<Map<string, number>>(new Map());
+  const startCallInFlightRef = useRef(false);
+  const answerCallInFlightRef = useRef(false);
+  const endCallInFlightRef = useRef(false);
 
 // E2EE pipe break recovery: stored consumer params for re-consume + debounce
    const consumerCreateParamsRef = useRef<Map<string, import('@/calls-v2/types').ConsumedPayload>>(new Map());
@@ -258,10 +262,21 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
     },
     onLocalTrackReplaced: async (kind, track) => {
       const manager = sfuManagerRef.current;
-      const producerId = localProducerIdsRef.current[kind];
+      const resolution = manager
+        ? resolveLocalProducerIdForTrack({
+            declaredKind: kind,
+            trackKind: track.kind,
+            localProducerIds: localProducerIdsRef.current,
+            getProducerKind: (producerId) => manager.getProducerKind(producerId),
+          })
+        : { producerId: null, resolvedKind: kind, usedFallbackKind: false };
+      const producerId = resolution.producerId;
       if (!manager || !producerId) {
         logger.info("video_call_sfu.local_track_replace_deferred", {
           kind,
+          resolvedKind: resolution.resolvedKind,
+          usedFallbackKind: resolution.usedFallbackKind,
+          trackKind: track.kind,
           hasManager: !!manager,
           hasProducerId: !!producerId,
         });
@@ -320,10 +335,9 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
       consumerAddedUnsubRef.current();
       consumerAddedUnsubRef.current = null;
     }
-    // P2-10 fix: clear the deferred consumeUnsub timer so it doesn't fire after call ends
-    if (consumeUnsubTimerRef.current !== null) {
-      window.clearTimeout(consumeUnsubTimerRef.current);
-      consumeUnsubTimerRef.current = null;
+    if (producerAddedUnsubRef.current) {
+      producerAddedUnsubRef.current();
+      producerAddedUnsubRef.current = null;
     }
     setRemoteMediaStream(null);
     setRemoteScreenStream(null);
@@ -338,9 +352,10 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
     rekeyMachineRef.current = null;
     epochGuardRef.current?.markRoomLeft();
     epochGuardRef.current = null;
-    if (!callsWsRef.current) return;
-    callsWsRef.current.close();
-    callsWsRef.current = null;
+    if (callsWsRef.current) {
+      callsWsRef.current.close();
+      callsWsRef.current = null;
+    }
     callsWsCallIdRef.current = null;
     callsWsRoomRef.current = null;
     lastSnapshotRoomVersionRef.current = -1;
@@ -356,6 +371,7 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
     mediaBootstrapToastShownRef.current.clear();
     mediaBootstrapRetryAttemptsRef.current.clear();
     consumerCreateParamsRef.current.clear();
+    producerPeerKeyRef.current.clear();
     pipeBreakRetryAtRef.current.clear();
     pipeBreakRecoveryInFlightRef.current.clear();
   }, [setRemoteMediaStream]);
@@ -482,7 +498,7 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
     producerPeerKeyRef,
     peerUserIdByDeviceIdRef,
     handleE2eePipeBreakRef,
-    consumeUnsubTimerRef,
+    producerAddedUnsubRef,
     isCallStillActiveForBootstrap: (callId) => activeCallsV2BootstrapCallIdRef.current === callId,
   });
 
@@ -537,8 +553,9 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
 
   const { incomingCall: detectedIncomingCall, clearIncomingCall } = useIncomingCalls({
     onIncomingCall: (call) => {
+      const currentEngineStatus = legacyEngineActive ? legacyStatus : status;
       // Don't show incoming call if we're already in a call or UI-lock is active
-      if (status !== "idle" || isCallUiActiveRef.current) {
+      if (currentEngineStatus !== "idle" || isCallUiActiveRef.current) {
         logger.info("[VideoCallContext] Already in call or UI active, ignoring incoming");
         return;
       }
@@ -644,6 +661,12 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
   }, [bootstrapCallsV2Room, callsWsRef]);
 
   const answerCall = useCallback(async (call: VideoCall) => {
+    if (answerCallInFlightRef.current) {
+      logger.warn("[VideoCallContext] answerCall ignored: already in progress", { callId: call.id });
+      return;
+    }
+    answerCallInFlightRef.current = true;
+
     const configIssue = getCallsConfigIssue();
     if (configIssue) {
       logger.error("[VideoCallContext] answerCall blocked by config:", configIssue);
@@ -651,6 +674,7 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
         description: getCallsConfigToastDescription(configIssue),
         duration: 6000,
       });
+      answerCallInFlightRef.current = false;
       return;
     }
 
@@ -696,9 +720,17 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
       // Give DB a short grace window before concluding "no SFU hints" in sfu_only mode.
       if (!resolvedCall.calls_v2_room_id) {
         for (let attempt = 1; attempt <= 4 && !resolvedCall.calls_v2_room_id; attempt++) {
+          if (activeCallsV2BootstrapCallIdRef.current !== call.id) {
+            logger.info("[VideoCallContext] answerCall delayed room-hints retry aborted: stale call", { callId: call.id });
+            return;
+          }
           await new Promise<void>((resolve) => {
             window.setTimeout(resolve, 1200 * attempt);
           });
+          if (activeCallsV2BootstrapCallIdRef.current !== call.id) {
+            logger.info("[VideoCallContext] answerCall delayed room-hints fetch skipped: stale call", { callId: call.id });
+            return;
+          }
           try {
             const { data: delayedHints } = await supabase
               .from("video_calls")
@@ -765,6 +797,7 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
           logger.error("[VideoCallContext] No SFU room hints in sfu_only mode — cannot answer call");
         }
         await endVideoCall("ended");
+        closeCallsV2();
         setIsCallUiActive(false);
         const toastPayload = getCallsBootstrapToastPayload(lastCallsBootstrapErrorRef.current);
         toast.error(toastPayload.title, {
@@ -793,6 +826,8 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
         });
       }
       setIsCallUiActive(false); // Release UI-lock on error
+    } finally {
+      answerCallInFlightRef.current = false;
     }
   }, [answerVideoCall, bootstrapCallsV2RoomWithRetry, clearIncomingCall, endVideoCall,
     closeCallsV2, releaseMediaWithoutDbUpdate, legacyAnswerVideoCall, dispatchFsm]);
@@ -827,34 +862,44 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
   }, [incomingCall, pendingIncomingCall, clearIncomingCall, dispatchFsm]);
 
   const endCall = useCallback(async () => {
+    if (endCallInFlightRef.current) {
+      logger.warn("[VideoCallContext] endCall ignored: already in progress");
+      return;
+    }
+    endCallInFlightRef.current = true;
+
     logger.info("[VideoCallContext] endCall called");
-    dispatchFsm("CALL_END");
-    // B: send hangup via WS relay so the peer knows immediately
-    const callForHangup = currentCall ?? legacyCurrentCall;
-    const wsForHangup = callsWsRef.current;
-    if (wsForHangup && callForHangup) {
-      const peerId = callForHangup.caller_id === user?.id
-        ? callForHangup.callee_id
-        : callForHangup.caller_id;
-      void wsForHangup.callHangup({ to: peerId, callId: callForHangup.id })
-        .catch((e) => logger.warn("[VideoCallContext] callHangup WS send failed", e));
-    }
-    if (legacyEngineActive) {
-      if (legacyCurrentCall) {
-        await legacyEndVideoCall("ended");
-      } else if (incomingCall || pendingIncomingCall) {
-        await declineCall();
+    try {
+      dispatchFsm("CALL_END");
+      // B: send hangup via WS relay so the peer knows immediately
+      const callForHangup = currentCall ?? legacyCurrentCall;
+      const wsForHangup = callsWsRef.current;
+      if (wsForHangup && callForHangup) {
+        const peerId = callForHangup.caller_id === user?.id
+          ? callForHangup.callee_id
+          : callForHangup.caller_id;
+        void wsForHangup.callHangup({ to: peerId, callId: callForHangup.id })
+          .catch((e) => logger.warn("[VideoCallContext] callHangup WS send failed", e));
       }
-      setLegacyEngineActive(false);
-    } else {
-      if (currentCall) {
-        await endVideoCall("ended");
-      } else if (incomingCall || pendingIncomingCall) {
-        await declineCall();
+      if (legacyEngineActive) {
+        if (legacyCurrentCall) {
+          await legacyEndVideoCall("ended");
+        } else if (incomingCall || pendingIncomingCall) {
+          await declineCall();
+        }
+        setLegacyEngineActive(false);
+      } else {
+        if (currentCall) {
+          await endVideoCall("ended");
+        } else if (incomingCall || pendingIncomingCall) {
+          await declineCall();
+        }
+        closeCallsV2();
       }
-      closeCallsV2();
+      setIsCallUiActive(false); // Release UI-lock
+    } finally {
+      endCallInFlightRef.current = false;
     }
-    setIsCallUiActive(false); // Release UI-lock
   }, [legacyEngineActive, currentCall, legacyCurrentCall, incomingCall, pendingIncomingCall, endVideoCall, legacyEndVideoCall, declineCall, closeCallsV2, dispatchFsm, user?.id]);
 
   const startCall = useCallback(async (
@@ -865,6 +910,12 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
   ) => {
     if (!user) return null;
 
+    if (startCallInFlightRef.current) {
+      logger.warn("[VideoCallContext] startCall ignored: already in progress", { calleeId, callType });
+      return null;
+    }
+    startCallInFlightRef.current = true;
+
     const configIssue = getCallsConfigIssue();
     if (configIssue) {
       logger.error("[VideoCallContext] startCall blocked by config:", configIssue);
@@ -872,6 +923,7 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
         description: getCallsConfigToastDescription(configIssue),
         duration: 6000,
       });
+      startCallInFlightRef.current = false;
       return null;
     }
 
@@ -894,7 +946,7 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
       }
       activeCallsV2BootstrapCallIdRef.current = result.id;
       // B: deliver call.invite via WS relay so caller doesn't need DB polling
-      const ws = callsWsRef.current;
+      const ws = callsWsRef.current ?? await ensureCallsV2Connected();
       if (ws) {
         void ws.callInvite({
           to: calleeId,
@@ -953,9 +1005,11 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
         });
       }
       return null;
+    } finally {
+      startCallInFlightRef.current = false;
     }
   }, [user, startVideoCall, bootstrapCallsV2RoomWithRetry, endVideoCall, closeCallsV2,
-    releaseMediaWithoutDbUpdate, dispatchFsm]);
+    releaseMediaWithoutDbUpdate, dispatchFsm, ensureCallsV2Connected]);
 
   const retryConnection = useCallback(async () => {
     if (legacyEngineActive) {
@@ -1019,6 +1073,10 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
           mediaRoomId: callsWsMediaRoomRef.current,
         });
         dispatchFsm("ERROR");
+        void endVideoCall("ended").catch((error) => {
+          logger.warn("[VideoCallContext] endVideoCall failed after media-bootstrap retries exhausted", error);
+        });
+        closeCallsV2();
         toast.error("Сервер звонков недоступен", {
           description: "Не удалось инициализировать медиа после нескольких попыток. Попробуйте завершить звонок и начать заново.",
           duration: 5000,
@@ -1042,7 +1100,7 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
     return () => {
       window.clearInterval(retryTimer);
     };
-  }, [currentCall, localStream, bootstrapCallsV2Media, dispatchFsm]);
+  }, [currentCall, localStream, bootstrapCallsV2Media, dispatchFsm, endVideoCall, closeCallsV2]);
 
   useEffect(() => {
     if (legacyEngineActive) return;
@@ -1117,16 +1175,36 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
       }
 
       if ((actionType === "end" || actionType === "disconnect") && matchesCurrent) {
-        logger.info("[VideoCallContext] Ignoring native end/disconnect action to avoid false DB ended status", {
+        logger.warn("[VideoCallContext] Native end/disconnect received — applying local fail-closed teardown", {
           callId: action.callId,
           actionType,
           status,
           connectionState,
         });
+
+        dispatchFsm("CALL_END");
+        releaseMediaWithoutDbUpdate();
+        closeCallsV2();
+        dispatchFsm("CLEANUP_DONE");
+        dispatchFsm("RESET");
+        setPendingIncomingCall(null);
+        setPendingCalleeProfile(null);
+        setIsCallUiActive(false);
         return;
       }
     });
-  }, [pendingIncomingCall, incomingCall, currentCall, answerCall, declineCall, status, connectionState]);
+  }, [
+    pendingIncomingCall,
+    incomingCall,
+    currentCall,
+    answerCall,
+    declineCall,
+    status,
+    connectionState,
+    dispatchFsm,
+    releaseMediaWithoutDbUpdate,
+    closeCallsV2,
+  ]);
 
   useEffect(() => {
     return () => {
@@ -1138,7 +1216,7 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
   // Each value object is reconstructed only when its specific slice of state changes.
   // This ensures that unrelated context consumers do not re-render.
 
-  const signalingValue: VideoCallSignalingContextType = {
+  const signalingValue: VideoCallSignalingContextType = useMemo(() => ({
     status: activeStatus,
     callState,
     currentCall: legacyEngineActive ? legacyCurrentCall : currentCall,
@@ -1150,9 +1228,24 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
     declineCall,
     endCall,
     retryConnection,
-  };
+  }), [
+    activeStatus,
+    callState,
+    legacyEngineActive,
+    legacyCurrentCall,
+    currentCall,
+    incomingCall,
+    legacyConnectionState,
+    connectionState,
+    pendingCalleeProfile,
+    startCall,
+    answerCall,
+    declineCall,
+    endCall,
+    retryConnection,
+  ]);
 
-  const mediaValue: VideoCallMediaContextType = {
+  const mediaValue: VideoCallMediaContextType = useMemo(() => ({
     localStream: legacyEngineActive ? legacyLocalStream : localStream,
     remoteStream: legacyEngineActive ? legacyRemoteStream : remoteStream,
     remoteScreenStream,
@@ -1179,11 +1272,34 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
     toggleBackgroundBlur: legacyEngineActive
       ? async () => { toast.info("Размытие фона недоступно в режиме совместимости"); }
       : toggleBackgroundBlur,
-  };
+  }), [
+    legacyEngineActive,
+    legacyLocalStream,
+    localStream,
+    legacyRemoteStream,
+    remoteStream,
+    remoteScreenStream,
+    legacyIsMuted,
+    isMuted,
+    legacyIsVideoOff,
+    isVideoOff,
+    isScreenSharing,
+    screenStream,
+    noiseSuppressionEnabled,
+    backgroundBlurEnabled,
+    legacyToggleMute,
+    toggleMute,
+    legacyToggleVideo,
+    toggleVideo,
+    stopScreenShare,
+    startScreenShare,
+    toggleNoiseSuppression,
+    toggleBackgroundBlur,
+  ]);
 
-  const uiValue: VideoCallUIContextType = {
+  const uiValue: VideoCallUIContextType = useMemo(() => ({
     isCallUiActive,
-  };
+  }), [isCallUiActive]);
 
   // ─── Render ─────────────────────────────────────────────────────────────────
   return (

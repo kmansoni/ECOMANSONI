@@ -164,6 +164,15 @@ async function createFallbackController() {
       return true;
     },
 
+    async closeConsumer(roomId, consumerId) {
+      const room = rooms.get(roomId);
+      if (!room) return false;
+      const consumer = room.consumers.get(consumerId);
+      if (!consumer) return false;
+      room.consumers.delete(consumerId);
+      return true;
+    },
+
     async removePeer(roomId, peerDeviceId) {
       const room = rooms.get(roomId);
       if (!room) return;
@@ -421,6 +430,23 @@ async function createMediasoupController() {
         }
       }
 
+      return true;
+    },
+
+    async closeConsumer(roomId, consumerId) {
+      const room = rooms.get(roomId);
+      if (!room) return false;
+
+      const consumer = room.consumers.get(consumerId);
+      if (!consumer) return false;
+
+      try {
+        consumer.close();
+      } catch {
+        // Consumer may already be closed by transportclose.
+      }
+
+      room.consumers.delete(consumerId);
       return true;
     },
 

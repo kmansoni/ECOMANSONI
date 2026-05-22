@@ -559,6 +559,13 @@ export class SfuMediaManager {
     return this.producerSenders.get(producerId) ?? null;
   }
 
+  getProducerKind(producerId: string): 'audio' | 'video' | null {
+    const producer = this.producers.get(producerId);
+    if (!producer || producer.closed) return null;
+    if (producer.kind === 'audio' || producer.kind === 'video') return producer.kind;
+    return null;
+  }
+
   /**
    * C-3: Получить RTCRtpReceiver для Insertable Streams (E2EE).
    * Использует кешированный receiver из consume() — не зависит от internal API mediasoup-client.

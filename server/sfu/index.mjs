@@ -66,8 +66,16 @@ const MAX_PARTICIPANTS_PER_ROOM = (() => {
   const raw = Number(process.env.CALLS_MAX_PARTICIPANTS_PER_ROOM ?? "50");
   return Number.isFinite(raw) && raw >= 2 ? Math.floor(raw) : 50;
 })();
+const SFU_EXPECT_MULTI_INSTANCE = process.env.SFU_EXPECT_MULTI_INSTANCE === "1";
+const SFU_E2EE_RATE_LIMIT_BACKEND = String(process.env.SFU_E2EE_RATE_LIMIT_BACKEND ?? "memory").trim().toLowerCase();
 
 validateSfuStartupEnv();
+
+if (IS_PROD_LIKE && SFU_EXPECT_MULTI_INSTANCE && SFU_E2EE_RATE_LIMIT_BACKEND !== "redis") {
+  throw new Error(
+    "[sfu] multi-instance mode requires distributed E2EE rate limiter (set SFU_E2EE_RATE_LIMIT_BACKEND=redis)"
+  );
+}
 
 /**
  * E2EE rate limiting — per-process sliding window.
@@ -366,6 +374,7 @@ function ensureRoom(roomId, callId, preferredRegion = REGION) {
     memberSetVersion: 0,
     peers: new Map(),
     producers: new Map(),
+    consumers: new Map(),
     routerRtpCapabilities: { codecs: [] },
   };
   rooms.set(roomId, room);
@@ -411,6 +420,45 @@ function broadcastRoom(room, frame, exceptDeviceId = null) {
     if (!peer.ws || peer.ws.readyState !== WebSocket.OPEN) continue;
     send(peer.ws, frame);
   }
+}
+
+function broadcastLegacyParticipantStream(room, participantId, streamAction, hasVideo, exceptDeviceId = null) {
+  if (typeof participantId !== "string" || participantId.trim().length === 0) return;
+  broadcastRoom(
+    room,
+    {
+      v: 1,
+      type: "participant-stream",
+      msgId: uuid(),
+      ts: nowMs(),
+      payload: {
+        roomId: room.roomId,
+        participantId,
+        streamAction,
+        hasVideo,
+      },
+    },
+    exceptDeviceId
+  );
+}
+
+function broadcastLegacyParticipantSpeaking(room, participantId, speaking, exceptDeviceId = null) {
+  if (typeof participantId !== "string" || participantId.trim().length === 0) return;
+  broadcastRoom(
+    room,
+    {
+      v: 1,
+      type: "participant-speaking",
+      msgId: uuid(),
+      ts: nowMs(),
+      payload: {
+        roomId: room.roomId,
+        participantId,
+        speaking,
+      },
+    },
+    exceptDeviceId
+  );
 }
 
 function sendToDevice(room, deviceId, frame) {
@@ -1012,6 +1060,11 @@ wss.on("connection", (ws, req) => {
             });
 
             room.producers.delete(producerId);
+            for (const [consumerId, consumer] of room.consumers.entries()) {
+              if (consumer.producerId === producerId) {
+                room.consumers.delete(consumerId);
+              }
+            }
 
             if (!wasClosed) {
               console.warn(`[SFrame] closeProducer fallback cleanup for ${producerId}`);
@@ -1025,6 +1078,8 @@ wss.on("connection", (ws, req) => {
               ts: nowMs(),
               payload: { roomId: room.roomId, producerId, peerDeviceId: conn.deviceId, reason },
             }, conn.deviceId);
+
+            broadcastLegacyParticipantStream(room, conn.userId, "remove", false, conn.deviceId);
           };
 
           if (!hasTraceObserver || !canEnableTrace) {
@@ -1093,6 +1148,14 @@ wss.on("connection", (ws, req) => {
           conn.deviceId
         );
 
+        broadcastLegacyParticipantStream(
+          room,
+          conn.userId,
+          "upsert",
+          producer.kind === "video",
+          conn.deviceId
+        );
+
         ack(ws, frame.msgId, true);
         return;
       }
@@ -1128,6 +1191,11 @@ wss.on("connection", (ws, req) => {
           producerId,
           frame.payload?.rtpCapabilities ?? null
         );
+        room.consumers.set(consumed.id, {
+          consumerId: consumed.id,
+          peerDeviceId: conn.deviceId,
+          producerId,
+        });
         send(ws, {
           v: 1,
           type: "CONSUMER_ADDED",
@@ -1179,6 +1247,91 @@ wss.on("connection", (ws, req) => {
             return;
           }
         }
+        ack(ws, frame.msgId, true);
+        return;
+      }
+
+      case "PRODUCER_CLOSE": {
+        if (!ensureAuth()) return;
+        const room = rooms.get(frame.payload?.roomId ?? conn.roomId);
+        if (!room || !conn.deviceId || !room.peers.has(conn.deviceId)) {
+          ack(ws, frame.msgId, false, wsError("UNAUTHORIZED", "Not a room member", {}, false));
+          return;
+        }
+
+        const producerId = frame.payload?.producerId;
+        const producer = producerId ? room.producers.get(producerId) : null;
+        if (!producerId || !producer) {
+          ack(ws, frame.msgId, false, wsError("PRODUCER_NOT_FOUND", "Unknown producer", {}, false));
+          return;
+        }
+        if (producer.peerDeviceId !== conn.deviceId) {
+          ack(ws, frame.msgId, false, wsError("FORBIDDEN", "Cannot close producer owned by another peer", {}, false));
+          return;
+        }
+
+        try {
+          await mediaPlane.closeProducer(room.roomId, producerId);
+        } catch (error) {
+          logOperationError("closeProducer", { roomId: room.roomId, deviceId: conn.deviceId, error });
+          ack(ws, frame.msgId, false, wsError("PRODUCER_CLOSE_FAILED", "Failed to close producer", { producerId }, true));
+          return;
+        }
+
+        room.producers.delete(producerId);
+        for (const [consumerId, consumer] of room.consumers.entries()) {
+          if (consumer.producerId === producerId) {
+            room.consumers.delete(consumerId);
+          }
+        }
+        bumpRoomVersion(room);
+
+        broadcastRoom(
+          room,
+          {
+            v: 1,
+            type: "PRODUCER_REMOVED",
+            msgId: uuid(),
+            ts: nowMs(),
+            payload: { roomId: room.roomId, producerId, peerDeviceId: conn.deviceId, reason: "CLIENT_CLOSE" },
+          },
+          conn.deviceId
+        );
+
+        broadcastLegacyParticipantStream(room, conn.userId, "remove", false, conn.deviceId);
+
+        ack(ws, frame.msgId, true);
+        return;
+      }
+
+      case "CONSUMER_CLOSE": {
+        if (!ensureAuth()) return;
+        const room = rooms.get(frame.payload?.roomId ?? conn.roomId);
+        if (!room || !conn.deviceId || !room.peers.has(conn.deviceId)) {
+          ack(ws, frame.msgId, false, wsError("UNAUTHORIZED", "Not a room member", {}, false));
+          return;
+        }
+
+        const consumerId = frame.payload?.consumerId;
+        const consumer = consumerId ? room.consumers.get(consumerId) : null;
+        if (!consumerId || !consumer) {
+          ack(ws, frame.msgId, false, wsError("CONSUMER_NOT_FOUND", "Unknown consumer", {}, false));
+          return;
+        }
+        if (consumer.peerDeviceId !== conn.deviceId) {
+          ack(ws, frame.msgId, false, wsError("FORBIDDEN", "Cannot close consumer owned by another peer", {}, false));
+          return;
+        }
+
+        try {
+          await mediaPlane.closeConsumer(room.roomId, consumerId);
+        } catch (error) {
+          logOperationError("closeConsumer", { roomId: room.roomId, deviceId: conn.deviceId, consumerId, error });
+          ack(ws, frame.msgId, false, wsError("CONSUMER_CLOSE_FAILED", "Failed to close consumer", { consumerId }, true));
+          return;
+        }
+
+        room.consumers.delete(consumerId);
         ack(ws, frame.msgId, true);
         return;
       }
@@ -1372,6 +1525,25 @@ wss.on("connection", (ws, req) => {
         return;
       }
 
+      case "SPEAKING": {
+        if (!ensureAuth()) return;
+        const room = rooms.get(frame.payload?.roomId ?? conn.roomId);
+        if (!room || !conn.deviceId || !room.peers.has(conn.deviceId)) {
+          ack(ws, frame.msgId, false, wsError("UNAUTHORIZED", "Not a room member", {}, false));
+          return;
+        }
+
+        if (typeof frame.payload?.speaking !== "boolean") {
+          ack(ws, frame.msgId, false, wsError("VALIDATION_FAILED", "speaking must be boolean", {}, false));
+          return;
+        }
+
+        broadcastRoom(room, { ...frame, msgId: uuid(), ts: nowMs() }, conn.deviceId);
+        broadcastLegacyParticipantSpeaking(room, conn.userId, frame.payload.speaking, conn.deviceId);
+        ack(ws, frame.msgId, true);
+        return;
+      }
+
       case "PING": {
         ack(ws, frame.msgId, true);
         return;
@@ -1431,9 +1603,20 @@ wss.on("connection", (ws, req) => {
           room.peers.delete(conn.deviceId);
           room.memberSetVersion += 1;
           bumpRoomVersion(room);
+          const removedProducerIds = new Set();
+          const removedParticipantIds = new Set();
           for (const [producerId, producer] of room.producers.entries()) {
             if (producer.peerDeviceId === conn.deviceId) {
               room.producers.delete(producerId);
+              removedProducerIds.add(producerId);
+              if (typeof producer.userId === "string" && producer.userId.trim()) {
+                removedParticipantIds.add(producer.userId);
+              }
+            }
+          }
+          for (const [consumerId, consumer] of room.consumers.entries()) {
+            if (consumer.peerDeviceId === conn.deviceId || removedProducerIds.has(consumer.producerId)) {
+              room.consumers.delete(consumerId);
             }
           }
           broadcastRoom(room, {
@@ -1443,6 +1626,9 @@ wss.on("connection", (ws, req) => {
             ts: nowMs(),
             payload: { roomId: room.roomId, userId: conn.userId, deviceId: conn.deviceId },
           });
+          for (const participantId of removedParticipantIds) {
+            broadcastLegacyParticipantStream(room, participantId, "remove", false);
+          }
           if (room.peers.size === 0) {
             mediaPlane.closeRoom(room.roomId).catch((error) => {
               logOperationError("closeRoom", {
@@ -1493,9 +1679,20 @@ wss.on("connection", (ws, req) => {
         room.memberSetVersion += 1;
         bumpRoomVersion(room);
 
+        const removedProducerIds = new Set();
+        const removedParticipantIds = new Set();
         for (const [producerId, producer] of room.producers.entries()) {
           if (producer.peerDeviceId === conn.deviceId) {
             room.producers.delete(producerId);
+            removedProducerIds.add(producerId);
+            if (typeof producer.userId === "string" && producer.userId.trim()) {
+              removedParticipantIds.add(producer.userId);
+            }
+          }
+        }
+        for (const [consumerId, consumer] of room.consumers.entries()) {
+          if (consumer.peerDeviceId === conn.deviceId || removedProducerIds.has(consumer.producerId)) {
+            room.consumers.delete(consumerId);
           }
         }
 
@@ -1506,6 +1703,10 @@ wss.on("connection", (ws, req) => {
           ts: nowMs(),
           payload: { roomId: room.roomId, userId: conn.userId, deviceId: conn.deviceId },
         });
+
+        for (const participantId of removedParticipantIds) {
+          broadcastLegacyParticipantStream(room, participantId, "remove", false);
+        }
 
         if (room.peers.size === 0) {
           mediaPlane.closeRoom(room.roomId).catch((error) => {

@@ -51,6 +51,13 @@ export function useE2eePipeBreakRecovery(
 
     try {
       if (direction === 'encrypt') {
+        const client = callsWsRef.current;
+        const roomId = callsWsMediaRoomRef.current;
+        if (client && roomId) {
+          await client.producerClose({ roomId, producerId: trackId }).catch((error) => {
+            logger.warn('[VideoCallContext] E2EE sender recovery producerClose failed', { trackId, roomId, error });
+          });
+        }
         const previousAppData = sfuManager.getProducerAppData(trackId) ?? {};
         const track = sfuManager.closeProducer(trackId);
         if (!track || track.readyState !== 'live') {
@@ -69,6 +76,11 @@ export function useE2eePipeBreakRecovery(
             oldProducerId: trackId,
             newProducerId: newProducer.id,
           });
+          if (client && roomId) {
+            await client.producerClose({ roomId, producerId: newProducer.id }).catch((error) => {
+              logger.warn('[VideoCallContext] E2EE sender recovery stale producerClose failed', { producerId: newProducer.id, roomId, error });
+            });
+          }
           sfuManager.closeProducer(newProducer.id);
           return;
         }
@@ -86,6 +98,8 @@ export function useE2eePipeBreakRecovery(
           newProducerId: newProducer.id,
         });
       } else {
+        const client = callsWsRef.current;
+        const roomId = callsWsMediaRoomRef.current;
         const storedParams = consumerCreateParamsRef.current.get(trackId);
         if (!storedParams) {
           logger.error('[VideoCallContext] E2EE receiver recovery: no stored params', { trackId, peerId });
@@ -93,6 +107,11 @@ export function useE2eePipeBreakRecovery(
           return;
         }
 
+        if (client && roomId) {
+          await client.consumerClose({ roomId, consumerId: trackId }).catch((error) => {
+            logger.warn('[VideoCallContext] E2EE receiver recovery consumerClose failed', { consumerId: trackId, roomId, error });
+          });
+        }
         sfuManager.closeConsumer(trackId);
         logger.info('[VideoCallContext] E2EE receiver pipe recovery: re-consuming', {
           consumerId: trackId,
@@ -112,6 +131,11 @@ export function useE2eePipeBreakRecovery(
             oldConsumerId: trackId,
             newConsumerId: newConsumer.id,
           });
+          if (client && roomId) {
+            await client.consumerClose({ roomId, consumerId: newConsumer.id }).catch((error) => {
+              logger.warn('[VideoCallContext] E2EE receiver recovery stale consumerClose failed', { consumerId: newConsumer.id, roomId, error });
+            });
+          }
           sfuManager.closeConsumer(newConsumer.id);
           return;
         }
@@ -127,8 +151,6 @@ export function useE2eePipeBreakRecovery(
           encryption.setupReceiverTransform(newReceiver, peerKey, newConsumer.id);
         }
 
-        const client = callsWsRef.current;
-        const roomId = callsWsMediaRoomRef.current;
         if (client && roomId) {
           await client.consumerResume({ roomId, consumerId: newConsumer.id });
         }

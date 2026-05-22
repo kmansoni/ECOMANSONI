@@ -400,55 +400,12 @@ export function useVideoCallSfu(options: UseVideoCallSfuOptions = {}): UseVideoC
 
   const markMediaBootstrapProgress = useCallback((signal: "send_transport_created" | "recv_transport_created") => {
     mediaBootstrapSignalsRef.current.add(signal);
-    logger.info("video_call_sfu.media_bootstrap_progress", { signal });
-
-    const hasSend = mediaBootstrapSignalsRef.current.has("send_transport_created");
-    const hasRecv = mediaBootstrapSignalsRef.current.has("recv_transport_created");
-    const currentStatus = statusRef.current;
-    const currentConnectionState = connectionStateRef.current;
-
-    if (currentStatus !== "connected") return;
-    if (currentConnectionState === "connected" || currentConnectionState === "failed") return;
-    if (!hasSend || !hasRecv) return;
-
-    setConnectionStateSynced((prev) => {
-      if (prev === "connected" || prev === "failed") return prev;
-      logger.info("video_call_sfu.connection_promoted_by_bootstrap_signals", {
-        signal,
-        previousState: prev,
-      });
-      return "connected";
+    logger.info("video_call_sfu.media_bootstrap_progress", {
+      signal,
+      hasSend: mediaBootstrapSignalsRef.current.has("send_transport_created"),
+      hasRecv: mediaBootstrapSignalsRef.current.has("recv_transport_created"),
     });
-  }, [setConnectionStateSynced]);
-
-  useEffect(() => {
-    if (status !== "connected") return;
-    if (connectionState === "connected" || connectionState === "failed") return;
-
-    // SFU media may arrive later than signaling. Promote state after grace period
-    // so UI does not stay forever in "connecting".
-    logger.info("video_call_sfu.fallback_timer_started", { connectionState });
-    const timer = window.setTimeout(() => {
-      setConnectionStateSynced((prev) => {
-        if (prev === "failed") return prev;
-        const hasSend = mediaBootstrapSignalsRef.current.has("send_transport_created");
-        const hasRecv = mediaBootstrapSignalsRef.current.has("recv_transport_created");
-        if (!hasSend || !hasRecv) {
-          logger.warn("video_call_sfu.fallback_skipped_missing_signals", {
-            hasSend,
-            hasRecv,
-          });
-          return prev;
-        }
-        logger.info("video_call_sfu.fallback_promoted_connected", { previousState: prev });
-        return "connected";
-      });
-    }, 3500);
-
-    return () => {
-      window.clearTimeout(timer);
-    };
-  }, [status, connectionState, setConnectionStateSynced]);
+  }, []);
 
   // ---------------------------------------------------------------------------
   // Internal helpers
