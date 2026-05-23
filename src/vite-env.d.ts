@@ -8,6 +8,8 @@ interface ImportMetaEnv {
   readonly VITE_CALLS_V2_WS_URLS: string;
   readonly VITE_CALLS_V2_REKEY_INTERVAL_MS: string;
   readonly VITE_CALLS_FRAME_E2EE_ADVERTISE_SFRAME: string;
+  readonly VITE_CALLS_REQUIRE_SFRAME?: string;
+  readonly VITE_SUPABASE_ANON_KEY?: string;
   readonly VITE_TURN_CREDENTIALS_URL: string;
   readonly VITE_TURN_CREDENTIALS_API_KEY: string;
   readonly VITE_AI_API_KEY: string;

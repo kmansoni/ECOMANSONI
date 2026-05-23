@@ -342,10 +342,23 @@ export class CallsWsClient {
 
   private getEndpoints(): string[] {
     const cfg = this.config;
-    if (cfg.endpoints && cfg.endpoints.length > 0) return cfg.endpoints;
-    if (cfg.urls && cfg.urls.length > 0) return cfg.urls;
-    if (cfg.url) return [cfg.url];
-    return [];
+    const raw = cfg.endpoints && cfg.endpoints.length > 0
+      ? cfg.endpoints
+      : cfg.urls && cfg.urls.length > 0
+        ? cfg.urls
+        : cfg.url
+          ? [cfg.url]
+          : [];
+
+    const out: string[] = [];
+    const seen = new Set<string>();
+    for (const endpoint of raw) {
+      const normalized = String(endpoint ?? "").trim();
+      if (!normalized || seen.has(normalized)) continue;
+      seen.add(normalized);
+      out.push(normalized);
+    }
+    return out;
   }
 
   // ----------- Public send helpers -----------

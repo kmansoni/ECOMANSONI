@@ -1,17 +1,10 @@
 import { supabase } from "@/integrations/supabase/client";
 import { logger } from "@/lib/logger";
-
-function normalizeEnv(value: unknown): string {
-  if (typeof value !== "string") return "";
-  return value
-    .trim()
-    .replace(/^["']+|["']+$/g, "")
-    .replace(/\s+/g, "");
-}
-
-const TURN_CREDENTIALS_URL = normalizeEnv(import.meta.env.VITE_TURN_CREDENTIALS_URL);
-const TURN_CREDENTIALS_API_KEY = normalizeEnv(import.meta.env.VITE_TURN_CREDENTIALS_API_KEY);
-const TURN_CREDENTIALS_EDGE_FNS = ["turn-credentials"] as const;
+import {
+  TURN_CREDENTIALS_API_KEY,
+  TURN_CREDENTIALS_EDGE_FNS,
+  TURN_CREDENTIALS_URL,
+} from "@/lib/turnCredentialsConfig";
 
 export interface IceServerConfig {
   iceServers: RTCIceServer[];

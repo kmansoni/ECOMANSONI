@@ -39,6 +39,7 @@ import { logger } from "@/lib/logger";
 import { onNativeCallAction } from "@/lib/native/callBridge";
 import { supabase } from "@/integrations/supabase/client";
 import { getSupabaseRuntimeConfig } from "@/lib/supabaseRuntimeConfig";
+import { TURN_CREDENTIALS_API_KEY, TURN_CREDENTIALS_URL } from "@/lib/turnCredentialsConfig";
 import { CallsWsClient } from "@/calls-v2/wsClient";
 import {
   getOrCreateIdentityKeyPair,
@@ -425,30 +426,66 @@ const unansweredCallTimerRef = useRef<number | null>(null);
       let data: unknown = null;
       let invokeError: unknown = null;
       const requestId = crypto.randomUUID();
+      if (TURN_CREDENTIALS_URL) {
+        try {
+          const { data: sessionData } = await supabase.auth.getSession();
+          const accessToken = sessionData.session?.access_token;
+          const headers: Record<string, string> = {
+            "Content-Type": "application/json",
+            "x-turn-nonce": requestId,
+            "x-request-id": requestId,
+          };
+          if (accessToken) headers.Authorization = `Bearer ${accessToken}`;
+          if (TURN_CREDENTIALS_API_KEY) headers.apikey = TURN_CREDENTIALS_API_KEY;
+
+          const response = await fetch(TURN_CREDENTIALS_URL, {
+            method: "POST",
+            headers,
+            body: JSON.stringify({ requestId, nonce: requestId }),
+          });
+
+          if (response.ok) {
+            data = await response.json().catch(() => ({}));
+            invokeError = null;
+          } else {
+            const text = await response.text().catch(() => "");
+            invokeError = new Error(`TURN endpoint ${response.status}: ${text}`);
+            logger.warn("[VideoCallContext] TURN credentials URL failed, fallback to edge function", {
+              status: response.status,
+            });
+          }
+        } catch (customUrlError) {
+          invokeError = customUrlError;
+          logger.warn("[VideoCallContext] TURN credentials URL exception, fallback to edge function", customUrlError);
+        }
+      }
+
       const { data: sessionData } = await supabase.auth.getSession();
       const accessToken = sessionData.session?.access_token;
       const runtimeConfig = getSupabaseRuntimeConfig();
       const publishableKey = String(runtimeConfig.supabasePublishableKey || "").trim();
 
-      for (const fn of TURN_CREDENTIALS_EDGE_FNS) {
-        try {
-          const result = await supabase.functions.invoke(fn, {
-            body: { requestId, nonce: requestId },
-            headers: {
-              ...(publishableKey ? { apikey: publishableKey } : {}),
-              ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
-            },
-          });
-          if (!result.error) {
-            data = result.data;
-            invokeError = null;
-            break;
+      if (!data) {
+        for (const fn of TURN_CREDENTIALS_EDGE_FNS) {
+          try {
+            const result = await supabase.functions.invoke(fn, {
+              body: { requestId, nonce: requestId },
+              headers: {
+                ...(publishableKey ? { apikey: publishableKey } : {}),
+                ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+              },
+            });
+            if (!result.error) {
+              data = result.data;
+              invokeError = null;
+              break;
+            }
+            invokeError = result.error;
+            logger.warn("[VideoCallContext] TURN credentials edge function failed", { fn, error: result.error });
+          } catch (fnError) {
+            invokeError = fnError;
+            logger.warn("[VideoCallContext] TURN credentials edge function invoke exception", { fn, error: fnError });
           }
-          invokeError = result.error;
-          logger.warn("[VideoCallContext] TURN credentials edge function failed", { fn, error: result.error });
-        } catch (fnError) {
-          invokeError = fnError;
-          logger.warn("[VideoCallContext] TURN credentials edge function invoke exception", { fn, error: fnError });
         }
       }
 
@@ -465,12 +502,12 @@ const unansweredCallTimerRef = useRef<number | null>(null);
       } | null;
 
       if (parsed?.error) {
-        logger.warn("[VideoCallContext] get-turn-credentials server error:", parsed.error);
+        logger.warn("[VideoCallContext] turn-credentials server error:", parsed.error);
         return null;
       }
 
       if (!Array.isArray(parsed?.iceServers) || parsed.iceServers.length === 0) {
-        logger.warn("[VideoCallContext] get-turn-credentials returned empty iceServers");
+        logger.warn("[VideoCallContext] turn-credentials returned empty iceServers");
         return null;
       }
 
@@ -487,7 +524,7 @@ const unansweredCallTimerRef = useRef<number | null>(null);
 
       return parsed.iceServers;
     } catch (err) {
-      logger.warn("[VideoCallContext] get-turn-credentials fetch exception (STUN-only fallback):", err);
+      logger.warn("[VideoCallContext] turn-credentials fetch exception (STUN-only fallback):", err);
       return null;
     }
 }, []);

@@ -1,5 +1,6 @@
 import { logger } from "@/lib/logger";
 import type { RtpCapabilities, TransportCreatedPayload } from "@/calls-v2/types";
+import { TURN_CREDENTIALS_EDGE_FNS } from "@/lib/turnCredentialsConfig";
 
 const CALLS_V2_ENABLED_RAW = String(import.meta.env.VITE_CALLS_V2_ENABLED ?? "").trim().toLowerCase();
 
@@ -31,7 +32,7 @@ export const CALLS_V2_WS_URL = SHOULD_USE_PROD_SFU_DEFAULTS
 
 // TURN credentials edge function (production canonical).
 // Legacy get-turn-credentials removed - consolidated into turn-credentials.
-export const TURN_CREDENTIALS_EDGE_FNS = ["turn-credentials"] as const;
+export { TURN_CREDENTIALS_EDGE_FNS };
 
 // Сколько секунд до истечения credentials начинать экстренное обновление (30 минут).
 export const TURN_REFRESH_BEFORE_EXPIRY_SEC = 30 * 60;

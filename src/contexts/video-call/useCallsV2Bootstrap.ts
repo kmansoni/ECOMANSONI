@@ -152,7 +152,7 @@ export function useCallsV2Bootstrap({
       callsWsRef.current = null;
     }
 
-    const rawEndpoints = CALLS_V2_WS_URLS.length > 0 ? CALLS_V2_WS_URLS : (CALLS_V2_WS_URL ? [CALLS_V2_WS_URL] : []);
+    const rawEndpoints = [CALLS_V2_WS_URL, ...CALLS_V2_WS_URLS].filter((value): value is string => Boolean(value));
     const endpoints = expandWsEndpoints(rawEndpoints);
     if (endpoints.length === 0) {
       logger.warn("[VideoCallContext] calls-v2 disabled: WS endpoints normalized to empty", { rawEndpoints });
