@@ -40,7 +40,7 @@ export function ProductCollection({ collectionId, collection: collectionProp, on
 
     void (async () => {
       // shop_collections, shop_collection_items, products — нет в сгенерированных типах Supabase
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+       
       const { data: col } = await dbLoose
         .from('shop_collections')
         .select('*')

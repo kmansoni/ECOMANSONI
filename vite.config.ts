@@ -7,6 +7,10 @@ process.env.BROWSERSLIST_IGNORE_OLD_DATA ||= "1";
 // https://vitejs.dev/config/
 export default defineConfig(({ mode }) => ({
   base: process.env.VITE_BASE || "/",
+  optimizeDeps: {
+    // Keep dependency pre-bundling focused on the app entry and avoid scanning tmp HTML fixtures.
+    entries: ["index.html"],
+  },
   server: {
     host: "0.0.0.0",
     port: 8080,

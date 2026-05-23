@@ -46,7 +46,7 @@ export interface CreateCouponInput {
   valid_until?: string;
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+ 
 export function useCoupons() {
   const { user } = useAuth();
   const [myCoupons, setMyCoupons] = useState<Coupon[]>([]);

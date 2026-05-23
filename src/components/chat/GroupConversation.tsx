@@ -170,7 +170,7 @@ export function GroupConversation({ group, onBack, onLeave }: GroupConversationP
           // not roll back the UX since the topic itself was created successfully.
           setActiveTopic(general.id);
           // group_topics не в генерированных типах
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+           
           const { error: topicError } = await dbLoose
             .from("group_topics")
             .update({ is_general: true })

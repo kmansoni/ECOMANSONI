@@ -55,7 +55,7 @@ export function LiveCollabInvite({ liveSessionId, isHost, onCollabStarted }: Liv
   useEffect(() => {
     if (!user || isHost) return;
     // live_collab_sessions не в генерированных типах
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+     
     const channel = dbLoose
       .channel(`collab_invite_${user.id}`)
       .on(
@@ -81,7 +81,7 @@ export function LiveCollabInvite({ liveSessionId, isHost, onCollabStarted }: Liv
   useEffect(() => {
     if (!user || !isHost) return;
     // live_collab_sessions не в генерированных типах
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+     
     const channel = dbLoose
       .channel(`collab_status_${liveSessionId}`)
       .on(

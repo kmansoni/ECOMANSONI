@@ -139,6 +139,7 @@ const ServiceBugsPage = lazy(() => import("@/pages/ServiceBugsPage").then(m => (
 const MusicPage = lazy(() => import("@/pages/MusicPage"));
 const IconPreviewPage = lazy(() => import("@/pages/IconPreviewPage"));
 const DesignSystemPage = lazy(() => import("@/pages/DesignSystemPage"));
+const VideoCallDemoPage = lazy(() => import("@/pages/VideoCallDemoPage"));
 
 // Batch 5: new pages
 const WebLoginCallbackPage = lazy(() => import("@/pages/WebLoginCallbackPage").then(m => ({ default: m.WebLoginCallbackPage })));
@@ -332,6 +333,12 @@ const App = () => {
                 <Route path="/preview/design" element={
                   <Suspense fallback={<PageLoader />}>
                     <DesignSystemPage />
+                  </Suspense>
+                } />
+                {/* Video Call Demo */}
+                <Route path="/demo/video-call" element={
+                  <Suspense fallback={<PageLoader />}>
+                    <VideoCallDemoPage />
                   </Suspense>
                 } />
 

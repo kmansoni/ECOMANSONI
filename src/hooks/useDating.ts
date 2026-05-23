@@ -47,7 +47,7 @@ interface DatingFiltersState {
   gender: string | null;
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+ 
 export function useDating() {
   const { user } = useAuth();
   const [cards, setCards] = useState<DatingProfile[]>([]);

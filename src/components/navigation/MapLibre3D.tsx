@@ -425,7 +425,7 @@ const fillPaint: mapboxgl.FillPaint = {
         return dict[s] || 'text-gray-600';
       }
 
-      // eslint-disable-next-line react-hooks/exhaustive-deps
+       
     }, [surveyScans, showSurveyLayer, isReady]);
 
   // ── City-wide traffic overlay ────────────────────────────────────────────

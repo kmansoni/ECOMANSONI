@@ -18,8 +18,7 @@
     "moduleDetection": "force",
     "noEmit": true,
     "jsx": "react-jsx",
-    "types": ["vitest/globals"],
-    "ignoreDeprecations": "6.0"
+    "types": ["vitest/globals"]
   },
   "include": ["src"]
 }

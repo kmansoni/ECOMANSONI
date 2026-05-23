@@ -7,6 +7,18 @@
     "*": "ask",
     "bash": "ask"
   },
+  "mcp": {
+    "playwright": {
+      "type": "local",
+      "command": ["npx", "@playwright/mcp@latest"],
+      "enabled": true
+    },
+    "claude-flow": {
+      "type": "local",
+      "command": ["npx", "-y", "@claude-flow/cli@latest", "mcp", "start"],
+      "enabled": true
+    }
+  },
   "agent": {
     "code": {
       "permission": {

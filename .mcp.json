@@ -19,6 +19,12 @@
         "CLAUDE_FLOW_MEMORY_BACKEND": "memory"
       },
       "autoStart": true
+    },
+    "playwright": {
+      "type": "stdio",
+      "command": "npx",
+      "args": ["@playwright/mcp@latest"],
+      "autoStart": true
     }
   }
 }

@@ -48,7 +48,7 @@ import type {
 } from "@/types/taxi";
 import { DRIVER_ACCEPTANCE_TIMEOUT_SECONDS } from "./constants";
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+ 
 const supabase = dbLoose;
 
 // ── Helpers ───────────────────────────────────────────────────────────────────

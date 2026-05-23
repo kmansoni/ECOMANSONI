@@ -175,7 +175,7 @@ export async function sendLiveLocation(
     async update(newCoords: GeoCoords): Promise<boolean> {
       if (!active) return false;
 
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+       
       const { error } = await dbLoose.rpc("update_live_location_v1", {
         p_message_id: messageId,
         p_lat: newCoords.lat,
@@ -204,7 +204,7 @@ export async function sendLiveLocation(
     async stop(): Promise<void> {
       if (!active) return;
 
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+       
       const { error } = await dbLoose.rpc("stop_live_location_v1", {
         p_message_id: messageId,
       });

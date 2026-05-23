@@ -41,6 +41,7 @@ interface UseCallsV2MediaBootstrapParams {
   consumerAddedUnsubRef: MutableRefObject<(() => void) | null>;
   consumerCreateParamsRef: MutableRefObject<Map<string, import("@/calls-v2/types").ConsumedPayload>>;
   producerPeerKeyRef: MutableRefObject<Map<string, string>>;
+  pendingReceiverTransformsRef: MutableRefObject<Map<string, { receiver: RTCRtpReceiver; peerKey: string }>>;
   mediaBootstrapBlockedUntilRef: MutableRefObject<Map<string, number>>;
   mediaBootstrapErrorLogAtRef: MutableRefObject<Map<string, number>>;
   mediaBootstrapToastShownRef: MutableRefObject<Set<string>>;
@@ -81,6 +82,7 @@ export function useCallsV2MediaBootstrap({
   consumerAddedUnsubRef,
   consumerCreateParamsRef,
   producerPeerKeyRef,
+  pendingReceiverTransformsRef,
   mediaBootstrapBlockedUntilRef,
   mediaBootstrapErrorLogAtRef,
   mediaBootstrapToastShownRef,
@@ -627,12 +629,29 @@ hasEncryption: enc?.hasOutboundKey() ?? false,
             });
             if (receiver && enc) {
               try {
-                enc.setupReceiverTransform(receiver, peerKey, consumer.id);
-                logger.info("[VideoCallContext] E2EE setupReceiverTransform:ok", {
-                  peerKey,
-                  consumerId: consumer.id,
-                  decryptionKeysNow: enc.getDecryptionPeerIds(),
-                });
+                const hasKey = enc.getDecryptionPeerIds().length > 0;
+                if (hasKey) {
+                  enc.setupReceiverTransform(receiver, peerKey, consumer.id);
+                  logger.info("[VideoCallContext] E2EE setupReceiverTransform:ok", {
+                    peerKey,
+                    consumerId: consumer.id,
+                    decryptionKeysNow: enc.getDecryptionPeerIds(),
+                  });
+                 } else {
+                  const pendingRefs = pendingReceiverTransformsRef.current;
+                  if (pendingRefs) {
+                    pendingRefs.set(consumer.id, { receiver, peerKey });
+                    logger.info("[VideoCallContext] E2EE receiver transform deferred: no decryption key yet", {
+                      peerKey,
+                      consumerId: consumer.id,
+                    });
+                  } else {
+                    logger.warn("[VideoCallContext] E2EE receiver transform skipped: pendingReceiverTransformsRef cleared", {
+                      consumerId: consumer.id,
+                      peerKey,
+                    });
+                  }
+                }
               } catch (e) {
                 logger.error("[VideoCallContext] E2EE setupReceiverTransform failed for consumer", {
                   consumerId: consumer.id,
@@ -651,15 +670,22 @@ hasEncryption: enc?.hasOutboundKey() ?? false,
         });
       });
 
-      // Create E2EE key BEFORE producing tracks (H-6 fix: must be set BEFORE setupSenderTransform)
+      // Create E2EE key BEFORE producing tracks (H-6 fix: must be set BEFORE setupSenderTransform).
+      // FIX: reuse the epoch key already created during room bootstrap to avoid generating
+      // a second key for the same epoch.  regenerate = epoch key reset in the encryptor and
+      // media sent as plaintext until the new key propagates via REKEY_BEGIN/KEY_PACKAGE cycle.
       if (REQUIRE_SFRAME && CallMediaEncryption.isSupported()) {
         const kx = callKeyExchangeRef.current;
         const enc = callMediaEncryptionRef.current;
         if (kx && enc) {
           const epoch = e2eeEpochRef.current ?? 0;
-          const epochKey = await kx.createEpochKey(epoch);
+          let epochKey = kx.getCurrentEpochKey();
+          if (!epochKey || epochKey.epoch !== epoch) {
+            epochKey = await kx.createEpochKey(epoch);
+          }
           await enc.setEncryptionKey(epochKey);
-          logger.info("[VideoCallContext] calls-v2 initial E2EE key set", { roomId, epoch });
+          const decryptionKeysBefore = enc.getDecryptionPeerIds().length;
+          logger.info("[VideoCallContext] calls-v2 initial E2EE key set", { roomId, epoch, decryptionKeysBefore });
         }
       }
 
@@ -727,6 +753,7 @@ hasEncryption: enc?.hasOutboundKey() ?? false,
     mediaBootstrapBlockedUntilRef,
     mediaBootstrapErrorLogAtRef,
     mediaBootstrapToastShownRef,
+    pendingReceiverTransformsRef,
     producerPeerKeyRef,
     rebuildRemoteStream,
     reportMediaBootstrapFailure,

@@ -24,6 +24,7 @@ interface UseCallsV2E2eeBootstrapParams {
   producerPeerKeyRef: MutableRefObject<Map<string, string>>;
   peerUserIdByDeviceIdRef: MutableRefObject<Map<string, string>>;
   handleE2eePipeBreakRef: MutableRefObject<((info: PipeBreakInfo) => void) | null>;
+  onDecryptionKeyReady?: (peerKey: string) => void;
   onE2eeActivated?: () => void;
 }
 
@@ -42,6 +43,7 @@ export function useCallsV2E2eeBootstrap({
   producerPeerKeyRef,
   peerUserIdByDeviceIdRef,
   handleE2eePipeBreakRef,
+  onDecryptionKeyReady,
   onE2eeActivated,
 }: UseCallsV2E2eeBootstrapParams) {
   const { attachCallsV2E2eeSignals } = useCallsV2E2eeSignals({
@@ -58,6 +60,7 @@ export function useCallsV2E2eeBootstrap({
     epochGuardRef,
     producerPeerKeyRef,
     peerUserIdByDeviceIdRef,
+    onDecryptionKeyReady,
     onE2eeActivated,
   });
 
@@ -110,6 +113,7 @@ export function useCallsV2E2eeBootstrap({
     handleE2eePipeBreakRef,
     rekeyMachineRef,
     user,
+    onE2eeActivated,
   ]);
 
   return { initializeCallsV2E2ee };

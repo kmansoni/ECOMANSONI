@@ -12,6 +12,17 @@ import { initDeviceIdentity } from "@/auth/deviceIdentity";
 import { logger } from "@/lib/logger";
 import { persistLastRuntimeError, reloadOnChunkFailureOnce } from "@/lib/runtimeErrorDiagnostics";
 
+function isTransientNetworkRuntimeError(reason: unknown): boolean {
+  const text =
+    typeof reason === "string"
+      ? reason
+      : reason instanceof Error
+      ? `${reason.name}: ${reason.message}`
+      : String((reason as { message?: unknown; name?: unknown } | null | undefined)?.message ?? reason ?? "");
+
+  return /abort|aborted|failed to fetch|networkerror|err_aborted|websocket is closed before the connection is established/i.test(text);
+}
+
 function setAppHeight() {
   const vvHeight = window.visualViewport?.height;
   const innerHeight = window.innerHeight;
@@ -40,6 +51,11 @@ const platformInfo = detectDevice();
 applyPlatformAttributes(platformInfo);
 
 window.addEventListener("unhandledrejection", (event) => {
+  if (isTransientNetworkRuntimeError(event.reason)) {
+    logger.warn("[bootstrap] transient unhandled promise rejection", { reason: event.reason });
+    event.preventDefault();
+    return;
+  }
   logger.error("[bootstrap] unhandled promise rejection", { reason: event.reason });
   persistLastRuntimeError("UnhandledPromiseRejection", event.reason);
   reloadOnChunkFailureOnce(event.reason);

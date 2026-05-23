@@ -28,7 +28,7 @@ interface CollabInviteSheetProps {
   reelId: string;
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+ 
 export function CollabInviteSheet({ open, onOpenChange, reelId }: CollabInviteSheetProps) {
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<UserResult[]>([]);

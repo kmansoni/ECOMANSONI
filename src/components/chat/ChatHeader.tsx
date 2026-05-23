@@ -133,6 +133,7 @@ export function ChatHeader({
             onClick={onStartAudioCall}
             className="p-2 rounded-full hover:bg-white/10 active:bg-white/15 transition-colors relative"
             aria-label="Аудиозвонок"
+            data-testid="audio-call-btn"
           >
             <Phone className="w-5 h-5 text-[#6ab3f3]" />
             {isGroup && <UsersIcon className="w-3 h-3 text-[#6ab3f3] absolute -bottom-0.5 -right-0.5" />}
@@ -141,6 +142,7 @@ export function ChatHeader({
             onClick={onStartVideoCall}
             className="p-2 rounded-full hover:bg-white/10 active:bg-white/15 transition-colors relative"
             aria-label="Видеозвонок"
+            data-testid="video-call-btn"
           >
             <Video className="w-5 h-5 text-[#6ab3f3]" />
             {isGroup && <UsersIcon className="w-3 h-3 text-[#6ab3f3] absolute -bottom-0.5 -right-0.5" />}

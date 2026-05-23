@@ -23,6 +23,7 @@ interface UseCallsV2E2eeSignalsParams {
   producerPeerKeyRef: { current: Map<string, string> };
   peerUserIdByDeviceIdRef: { current: Map<string, string> };
   onE2eeActivated?: () => void;
+  onDecryptionKeyReady?: (peerKey: string) => void;
 }
 
 export function useCallsV2E2eeSignals({
@@ -213,68 +214,74 @@ export function useCallsV2E2eeSignals({
         return;
       }
 
-      // FIX: используем захваченный keyExchange, а не повторно читаем callKeyExchangeRef.current
-      // ниже в async блоке. Реф может стать null между этой проверкой и доступом к sessionId
-      // (например, при размонтировании компонента во время обработки события из WebSocket-потока).
-      // Повторное чтение рефа без null-guard на строке getSessionId() — race-condition.
-      void (async () => {
-        try {
-          const epochKey = await keyExchange.createEpochKey(epoch);
-          await mediaEncryption.setEncryptionKey(epochKey);
+       // FIX: используем захваченный keyExchange, а не повторно читаем callKeyExchangeRef.current
+       // ниже в async блоке. Реф может стать null между этой проверкой и доступом к sessionId
+       // (например, при размонтировании компонента во время обработки события из WebSocket-потока).
+       // Повторное чтение рефа без null-guard на строке getSessionId() — race-condition.
+       void (async () => {
+         try {
+           const kx = callKeyExchangeRef.current;
+           const enc = callMediaEncryptionRef.current;
+           if (!kx || !enc) {
+             logger.warn("[VideoCallContext] REKEY_BEGIN: key exchange or encryption not ready, skipping");
+             return;
+           }
+           const epochKey = await kx.createEpochKey(epoch);
+           await enc.setEncryptionKey(epochKey);
 
-          const senderPublicKey = await keyExchange.getPublicKeyBase64();
-          const senderKeyId = await deriveSenderKeyId(senderPublicKey);
-          const sessionIdForDiscovery = keyExchange.getSessionId();
-          if (!sessionIdForDiscovery) {
-            logger.error("[VideoCallContext] KEY_PACKAGE discovery aborted: CallKeyExchange.getSessionId() returned empty");
-            return;
-          }
+           const senderPublicKey = await kx.getPublicKeyBase64();
+           const senderKeyId = await deriveSenderKeyId(senderPublicKey);
+           const sessionIdForDiscovery = kx.getSessionId();
+           if (!sessionIdForDiscovery) {
+             logger.error("[VideoCallContext] KEY_PACKAGE discovery aborted: CallKeyExchange.getSessionId() returned empty");
+             return;
+           }
 
-          const identityKeyPair = await getOrCreateIdentityKeyPair();
-          const sigBytes = await signIdentity(
-            identityKeyPair.privateKey,
-            user?.id ?? "",
-            getStableCallsDeviceId(),
-            sessionIdForDiscovery,
-            senderPublicKey,
-            senderPublicKey,
-            epoch,
-            "",
-          );
-          const identityPubKeyJwk = await exportEcdsaPublicKey(identityKeyPair.publicKey);
-          const sigB64 = btoa(String.fromCharCode(...new Uint8Array(sigBytes)));
+           const identityKeyPair = await getOrCreateIdentityKeyPair();
+           const sigBytes = await signIdentity(
+             identityKeyPair.privateKey,
+             user?.id ?? "",
+             getStableCallsDeviceId(),
+             sessionIdForDiscovery,
+             senderPublicKey,
+             senderPublicKey,
+             epoch,
+             "",
+           );
+           const identityPubKeyJwk = await exportEcdsaPublicKey(identityKeyPair.publicKey);
+           const sigB64 = btoa(String.fromCharCode(...new Uint8Array(sigBytes)));
 
-          const discoveryNonce = crypto.randomUUID();
-          const mySigningPublicKey = await keyExchange.getSigningPublicKeyBase64();
-          void client.keyPackage({
-            roomId,
-            fromDeviceId: getStableCallsDeviceId(),
-            toDeviceId: leaderDeviceId,
-            senderKeyId,
-            targetDeviceId: leaderDeviceId,
-            epoch,
-            keyPackageType: "DISCOVERY",
-            discoveryNonce,
-            ciphertext: senderPublicKey,
-            sig: sigB64,
-            senderPublicKey,
-            senderSigningPublicKey: mySigningPublicKey,
-            salt: "",
-            senderIdentity: {
-              userId: user?.id ?? "",
-              deviceId: getStableCallsDeviceId(),
-              sessionId: sessionIdForDiscovery,
-              identityPubKeyJwk,
-            },
-          }).catch((error) => {
-            logger.warn("[VideoCallContext] KEY_PACKAGE send failed", error);
-          });
+           const discoveryNonce = crypto.randomUUID();
+           const mySigningPublicKey = await kx.getSigningPublicKeyBase64();
+           void client.keyPackage({
+             roomId,
+             fromDeviceId: getStableCallsDeviceId(),
+             toDeviceId: leaderDeviceId,
+             senderKeyId,
+             targetDeviceId: leaderDeviceId,
+             epoch,
+             keyPackageType: "DISCOVERY",
+             discoveryNonce,
+             ciphertext: senderPublicKey,
+             sig: sigB64,
+             senderPublicKey,
+             senderSigningPublicKey: mySigningPublicKey,
+             salt: "",
+             senderIdentity: {
+               userId: user?.id ?? "",
+               deviceId: getStableCallsDeviceId(),
+               sessionId: sessionIdForDiscovery,
+               identityPubKeyJwk,
+             },
+           }).catch((error) => {
+             logger.warn("[VideoCallContext] KEY_PACKAGE send failed", error);
+           });
 
-          logger.info("[VideoCallContext] KEY_PACKAGE sent (Phase C ECDSA+ECDH discovery)", { epoch, roomId });
-        } catch (err) {
-          logger.warn("[VideoCallContext] KEY_PACKAGE async error", err);
-        }
-      })();
+           logger.info("[VideoCallContext] KEY_PACKAGE sent (Phase C ECDSA+ECDH discovery)", { epoch, roomId });
+         } catch (err) {
+           logger.warn("[VideoCallContext] KEY_PACKAGE async error", err);
+         }
+       })();
     });
 
     on("KEY_PACKAGE", (frame) => {
@@ -289,6 +296,7 @@ export function useCallsV2E2eeSignals({
       if (!activeRoomId || !roomId || roomId !== activeRoomId) return;
 
       const myDeviceId = getStableCallsDeviceId();
+      const leaderDeviceId = e2eeLeaderDeviceRef.current;
       const targetDeviceId = keyPkgPayload?.targetDeviceId ?? keyPkgPayload?.toDeviceId;
       if (!targetDeviceId || targetDeviceId !== myDeviceId) return;
 
@@ -477,14 +485,20 @@ export function useCallsV2E2eeSignals({
 
               void (async () => {
                 try {
-                  const current = keyExchange.getCurrentEpochKey();
-                  const epochKey = current?.epoch === epoch ? current : await keyExchange.createEpochKey(epoch);
-                  await mediaEncryption.setEncryptionKey(epochKey);
+                  const kx = callKeyExchangeRef.current;
+                  const enc = callMediaEncryptionRef.current;
+                  if (!kx || !enc) {
+                    logger.warn("[VideoCallContext] KEY_PACKAGE discovery: crypto not ready, skipping");
+                    return;
+                  }
+                  const current = kx.getCurrentEpochKey();
+                  const epochKey = current?.epoch === epoch ? current : await kx.createEpochKey(epoch);
+                  await enc.setEncryptionKey(epochKey);
 
-                  const pkg = await keyExchange.createKeyPackage(senderPublicKeyB64, epoch);
+                  const pkg = await kx.createKeyPackage(senderPublicKeyB64, epoch);
                   const senderKeyId = await deriveSenderKeyId(pkg.senderPublicKey);
-                  const leaderSessionId = keyExchange.getSessionId();
-                  const leaderSigningPublicKey = await keyExchange.getSigningPublicKeyBase64();
+                  const leaderSessionId = kx.getSessionId();
+                  const leaderSigningPublicKey = await kx.getSigningPublicKeyBase64();
                   const identityKeyPair = await getOrCreateIdentityKeyPair();
                   const identityPubKeyJwk = await exportEcdsaPublicKey(identityKeyPair.publicKey);
                   const identitySigRaw = await signIdentity(

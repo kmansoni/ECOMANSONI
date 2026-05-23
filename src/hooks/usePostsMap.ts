@@ -27,7 +27,7 @@ export interface MapBounds {
   west: number;
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+ 
 export function usePostsMap(bounds?: MapBounds) {
   const [posts, setPosts] = useState<MapPost[]>([]);
   const [loading, setLoading] = useState(false);

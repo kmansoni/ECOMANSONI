@@ -207,7 +207,7 @@ export function ymUserParams(params: YMParams): void {
  * утечкой PII. Функция оставлена как экспорт для обратной совместимости,
  * но вызов window.ym("setUserID") не выполняется.
  */
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
+ 
 export function ymSetUserID(_userId: string): void {
   // Intentional no-op: sending userId to a third-party analytics provider
   // constitutes PII leakage. Use internal analytics (firehose) for user-level tracking.

@@ -340,7 +340,7 @@ export const RE_DOC_TYPES: Array<{ value: REDocType; label: string }> = [
 
 class CRMRealEstateAPI {
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+   
   private sb = dbLoose;
 
   private async rpc<T>(fn: string, params?: Record<string, unknown>): Promise<T> {

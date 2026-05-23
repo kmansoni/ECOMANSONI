@@ -113,7 +113,7 @@ export function useGeolocation() {
         timeout: 10000,
       }
     );
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, []);  
 
   const stopTracking = useCallback(() => {
     if (watchIdRef.current != null) {

@@ -19,7 +19,7 @@ export interface GridPosition {
   sort_order: number;
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+ 
 export function useGridReorder(userId: string) {
   const { user } = useAuth();
   const [isEditing, setIsEditing] = useState(false);

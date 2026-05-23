@@ -33,7 +33,7 @@ export interface SellerReviewItem {
   avatar_url?: string;
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+ 
 export function useSellerRating(sellerId: string) {
   const [rating, setRating] = useState<SellerRatingData>({
     average: 0,

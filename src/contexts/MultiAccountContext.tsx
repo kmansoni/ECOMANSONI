@@ -765,7 +765,7 @@ export function MultiAccountProvider({ children }: { children: React.ReactNode }
     return () => {
       cancelled = true;
     };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+   
   }, []);
 
   // Safety: guarantee loading resolves even if init effect is cancelled mid-flight

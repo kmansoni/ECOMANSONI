@@ -57,6 +57,7 @@ interface UseCallsV2BootstrapParams {
   producerAddedUnsubRef: MutableRefObject<(() => void) | null>;
   isCallStillActiveForBootstrap: (callId: string) => boolean;
   onE2eeActivated?: () => void;
+  onDecryptionKeyReady?: (peerKey: string) => void;
 }
 
 export function useCallsV2Bootstrap({
@@ -90,6 +91,7 @@ export function useCallsV2Bootstrap({
   producerAddedUnsubRef,
   isCallStillActiveForBootstrap,
   onE2eeActivated,
+  onDecryptionKeyReady,
 }: UseCallsV2BootstrapParams) {
   const { initializeCallsV2E2ee } = useCallsV2E2eeBootstrap({
     user,
@@ -107,6 +109,7 @@ export function useCallsV2Bootstrap({
     peerUserIdByDeviceIdRef,
     handleE2eePipeBreakRef,
     onE2eeActivated,
+    onDecryptionKeyReady,
   });
 
   const ensureCallsV2Connected = useCallback(async (): Promise<CallsWsClient | null> => {

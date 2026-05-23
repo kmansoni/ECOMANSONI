@@ -157,6 +157,9 @@ const unansweredCallTimerRef = useRef<number | null>(null);
    /** Ref для функции recovery — заполняется после определения, вызывается из closure в CallMediaEncryption */
    const handleE2eePipeBreakRef = useRef<((info: import('@/lib/e2ee/insertableStreams').PipeBreakInfo) => void) | null>(null);
 
+   /** trackId → {receiver, peerKey} for consumers whose decryption key hasn't arrived yet */
+   const pendingReceiverTransformsRef = useRef<Map<string, { receiver: RTCRtpReceiver; peerKey: string }>>(new Map());
+
    // UI-lock: keeps call UI visible even during transient status changes (permission prompts, etc.)
   const [isCallUiActive, setIsCallUiActive] = useState(false);
   const isCallUiActiveRef = useRef(false);
@@ -389,6 +392,7 @@ const unansweredCallTimerRef = useRef<number | null>(null);
     mediaBootstrapRetryAttemptsRef.current.clear();
     consumerCreateParamsRef.current.clear();
     producerPeerKeyRef.current.clear();
+    pendingReceiverTransformsRef.current.clear();
     pipeBreakRetryAtRef.current.clear();
     pipeBreakRecoveryInFlightRef.current.clear();
   }, [setRemoteMediaStream]);
@@ -519,6 +523,21 @@ const unansweredCallTimerRef = useRef<number | null>(null);
     producerAddedUnsubRef,
     isCallStillActiveForBootstrap: (callId) => activeCallsV2BootstrapCallIdRef.current === callId,
     onE2eeActivated: () => setIsE2eeActive(true),
+    onDecryptionKeyReady: (peerKey) => {
+      const enc = callMediaEncryptionRef.current;
+      if (!enc) return;
+      for (const [trackId, pending] of pendingReceiverTransformsRef.current) {
+        if (enc.getDecryptionPeerIds().some(id => id === peerKey || peerKey.startsWith(id) || id.startsWith(peerKey))) {
+          try {
+            enc.setupReceiverTransform(pending.receiver, pending.peerKey, trackId);
+            pendingReceiverTransformsRef.current.delete(trackId);
+            logger.info("[VideoCallContext] E2EE receiver transform re-applied after key arrival", { trackId, peerKey });
+          } catch (e) {
+            logger.error("[VideoCallContext] E2EE receiver transform re-apply failed", { trackId, error: e instanceof Error ? e.message : String(e) });
+          }
+        }
+      }
+    },
   });
 
    const { rebuildRemoteStream, bootstrapCallsV2Media } = useCallsV2MediaBootstrap({
@@ -542,6 +561,7 @@ const unansweredCallTimerRef = useRef<number | null>(null);
      consumerAddedUnsubRef,
      consumerCreateParamsRef,
      producerPeerKeyRef,
+     pendingReceiverTransformsRef,
      mediaBootstrapBlockedUntilRef,
      mediaBootstrapErrorLogAtRef,
      mediaBootstrapToastShownRef,
