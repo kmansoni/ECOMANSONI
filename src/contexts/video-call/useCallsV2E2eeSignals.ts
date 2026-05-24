@@ -40,6 +40,7 @@ export function useCallsV2E2eeSignals({
   epochGuardRef,
   producerPeerKeyRef,
   peerUserIdByDeviceIdRef,
+  onDecryptionKeyReady,
   onE2eeActivated,
 }: UseCallsV2E2eeSignalsParams) {
   const attachedSignalsClientRef = useRef<CallsWsClient | null>(null);
@@ -579,6 +580,7 @@ export function useCallsV2E2eeSignals({
               await mediaEncryption.setDecryptionKey(peerKey, peerEpochKey);
               keyExchangeSuccess = true;
               logger.info("[VideoCallContext] KEY_PACKAGE: processKeyPackage OK", { epoch, senderUserId, peerKey });
+              onDecryptionKeyReady?.(peerKey);
             } catch (error) {
               const errDetail = error instanceof Error
                 ? { name: error.name, message: error.message }
@@ -753,6 +755,7 @@ export function useCallsV2E2eeSignals({
     deriveSenderKeyId,
     keyPackageNonceRef,
     lastSnapshotRoomVersionRef,
+    onDecryptionKeyReady,
     onE2eeActivated,
     peerUserIdByDeviceIdRef,
     resolvePeerIdentity,

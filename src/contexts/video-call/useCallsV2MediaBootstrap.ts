@@ -41,7 +41,12 @@ interface UseCallsV2MediaBootstrapParams {
   consumerAddedUnsubRef: MutableRefObject<(() => void) | null>;
   consumerCreateParamsRef: MutableRefObject<Map<string, import("@/calls-v2/types").ConsumedPayload>>;
   producerPeerKeyRef: MutableRefObject<Map<string, string>>;
-  pendingReceiverTransformsRef: MutableRefObject<Map<string, { receiver: RTCRtpReceiver; peerKey: string }>>;
+  pendingReceiverTransformsRef: MutableRefObject<Map<string, {
+    receiver: RTCRtpReceiver;
+    peerKey: string;
+    deferredAt: number;
+    recoveryRequested: boolean;
+  }>>;
   mediaBootstrapBlockedUntilRef: MutableRefObject<Map<string, number>>;
   mediaBootstrapErrorLogAtRef: MutableRefObject<Map<string, number>>;
   mediaBootstrapToastShownRef: MutableRefObject<Set<string>>;
@@ -629,7 +634,7 @@ hasEncryption: enc?.hasOutboundKey() ?? false,
             });
             if (receiver && enc) {
               try {
-                const hasKey = enc.getDecryptionPeerIds().length > 0;
+                const hasKey = enc.hasDecryptionKeyForPeer(peerKey);
                 if (hasKey) {
                   enc.setupReceiverTransform(receiver, peerKey, consumer.id);
                   logger.info("[VideoCallContext] E2EE setupReceiverTransform:ok", {
@@ -640,7 +645,13 @@ hasEncryption: enc?.hasOutboundKey() ?? false,
                  } else {
                   const pendingRefs = pendingReceiverTransformsRef.current;
                   if (pendingRefs) {
-                    pendingRefs.set(consumer.id, { receiver, peerKey });
+                      const prev = pendingRefs.get(consumer.id);
+                      pendingRefs.set(consumer.id, {
+                        receiver,
+                        peerKey,
+                        deferredAt: prev?.deferredAt ?? Date.now(),
+                        recoveryRequested: prev?.recoveryRequested ?? false,
+                      });
                     logger.info("[VideoCallContext] E2EE receiver transform deferred: no decryption key yet", {
                       peerKey,
                       consumerId: consumer.id,
@@ -653,11 +664,31 @@ hasEncryption: enc?.hasOutboundKey() ?? false,
                   }
                 }
               } catch (e) {
-                logger.error("[VideoCallContext] E2EE setupReceiverTransform failed for consumer", {
-                  consumerId: consumer.id,
-                  peerKey,
-                  error: e instanceof Error ? e.message : String(e),
-                });
+                // REKEY-FIX: during epoch transition, epochGuard.assertMediaAllowed throws inside
+                // setupReceiverTransform.  We must store the receiver/peerKey as pending so that
+                // onDecryptionKeyReady (called from REKEY_COMMIT handler in VideoCallProvider)
+                // can replay setupReceiverTransform once the new epoch is active.
+                const pendingRefs = pendingReceiverTransformsRef.current;
+                if (pendingRefs) {
+                  const prev = pendingRefs.get(consumer.id);
+                  pendingRefs.set(consumer.id, {
+                    receiver,
+                    peerKey,
+                    deferredAt: prev?.deferredAt ?? Date.now(),
+                    recoveryRequested: prev?.recoveryRequested ?? false,
+                  });
+                  logger.warn("[VideoCallContext] E2EE setupReceiverTransform deferred by epochGuard, will replay on rekey commit", {
+                    consumerId: consumer.id,
+                    peerKey,
+                    reason: e instanceof Error ? e.message : String(e),
+                  });
+                } else {
+                  logger.error("[VideoCallContext] E2EE setupReceiverTransform failed for consumer — pendingReceiverTransformsRef cleared, cannot retry", {
+                    consumerId: consumer.id,
+                    peerKey,
+                    error: e instanceof Error ? e.message : String(e),
+                  });
+                }
               }
             }
           }

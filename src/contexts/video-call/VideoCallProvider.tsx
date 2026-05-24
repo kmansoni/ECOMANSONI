@@ -99,6 +99,9 @@ import {
   isMediaErrorForCall,
 } from "./videoCallProvider.helpers";
 
+const DECRYPTION_KEY_WAIT_TIMEOUT_MS = 15_000;
+const DECRYPTION_KEY_WATCHDOG_INTERVAL_MS = 2_000;
+
 // ─── VideoCallProvider ─────────────────────────────────────────────────────────
 export function VideoCallProvider({ children }: { children: ReactNode }) {
   const { user } = useAuth();
@@ -158,8 +161,13 @@ const unansweredCallTimerRef = useRef<number | null>(null);
    /** Ref для функции recovery — заполняется после определения, вызывается из closure в CallMediaEncryption */
    const handleE2eePipeBreakRef = useRef<((info: import('@/lib/e2ee/insertableStreams').PipeBreakInfo) => void) | null>(null);
 
-   /** trackId → {receiver, peerKey} for consumers whose decryption key hasn't arrived yet */
-   const pendingReceiverTransformsRef = useRef<Map<string, { receiver: RTCRtpReceiver; peerKey: string }>>(new Map());
+   /** trackId → deferred inbound receiver waiting for decryption key */
+   const pendingReceiverTransformsRef = useRef<Map<string, {
+     receiver: RTCRtpReceiver;
+     peerKey: string;
+     deferredAt: number;
+     recoveryRequested: boolean;
+   }>>(new Map());
 
    // UI-lock: keeps call UI visible even during transient status changes (permission prompts, etc.)
   const [isCallUiActive, setIsCallUiActive] = useState(false);
@@ -529,6 +537,61 @@ const unansweredCallTimerRef = useRef<number | null>(null);
     }
 }, []);
 
+  const requestDeferredKeyDiscovery = useCallback(async (
+    client: CallsWsClient,
+    roomId: string,
+    epoch: number,
+  ): Promise<void> => {
+    const leaderDeviceId = e2eeLeaderDeviceRef.current;
+    const myDeviceId = getStableCallsDeviceId();
+    if (!leaderDeviceId || leaderDeviceId === myDeviceId) return;
+
+    const kx = callKeyExchangeRef.current;
+    if (!kx || !user) return;
+
+    const senderPublicKey = await kx.getPublicKeyBase64();
+    const sessionIdForDiscovery = kx.getSessionId();
+    const identityKeyPair = await getOrCreateIdentityKeyPair();
+    const sigBytes = await signIdentity(
+      identityKeyPair.privateKey,
+      user.id,
+      myDeviceId,
+      sessionIdForDiscovery,
+      senderPublicKey,
+      senderPublicKey,
+      epoch,
+      "",
+    );
+    const identityPubKeyJwk = await exportEcdsaPublicKey(identityKeyPair.publicKey);
+    const sigB64 = btoa(String.fromCharCode(...new Uint8Array(sigBytes)));
+    const mySigningPublicKey = await kx.getSigningPublicKeyBase64();
+
+    await client.keyPackage({
+      roomId,
+      fromDeviceId: myDeviceId,
+      toDeviceId: leaderDeviceId,
+      targetDeviceId: leaderDeviceId,
+      epoch,
+      keyPackageType: "DISCOVERY",
+      discoveryNonce: crypto.randomUUID(),
+      ciphertext: senderPublicKey,
+      sig: sigB64,
+      senderPublicKey,
+      senderSigningPublicKey: mySigningPublicKey,
+      salt: "",
+      senderIdentity: {
+        userId: user.id,
+        deviceId: myDeviceId,
+        sessionId: sessionIdForDiscovery,
+        identityPubKeyJwk,
+      },
+    });
+  }, [
+    callKeyExchangeRef,
+    e2eeLeaderDeviceRef,
+    user,
+  ]);
+
    const { ensureCallsV2Connected, bootstrapCallsV2Room } = useCallsV2Bootstrap({
     user,
     fetchTurnIceServers,
@@ -564,7 +627,7 @@ const unansweredCallTimerRef = useRef<number | null>(null);
       const enc = callMediaEncryptionRef.current;
       if (!enc) return;
       for (const [trackId, pending] of pendingReceiverTransformsRef.current) {
-        if (enc.getDecryptionPeerIds().some(id => id === peerKey || peerKey.startsWith(id) || id.startsWith(peerKey))) {
+        if (enc.hasDecryptionKeyForPeer(pending.peerKey)) {
           try {
             enc.setupReceiverTransform(pending.receiver, pending.peerKey, trackId);
             pendingReceiverTransformsRef.current.delete(trackId);
@@ -628,6 +691,68 @@ const unansweredCallTimerRef = useRef<number | null>(null);
     handleE2eePipeBreakRef,
     rebuildRemoteStream,
   );
+
+  useEffect(() => {
+    if (!REQUIRE_SFRAME) return;
+
+    const timer = window.setInterval(() => {
+      const pending = pendingReceiverTransformsRef.current;
+      if (pending.size === 0) return;
+
+      const now = Date.now();
+      for (const [trackId, item] of pending) {
+        if (item.recoveryRequested) continue;
+        if (now - item.deferredAt < DECRYPTION_KEY_WAIT_TIMEOUT_MS) continue;
+
+        item.recoveryRequested = true;
+        pending.set(trackId, item);
+
+        logger.warn("video_call_context.e2ee_key_missing_timeout", {
+          trackId,
+          peerKey: item.peerKey,
+          waitedMs: now - item.deferredAt,
+          timeoutMs: DECRYPTION_KEY_WAIT_TIMEOUT_MS,
+        });
+
+        const ws = callsWsRef.current;
+        const roomId = callsWsRoomRef.current;
+        const epoch = e2eeEpochRef.current;
+        if (ws && roomId && ws.connectionState === "connected" && Number.isFinite(epoch) && epoch >= 0) {
+          void requestDeferredKeyDiscovery(ws, roomId, epoch).then(() => {
+            logger.info("[VideoCallContext] E2EE deferred key discovery requested", {
+              trackId,
+              peerKey: item.peerKey,
+              epoch,
+            });
+          }).catch((error) => {
+            logger.warn("[VideoCallContext] E2EE deferred key discovery failed", {
+              trackId,
+              peerKey: item.peerKey,
+              epoch,
+              error: error instanceof Error ? error.message : String(error),
+            });
+          });
+        }
+
+        pending.delete(trackId);
+        handleE2eePipeBreakRef.current?.({
+          trackId,
+          direction: "decrypt",
+          peerId: item.peerKey,
+        });
+      }
+    }, DECRYPTION_KEY_WATCHDOG_INTERVAL_MS);
+
+    return () => {
+      window.clearInterval(timer);
+    };
+  }, [
+    callsWsRef,
+    callsWsRoomRef,
+    e2eeEpochRef,
+    pendingReceiverTransformsRef,
+    requestDeferredKeyDiscovery,
+  ]);
 
   const { incomingCall: detectedIncomingCall, clearIncomingCall } = useIncomingCalls({
     onIncomingCall: (call) => {

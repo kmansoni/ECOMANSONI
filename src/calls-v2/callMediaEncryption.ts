@@ -66,13 +66,12 @@ export class CallMediaEncryption {
       if (this.peerDecryptionEpochs.has(alias)) return alias;
     }
 
-    // 1:1 calls may receive producerId-style peer keys before identity mapping settles.
-    if (this.peerDecryptionEpochs.size === 1) {
-      const [onlyPeerId] = this.peerDecryptionEpochs.keys();
-      if (onlyPeerId) return onlyPeerId;
-    }
-
     return peerId;
+  }
+
+  hasDecryptionKeyForPeer(peerId: string): boolean {
+    const resolvedPeerId = this.resolveReceiverPeerId(peerId);
+    return this.peerDecryptionEpochs.has(resolvedPeerId);
   }
 
   constructor(config: CallMediaEncryptionConfig = {}) {
