@@ -1,4 +1,5 @@
 import { supabase } from "@/lib/supabase";
+import { requireClientMsgId } from "@/lib/chat/clientMsgId";
 
 export type SendMessageV1Result = {
   messageId: string;
@@ -35,41 +36,32 @@ function isOverloadResolutionError(error: unknown): boolean {
 }
 
 export async function sendMessageV1(input: SendMessageV1Input): Promise<SendMessageV1Result> {
+  const clientMsgId = requireClientMsgId(input.clientMsgId);
+
   const payload3 = {
     conversation_id: input.conversationId,
-    client_msg_id: input.clientMsgId,
+    client_msg_id: clientMsgId,
     body: input.body,
   };
   const payload4 = {
     conversation_id: input.conversationId,
-    client_msg_id: input.clientMsgId,
+    client_msg_id: clientMsgId,
     body: input.body,
     is_silent: !!input.isSilent,
   };
 
-  // Preserve current DB semantics by defaulting to 3-arg path.
-  // Use 4-arg explicitly for silent messages, or as a fallback if PostgREST cannot resolve overloads.
+  // Prefer 4-arg path to avoid PostgREST overload ambiguity when both function signatures exist.
+  // Fallback to 3-arg for older DB revisions that do not have `is_silent`.
   let data: unknown;
   let error: unknown;
 
-  if (input.isSilent) {
-    const first = await supabase.rpc("send_message_v1", payload4);
-    data = first.data;
-    error = first.error;
-    if (error && isMissing4ArgOverload(error)) {
-      const fallback = await supabase.rpc("send_message_v1", payload3);
-      data = fallback.data;
-      error = fallback.error;
-    }
-  } else {
-    const first = await supabase.rpc("send_message_v1", payload3);
-    data = first.data;
-    error = first.error;
-    if (error && isOverloadResolutionError(error)) {
-      const fallback = await supabase.rpc("send_message_v1", payload4);
-      data = fallback.data;
-      error = fallback.error;
-    }
+  const first = await supabase.rpc("send_message_v1", payload4);
+  data = first.data;
+  error = first.error;
+  if (error && (isMissing4ArgOverload(error) || isOverloadResolutionError(error))) {
+    const fallback = await supabase.rpc("send_message_v1", payload3);
+    data = fallback.data;
+    error = fallback.error;
   }
 
   if (error) {
