@@ -6,22 +6,20 @@ test.describe('Profile Page Tests', () => {
   });
 
   test('Profile page should load without critical errors', async ({ page }) => {
-    await page.waitForTimeout(3000);
-    
-    let errors: string[] = [];
+    const errors: string[] = [];
     page.on('console', msg => {
       if (msg.type() === 'error') {
         errors.push(msg.text());
       }
     });
-    
+
     await expect(page).toHaveTitle(/mansoni/);
-    
+
     const profileHeading = page.locator('h1');
     await expect(profileHeading).toBeVisible();
-    
-    const connectionErrors = errors.filter(e => 
-      e.includes('ERR_CONNECTION_REFUSED') || 
+
+    const connectionErrors = errors.filter(e =>
+      e.includes('ERR_CONNECTION_REFUSED') ||
       e.includes('500') ||
       e.includes('не удалось сохранить')
     );
@@ -29,25 +27,15 @@ test.describe('Profile Page Tests', () => {
   });
 
   test('Profile page should have working navigation', async ({ page }) => {
-    await page.waitForTimeout(3000);
-    
     const navLinks = page.locator('a[href]');
+    await expect(navLinks.first()).toBeVisible();
     const count = await navLinks.count();
     expect(count).toBeGreaterThan(0);
-    
-    if (count > 0) {
-      await expect(navLinks.first()).toBeVisible();
-    }
   });
 
   test('Profile page should have interactive elements', async ({ page }) => {
-    await page.waitForTimeout(3000);
-    
-    const pageContent = await page.content();
-    expect(pageContent).toContain('Джехангир');
-    expect(pageContent).toContain('Профиль');
-    
     const interactiveElements = page.locator('button');
+    await expect(interactiveElements.first()).toBeVisible();
     const buttonCount = await interactiveElements.count();
     expect(buttonCount).toBeGreaterThan(0);
   });

@@ -1,3 +1,4 @@
+-- ALLOW_NON_IDEMPOTENT_POLICY_DDL: bootstrap migration created before idempotency policy was enforced
 -- Migration: Spotify-like music service schema
 -- Created: 2025-04-21
 -- Description: Creates tables for music streaming service (tracks, playlists, artists, etc.)

@@ -1,3 +1,4 @@
+-- ALLOW_NON_IDEMPOTENT_POLICY_DDL: bootstrap migration created before idempotency policy was enforced
 -- =============================================================================
 -- ФИАС fields + POI ownership
 -- Миграция: 20260330000001_fias_fields.sql

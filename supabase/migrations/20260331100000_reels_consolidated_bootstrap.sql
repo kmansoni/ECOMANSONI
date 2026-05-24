@@ -1,3 +1,4 @@
+-- ALLOW_NON_IDEMPOTENT_POLICY_DDL: bootstrap migration created before idempotency policy was enforced
 -- ============================================================================
 -- CONSOLIDATED REELS BOOTSTRAP MIGRATION
 -- Ensures all reels tables, columns, indexes, and the feed RPC exist.
