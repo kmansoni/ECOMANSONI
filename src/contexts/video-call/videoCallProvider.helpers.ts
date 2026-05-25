@@ -8,7 +8,6 @@ const CALLS_V2_ENABLED_RAW = String(import.meta.env.VITE_CALLS_V2_ENABLED ?? "")
 // This prevents accidental outages when deploy env injection omits VITE_CALLS_V2_ENABLED.
 export const CALLS_V2_ENABLED = CALLS_V2_ENABLED_RAW === "" ? true : CALLS_V2_ENABLED_RAW === "true";
 
-const CALLS_V2_WS_URL_RAW = (import.meta.env.VITE_CALLS_V2_WS_URL ?? "").trim();
 const CALLS_V2_WS_URLS_RAW = (import.meta.env.VITE_CALLS_V2_WS_URLS ?? "")
   .split(",")
   .map((value: string) => value.trim())
@@ -21,14 +20,13 @@ const DEFAULT_PROD_SFU_ENDPOINTS = [
 ] as const;
 
 export const SHOULD_USE_PROD_SFU_DEFAULTS =
-  !CALLS_V2_WS_URL_RAW &&
   CALLS_V2_WS_URLS_RAW.length === 0 &&
   typeof window !== "undefined" &&
   /(^|\.)mansoni\.ru$/i.test(window.location.hostname);
 
 export const CALLS_V2_WS_URL = SHOULD_USE_PROD_SFU_DEFAULTS
   ? DEFAULT_PROD_SFU_ENDPOINTS[0]
-  : CALLS_V2_WS_URL_RAW;
+  : (CALLS_V2_WS_URLS_RAW[0] ?? "");
 
 // TURN credentials edge function (production canonical).
 // Legacy get-turn-credentials removed - consolidated into turn-credentials.
@@ -144,7 +142,7 @@ export function getCallsConfigToastDescription(issue: string): string {
     return "Сервис звонков отключен конфигурацией сборки. Установите VITE_CALLS_V2_ENABLED=true или удалите флаг, и задайте рабочий WS endpoint.";
   }
   if (issue === "Calls WS endpoint is not configured") {
-    return "Не задан VITE_CALLS_V2_WS_URL или VITE_CALLS_V2_WS_URLS. Сборка фронта не знает, куда подключать SFU.";
+    return "Не задан VITE_CALLS_V2_WS_URLS. Сборка фронта не знает, куда подключать SFU.";
   }
   if (issue.startsWith("Insecure calls endpoint on HTTPS page:")) {
     return "На HTTPS-странице нельзя использовать внешний ws:// endpoint. Нужен только wss:// адрес для сервиса звонков.";

@@ -282,7 +282,7 @@ export function useCallsV2Bootstrap({
 
   const bootstrapCallsV2Room = useCallback(
     async (call: VideoCall, role: "caller" | "callee") => {
-      if (!CALLS_V2_ENABLED || !user) return true;
+      if (!CALLS_V2_ENABLED || !user) return false;
       if (!CALLS_V2_WS_URL && CALLS_V2_WS_URLS.length === 0) return false;
 
       const callId = call.id;

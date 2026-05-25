@@ -107,6 +107,7 @@ export function useVideoCallContext(): VideoCallContextType {
     screenStream: media.screenStream,
     noiseSuppressionEnabled: media.noiseSuppressionEnabled,
     backgroundBlurEnabled: media.backgroundBlurEnabled,
+    isE2eeActive: media.isE2eeActive,
     toggleMute: media.toggleMute,
     toggleVideo: media.toggleVideo,
     toggleScreenShare: media.toggleScreenShare,

@@ -69,9 +69,6 @@ export interface VideoCallSignalingContextType {
 
   /** Force ICE restart / new TURN credential fetch without ending the call. */
   retryConnection: () => Promise<void>;
-
-  /** True when E2EE epoch key is active and media is encrypted. */
-  isE2eeActive: boolean;
 }
 
 // ─── Media domain ──────────────────────────────────────────────────────────────
@@ -94,6 +91,9 @@ export interface VideoCallMediaContextType {
   noiseSuppressionEnabled: boolean;
   /** Whether background blur is enabled. */
   backgroundBlurEnabled: boolean;
+  /** True when E2EE epoch key is active and media is encrypted. */
+  isE2eeActive: boolean;
+
   /** Toggle microphone mute state. */
   toggleMute: () => void;
   /** Toggle camera on/off state. */

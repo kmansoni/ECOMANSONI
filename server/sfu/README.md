@@ -57,7 +57,6 @@ Server endpoints:
 
 Client rollout envs (web):
 - `VITE_CALLS_V2_ENABLED=true`
-- `VITE_CALLS_V2_WS_URL=wss://region-1.example.com/ws` (single endpoint)
 - `VITE_CALLS_V2_WS_URLS=wss://region-1.example.com/ws,wss://region-2.example.com/ws` (multi-region failover)
 - `VITE_CALLS_V2_REKEY_INTERVAL_MS=120000` (periodic E2EE epoch rotation)
 - `VITE_CALLS_FRAME_E2EE_ADVERTISE_SFRAME=true` (advertise `sframe=true` in `E2EE_CAPS` when Insertable Streams are supported)

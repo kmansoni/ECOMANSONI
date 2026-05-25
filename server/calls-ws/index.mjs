@@ -1411,7 +1411,7 @@ wss.on("connection", (ws, req) => {
       // calls-ws is a signaling gateway. When a client connects here directly
       // (e.g. dev environment without a separate SFU), these stubs allow the
       // bootstrap flow to complete without hanging on VALIDATION_FAILED.
-      // In production the client should point VITE_CALLS_V2_WS_URL to the
+      // In production the client should point VITE_CALLS_V2_WS_URLS to the
       // mediasoup SFU endpoint (server/sfu/index.mjs) where real transport is done.
       case "TRANSPORT_CREATE": {
         if (!ENABLE_MEDIA_TRANSPORT_STUBS) {

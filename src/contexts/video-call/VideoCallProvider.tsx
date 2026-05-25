@@ -401,6 +401,7 @@ const unansweredCallTimerRef = useRef<number | null>(null);
     mediaBootstrapRetryAttemptsRef.current.clear();
     consumerCreateParamsRef.current.clear();
     producerPeerKeyRef.current.clear();
+    peerUserIdByDeviceIdRef.current.clear();
     pendingReceiverTransformsRef.current.clear();
     pipeBreakRetryAtRef.current.clear();
     pipeBreakRecoveryInFlightRef.current.clear();
@@ -1451,88 +1452,88 @@ const unansweredCallTimerRef = useRef<number | null>(null);
   // Each value object is reconstructed only when its specific slice of state changes.
   // This ensures that unrelated context consumers do not re-render.
 
-  const signalingValue: VideoCallSignalingContextType = useMemo(() => ({
-    status: activeStatus,
-    callState,
-    currentCall: legacyEngineActive ? legacyCurrentCall : currentCall,
-    incomingCall,
-    connectionState: legacyEngineActive ? legacyConnectionState : connectionState,
-    pendingCalleeProfile,
-    startCall,
-    answerCall,
-    declineCall,
-    endCall,
-    retryConnection,
-    isE2eeActive,
-  }), [
-    activeStatus,
-    callState,
-    legacyEngineActive,
-    legacyCurrentCall,
-    currentCall,
-    incomingCall,
-    legacyConnectionState,
-    connectionState,
-    pendingCalleeProfile,
-    startCall,
-    answerCall,
-    declineCall,
-    endCall,
-    retryConnection,
-    isE2eeActive,
-  ]);
+const signalingValue: VideoCallSignalingContextType = useMemo(() => ({
+     status: activeStatus,
+     callState,
+     currentCall: legacyEngineActive ? legacyCurrentCall : currentCall,
+     incomingCall,
+     connectionState: legacyEngineActive ? legacyConnectionState : connectionState,
+     pendingCalleeProfile,
+     startCall,
+     answerCall,
+     declineCall,
+     endCall,
+     retryConnection,
+   }), [
+     activeStatus,
+     callState,
+     legacyEngineActive,
+     legacyCurrentCall,
+     currentCall,
+     incomingCall,
+     legacyConnectionState,
+     connectionState,
+     pendingCalleeProfile,
+     startCall,
+     answerCall,
+     declineCall,
+     endCall,
+     retryConnection,
+   ]);
 
-  const mediaValue: VideoCallMediaContextType = useMemo(() => ({
-    localStream: legacyEngineActive ? legacyLocalStream : localStream,
-    remoteStream: legacyEngineActive ? legacyRemoteStream : remoteStream,
-    remoteScreenStream,
-    isMuted: legacyEngineActive ? legacyIsMuted : isMuted,
-    isVideoOff: legacyEngineActive ? legacyIsVideoOff : isVideoOff,
-    isScreenSharing: legacyEngineActive ? false : isScreenSharing,
-    screenStream: legacyEngineActive ? null : screenStream,
-    noiseSuppressionEnabled: legacyEngineActive ? false : noiseSuppressionEnabled,
-    backgroundBlurEnabled: legacyEngineActive ? false : backgroundBlurEnabled,
-    toggleMute: legacyEngineActive ? legacyToggleMute : toggleMute,
-    toggleVideo: legacyEngineActive ? legacyToggleVideo : toggleVideo,
-    toggleScreenShare: legacyEngineActive
-      ? async () => { toast.info("Демонстрация экрана недоступна в режиме совместимости"); }
-      : async () => {
-          if (isScreenSharing) {
-            stopScreenShare();
-            return;
-          }
-          await startScreenShare();
-        },
-    toggleNoiseSuppression: legacyEngineActive
-      ? async () => { toast.info("Шумоподавление недоступно в режиме совместимости"); }
-      : toggleNoiseSuppression,
-    toggleBackgroundBlur: legacyEngineActive
-      ? async () => { toast.info("Размытие фона недоступно в режиме совместимости"); }
-      : toggleBackgroundBlur,
-  }), [
-    legacyEngineActive,
-    legacyLocalStream,
-    localStream,
-    legacyRemoteStream,
-    remoteStream,
-    remoteScreenStream,
-    legacyIsMuted,
-    isMuted,
-    legacyIsVideoOff,
-    isVideoOff,
-    isScreenSharing,
-    screenStream,
-    noiseSuppressionEnabled,
-    backgroundBlurEnabled,
-    legacyToggleMute,
-    toggleMute,
-    legacyToggleVideo,
-    toggleVideo,
-    stopScreenShare,
-    startScreenShare,
-    toggleNoiseSuppression,
-    toggleBackgroundBlur,
-  ]);
+const mediaValue: VideoCallMediaContextType = useMemo(() => ({
+     localStream: legacyEngineActive ? legacyLocalStream : localStream,
+     remoteStream: legacyEngineActive ? legacyRemoteStream : remoteStream,
+     remoteScreenStream,
+     isMuted: legacyEngineActive ? legacyIsMuted : isMuted,
+     isVideoOff: legacyEngineActive ? legacyIsVideoOff : isVideoOff,
+     isScreenSharing: legacyEngineActive ? false : isScreenSharing,
+     screenStream: legacyEngineActive ? null : screenStream,
+     noiseSuppressionEnabled: legacyEngineActive ? false : noiseSuppressionEnabled,
+     backgroundBlurEnabled: legacyEngineActive ? false : backgroundBlurEnabled,
+     toggleMute: legacyEngineActive ? legacyToggleMute : toggleMute,
+     toggleVideo: legacyEngineActive ? legacyToggleVideo : toggleVideo,
+     toggleScreenShare: legacyEngineActive
+       ? async () => { toast.info("Демонстрация экрана недоступна в режиме совместимости"); }
+       : async () => {
+           if (isScreenSharing) {
+             stopScreenShare();
+             return;
+           }
+           await startScreenShare();
+         },
+     toggleNoiseSuppression: legacyEngineActive
+       ? async () => { toast.info("Шумоподавление недоступно в режиме совместимости"); }
+       : toggleNoiseSuppression,
+     toggleBackgroundBlur: legacyEngineActive
+       ? async () => { toast.info("Размытие фона недоступно в режиме совместимости"); }
+       : toggleBackgroundBlur,
+     isE2eeActive,
+   }), [
+     legacyEngineActive,
+     legacyLocalStream,
+     localStream,
+     legacyRemoteStream,
+     remoteStream,
+     remoteScreenStream,
+     legacyIsMuted,
+     isMuted,
+     legacyIsVideoOff,
+     isVideoOff,
+     isScreenSharing,
+     screenStream,
+     noiseSuppressionEnabled,
+     backgroundBlurEnabled,
+     legacyToggleMute,
+     toggleMute,
+     legacyToggleVideo,
+     toggleVideo,
+     stopScreenShare,
+     startScreenShare,
+     toggleNoiseSuppression,
+     toggleBackgroundBlur,
+     isE2eeActive,
+   ]);
 
   const uiValue: VideoCallUIContextType = useMemo(() => ({
     isCallUiActive,

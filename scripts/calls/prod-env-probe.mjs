@@ -6,7 +6,7 @@
 
   Required when REQUIRE_CALLS_ENV_PROBE=1:
   - VITE_CALLS_V2_ENABLED=true
-  - VITE_CALLS_V2_WS_URL or VITE_CALLS_V2_WS_URLS
+  - VITE_CALLS_V2_WS_URLS
   - All remote endpoints must be wss://
   - VITE_TURN_CREDENTIALS_URL must be https://
 */
@@ -20,10 +20,8 @@ function isRequireMode() {
   return v === "1" || v === "true";
 }
 
-function parseWsList(singleValue, listValue) {
+function parseWsList(listValue) {
   const items = [];
-  const one = normalize(singleValue);
-  if (one) items.push(one);
   for (const item of normalize(listValue).split(",")) {
     const value = item.trim();
     if (value) items.push(value);
@@ -85,7 +83,6 @@ function main() {
   const requireMode = isRequireMode();
 
   const enabled = normalize(process.env.VITE_CALLS_V2_ENABLED).toLowerCase();
-  const wsUrl = normalize(process.env.VITE_CALLS_V2_WS_URL);
   const wsUrls = normalize(process.env.VITE_CALLS_V2_WS_URLS);
   const rekey = normalize(process.env.VITE_CALLS_V2_REKEY_INTERVAL_MS);
   const turnUrl = normalize(process.env.VITE_TURN_CREDENTIALS_URL);
@@ -96,9 +93,9 @@ function main() {
     errors.push(`VITE_CALLS_V2_ENABLED must be true, got: ${enabled || "<empty>"}`);
   }
 
-  const endpoints = parseWsList(wsUrl, wsUrls);
+  const endpoints = parseWsList(wsUrls);
   if (endpoints.length === 0) {
-    errors.push("missing calls endpoint: set VITE_CALLS_V2_WS_URL or VITE_CALLS_V2_WS_URLS");
+    errors.push("missing calls endpoint list: set VITE_CALLS_V2_WS_URLS");
   } else {
     errors.push(...validateWsEndpoints(endpoints));
   }
