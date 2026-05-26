@@ -53,6 +53,7 @@ interface UseCallsV2BootstrapParams {
   lastCallsBootstrapErrorRef: MutableRefObject<Error | null>;
   producerPeerKeyRef: MutableRefObject<Map<string, string>>;
   peerUserIdByDeviceIdRef: MutableRefObject<Map<string, string>>;
+  pendingProducersToConsumeRef: MutableRefObject<Map<string, { roomId: string; peerDeviceId?: string; peerUserId?: string }>>;
   handleE2eePipeBreakRef: MutableRefObject<((info: PipeBreakInfo) => void) | null>;
   producerAddedUnsubRef: MutableRefObject<(() => void) | null>;
   isCallStillActiveForBootstrap: (callId: string) => boolean;
@@ -476,13 +477,21 @@ export function useCallsV2Bootstrap({
             producerPeerKeyRef.current.set(producerId, peerUserId);
           }
 
-          const rtpCapabilities =
-            sfuManagerRef.current?.rtpCapabilities ??
-            sfuRouterRtpCapabilitiesRef.current;
-          if (!rtpCapabilities) {
-            logger.warn("[VideoCallContext] calls-v2 consume skipped: rtpCapabilities not ready", { roomId, producerId });
-            return;
-          }
+           const rtpCapabilities =
+             sfuManagerRef.current?.rtpCapabilities ??
+             sfuRouterRtpCapabilitiesRef.current;
+           if (!rtpCapabilities) {
+             // Save to pending queue instead of skipping
+             pendingProducersToConsumeRef.current.set(producerId, {
+               roomId,
+               peerDeviceId,
+               peerUserId: peerDeviceId ? peerUserIdByDeviceIdRef.current.get(peerDeviceId) : undefined,
+             });
+             if (peerDeviceId && peerUserIdByDeviceIdRef.current.get(peerDeviceId)) {
+               producerPeerKeyRef.current.set(producerId, `${peerUserIdByDeviceIdRef.current.get(peerDeviceId)}:${peerDeviceId}`);
+             }
+             return;
+           }
           void client.consume({ roomId, producerId, rtpCapabilities }).catch((err) => {
             logger.warn("[VideoCallContext] calls-v2 consume failed", err);
           });

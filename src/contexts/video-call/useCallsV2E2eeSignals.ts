@@ -6,6 +6,8 @@ import { CallMediaEncryption } from "../../calls-v2/callMediaEncryption";
 import { RekeyStateMachine } from "../../calls-v2/rekeyStateMachine";
 import { EpochGuard } from "@/calls-v2/epochGuard";
 import type { CallsWsClient } from "@/calls-v2/wsClient";
+import type { SfuMediaManager } from "@/calls-v2/sfuMediaManager";
+import type { RtpCapabilities } from "@/calls-v2/types";
 import { getOrCreateIdentityKeyPair, signIdentity, exportPublicKey as exportEcdsaPublicKey, verifyIdentity, importPublicKey } from "@/calls-v2/ecdsaIdentity";
 
 interface UseCallsV2E2eeSignalsParams {
@@ -22,6 +24,11 @@ interface UseCallsV2E2eeSignalsParams {
   epochGuardRef: { current: EpochGuard | null };
   producerPeerKeyRef: { current: Map<string, string> };
   peerUserIdByDeviceIdRef: { current: Map<string, string> };
+  callsWsRef: { current: CallsWsClient | null };
+  sfuManagerRef: { current: SfuMediaManager | null };
+  sfuRouterRtpCapabilitiesRef: { current: RtpCapabilities | null };
+  pendingProducersToConsumeRef: { current: Map<string, { roomId: string; peerDeviceId?: string; peerUserId?: string }> };
+  consumePendingProducersRef: { current: (() => void) | null };
   onE2eeActivated?: () => void;
   onDecryptionKeyReady?: (peerKey: string) => void;
 }
@@ -150,44 +157,69 @@ export function useCallsV2E2eeSignals({
       logger.warn("[VideoCallContext] calls-v2 room-left", { payload: frame.payload });
     });
 
-    on("ROOM_SNAPSHOT", (frame) => {
-      const snapshot = frame.payload as {
-        roomVersion?: number | string;
-        e2ee?: { leaderDeviceId?: string };
-        peers?: Array<{ peerId?: string; userId?: string; deviceId?: string }>;
-      } | null;
-      const roomVersionRaw = snapshot?.roomVersion;
-      const roomVersion = typeof roomVersionRaw === "number" ? roomVersionRaw : Number(roomVersionRaw);
-      if (!Number.isFinite(roomVersion) || roomVersion < 0) {
-        logger.warn("[VideoCallContext] ROOM_SNAPSHOT ignored: invalid roomVersion", {
-          roomVersion: roomVersionRaw,
-        });
-        return;
-      }
-      if (roomVersion <= lastSnapshotRoomVersionRef.current) {
-        return;
-      }
-      lastSnapshotRoomVersionRef.current = roomVersion;
-      const leader = snapshot?.e2ee?.leaderDeviceId;
-      if (typeof leader === "string" && leader.length > 0) {
-        e2eeLeaderDeviceRef.current = leader;
-      }
-      if (Array.isArray(snapshot?.peers)) {
-        const peerIds: string[] = (snapshot.peers as Array<{ peerId?: string; userId?: string; deviceId?: string }>)
-          .map((p) => p.peerId ?? p.userId ?? p.deviceId ?? "")
-          .filter(Boolean);
-        rekeyMachineRef.current?.setActivePeers(peerIds);
+     on("ROOM_SNAPSHOT", (frame) => {
+       const snapshot = frame.payload as {
+         roomVersion?: number | string;
+         e2ee?: { leaderDeviceId?: string };
+         peers?: Array<{ peerId?: string; userId?: string; deviceId?: string }>;
+         producers?: Array<{ producerId?: string; peerDeviceId?: string; kind?: string; source?: string }>;
+       } | null;
+       const roomVersionRaw = snapshot?.roomVersion;
+       const roomVersion = typeof roomVersionRaw === "number" ? roomVersionRaw : Number(roomVersionRaw);
+       if (!Number.isFinite(roomVersion) || roomVersion < 0) {
+         logger.warn("[VideoCallContext] ROOM_SNAPSHOT ignored: invalid roomVersion", {
+           roomVersion: roomVersionRaw,
+         });
+         return;
+       }
+       if (roomVersion <= lastSnapshotRoomVersionRef.current) {
+         return;
+       }
+       lastSnapshotRoomVersionRef.current = roomVersion;
+       const leader = snapshot?.e2ee?.leaderDeviceId;
+       if (typeof leader === "string" && leader.length > 0) {
+         e2eeLeaderDeviceRef.current = leader;
+       }
+       if (Array.isArray(snapshot?.peers)) {
+         const peerIds: string[] = (snapshot.peers as Array<{ peerId?: string; userId?: string; deviceId?: string }>)
+           .map((p) => p.peerId ?? p.userId ?? p.deviceId ?? "")
+           .filter(Boolean);
+         rekeyMachineRef.current?.setActivePeers(peerIds);
 
-        for (const peer of snapshot.peers as Array<{ peerId?: string; userId?: string; deviceId?: string }>) {
-          const canonicalPeerId = peer.peerId ?? peer.userId;
-          if (!canonicalPeerId || !peer?.deviceId) continue;
-          const peerUserId = canonicalPeerId.includes(":") ? canonicalPeerId.split(":")[0] : canonicalPeerId;
-          if (peerUserId) {
-            peerUserIdByDeviceIdRef.current.set(peer.deviceId, peerUserId);
-          }
-        }
-      }
-    });
+         for (const peer of snapshot.peers as Array<{ peerId?: string; userId?: string; deviceId?: string }>) {
+           const canonicalPeerId = peer.peerId ?? peer.userId;
+           if (!canonicalPeerId || !peer?.deviceId) continue;
+           const peerUserId = canonicalPeerId.includes(":") ? canonicalPeerId.split(":")[0] : canonicalPeerId;
+           if (peerUserId) {
+             peerUserIdByDeviceIdRef.current.set(peer.deviceId, peerUserId);
+           }
+         }
+       }
+       // Process producers from snapshot
+       const snapshotProducers = (snapshot as { producers?: Array<{ producerId?: string; peerDeviceId?: string; kind?: string; source?: string }> } | null)?.producers;
+       if (Array.isArray(snapshotProducers) && callsWsRoomRef.current) {
+         const activeRoomId = callsWsRoomRef.current;
+         const localDeviceId = getStableCallsDeviceId();
+         for (const prod of snapshotProducers) {
+           if (prod.producerId && prod.peerDeviceId !== localDeviceId) {
+             if (sfuManagerRef.current?.loaded && sfuRouterRtpCapabilitiesRef.current) {
+               void client.consume({ roomId: activeRoomId, producerId: prod.producerId, rtpCapabilities: sfuRouterRtpCapabilitiesRef.current }).catch((err) => {
+                 logger.warn("[VideoCallContext] consume from snapshot failed", err);
+               });
+             } else {
+               pendingProducersToConsumeRef.current.set(prod.producerId, {
+                 roomId: activeRoomId,
+                 peerDeviceId: prod.peerDeviceId,
+                 peerUserId: peerUserIdByDeviceIdRef.current.get(prod.peerDeviceId),
+               });
+               if (peerUserIdByDeviceIdRef.current.get(prod.peerDeviceId)) {
+                 producerPeerKeyRef.current.set(prod.producerId, `${peerUserIdByDeviceIdRef.current.get(prod.peerDeviceId)}:${prod.peerDeviceId}`);
+               }
+             }
+           }
+         }
+       }
+     });
 
     on("REKEY_BEGIN", (frame) => {
       const activeRoomId = callsWsRoomRef.current;
@@ -742,6 +774,22 @@ export function useCallsV2E2eeSignals({
       }
     };
     attachedSignalsClientRef.current = client;
+
+    // Process pending producers when media is ready
+    const consumePendingProducers = useCallback(() => {
+      if (!sfuManagerRef.current?.loaded || !sfuRouterRtpCapabilitiesRef.current) return;
+      const rtpCapabilities = sfuRouterRtpCapabilitiesRef.current;
+      const toProcess = Array.from(pendingProducersToConsumeRef.current.entries());
+      pendingProducersToConsumeRef.current.clear();
+      for (const [producerId, { roomId }] of toProcess) {
+        void client.consume({ roomId, producerId, rtpCapabilities }).catch((err) => {
+          logger.warn("[VideoCallContext] consume pending producer failed", { producerId, error: err.message });
+        });
+      }
+    }, [client]);
+    
+    // Store the callback ref for external access
+    consumePendingProducersRef.current = consumePendingProducers;
   }, [
     addNonce,
     attachedSignalsClientRef,
@@ -761,6 +809,8 @@ export function useCallsV2E2eeSignals({
     resolvePeerIdentity,
     rekeyMachineRef,
     user,
+    pendingProducersToConsumeRef,
+    consumePendingProducersRef,
   ]);
 
   return { attachCallsV2E2eeSignals };

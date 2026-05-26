@@ -56,7 +56,7 @@ interface UseCallsV2MediaBootstrapParams {
   setRemoteMediaStream: (stream: MediaStream | null) => void;
   setRemoteScreenStream: (stream: MediaStream | null) => void;
   callStateRef: MutableRefObject<CallState>;
-  dispatchFsm: (event: CallEvent) => CallState;
+dispatchFsm: (event: CallEvent) => CallState;
   isCallConnecting: (state: CallState) => boolean;
   canPromoteInCall: () => boolean;
   markMediaBootstrapProgress: (signal: "send_transport_created" | "recv_transport_created") => void;
@@ -64,6 +64,8 @@ interface UseCallsV2MediaBootstrapParams {
     reason: string,
     details?: { roomId?: string; callId?: string; message?: string; stack?: string }
   ) => void;
+  pendingProducersToConsumeRef: MutableRefObject<Map<string, { roomId: string; peerDeviceId?: string; peerUserId?: string }>>;
+  consumePendingProducersRef: MutableRefObject<(() => void) | null>;
 }
 
 export function useCallsV2MediaBootstrap({
@@ -93,7 +95,7 @@ export function useCallsV2MediaBootstrap({
   mediaBootstrapToastShownRef,
   mediaBootstrapCompletedRef,
   isScreenSharing,
-  screenStream,
+screenStream,
   setRemoteMediaStream,
   setRemoteScreenStream,
   callStateRef,
@@ -102,6 +104,8 @@ export function useCallsV2MediaBootstrap({
   canPromoteInCall,
   markMediaBootstrapProgress,
   markMediaBootstrapFailed,
+  pendingProducersToConsumeRef,
+  consumePendingProducersRef,
 }: UseCallsV2MediaBootstrapParams) {
   const rebuildRemoteStream = useCallback(() => {
     const manager = sfuManagerRef.current;
@@ -524,7 +528,7 @@ export function useCallsV2MediaBootstrap({
           iceServers: iceServersSnapshot,
         },
         async (dtlsParameters) => {
-          await client.transportConnect({
+await client.transportConnect({
             roomId,
             transportId: recvParams.transportId,
             dtlsParameters: dtlsParameters as import("@/calls-v2/types").DtlsParameters,
@@ -533,6 +537,9 @@ export function useCallsV2MediaBootstrap({
         }
       );
       callsWsRecvTransportRef.current = recvParams.transportId;
+
+      // Process pending producers now that recv transport is ready
+      consumePendingProducersRef.current?.();
 
       if (consumerAddedUnsubRef.current) {
         consumerAddedUnsubRef.current();
@@ -775,7 +782,7 @@ hasEncryption: enc?.hasOutboundKey() ?? false,
     callsWsSendTransportRef,
     consumerAddedUnsubRef,
     consumerCreateParamsRef,
-    dispatchFsm,
+dispatchFsm,
     e2eeEpochRef,
     ensureCallsV2Connected,
     epochGuardRef,
@@ -785,7 +792,9 @@ hasEncryption: enc?.hasOutboundKey() ?? false,
     mediaBootstrapErrorLogAtRef,
     mediaBootstrapToastShownRef,
     pendingReceiverTransformsRef,
+    pendingProducersToConsumeRef,
     producerPeerKeyRef,
+    consumePendingProducersRef,
     rebuildRemoteStream,
     reportMediaBootstrapFailure,
     sfuManagerRef,

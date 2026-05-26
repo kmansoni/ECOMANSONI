@@ -1,32 +1,40 @@
 /**
  * Шумоподавление через Web Audio API.
- * High-pass фильтр (80Hz) + noise gate с мягким attack/release.
  *
- * Цепочка: source → highpass(80Hz) → analyser → gate(GainNode) → destination
- * Анализатор измеряет RMS и плавно регулирует gain gate:
- *   RMS > threshold → gain 1.0 (пропустить)
- *   RMS < threshold → gain 0.05 (почти тишина)
+ * Важный момент:
+ *  Раньше здесь использовался динамический noise-gate (RMS + requestAnimationFrame),
+ *  который в реальных WebView иногда вызывал тональные артефакты/"сигналы".
+ *
+ * Текущая реализация использует только стабильные нативные узлы:
+ *  source → highpass(90Hz) → lowpass(7.2kHz) → compressor → wetGain
+ *  source → dryGain (bypass)
+ *  wetGain + dryGain → destination
+ *
+ * setEnabled(true):  wet=1, dry=0
+ * setEnabled(false): wet=0, dry=1
  */
 
 import { logger } from '@/lib/logger';
 
-const NOISE_FLOOR_RMS = 0.008;  // -42dB порог шума
-const ATTACK_MS = 20;           // Время открытия gate
-const RELEASE_MS = 100;         // Время закрытия gate
-const GATE_CLOSED_GAIN = 0.05;  // Остаточный gain при закрытом gate
-const HIGHPASS_FREQ = 80;       // Частота среза высокочастотного фильтра
-const ANALYSIS_FFT_SIZE = 256;  // Размер буфера для анализа
+const HIGHPASS_FREQ = 90;
+const LOWPASS_FREQ = 7200;
+const COMPRESSOR_THRESHOLD = -28;
+const COMPRESSOR_KNEE = 24;
+const COMPRESSOR_RATIO = 3;
+const COMPRESSOR_ATTACK = 0.003;
+const COMPRESSOR_RELEASE = 0.18;
+const BYPASS_RAMP_SEC = 0.02;
 
 export class NoiseSuppressor {
   private ctx: AudioContext | null = null;
   private source: MediaStreamAudioSourceNode | null = null;
   private destination: MediaStreamAudioDestinationNode | null = null;
   private highpass: BiquadFilterNode | null = null;
-  private gate: GainNode | null = null;
-  private analyser: AnalyserNode | null = null;
-  private rafId: number | null = null;
+  private lowpass: BiquadFilterNode | null = null;
+  private compressor: DynamicsCompressorNode | null = null;
+  private wetGain: GainNode | null = null;
+  private dryGain: GainNode | null = null;
   private enabled = true;
-  private smoothGain = 1.0;
   private readonly sourceStream: MediaStream;
 
   constructor(stream: MediaStream) {
@@ -36,75 +44,56 @@ export class NoiseSuppressor {
 
   private buildGraph(): void {
     try {
-      this.ctx = new AudioContext();
+      this.ctx = new AudioContext({ latencyHint: 'interactive' });
       this.source = this.ctx.createMediaStreamSource(this.sourceStream);
       this.destination = this.ctx.createMediaStreamDestination();
 
-      // High-pass фильтр — убирает гул вентилятора/кондиционера
+      // Убираем инфранизкие шумы (гул).
       this.highpass = this.ctx.createBiquadFilter();
       this.highpass.type = 'highpass';
       this.highpass.frequency.value = HIGHPASS_FREQ;
-      this.highpass.Q.value = 0.7;
+      this.highpass.Q.value = 0.8;
 
-      // Анализатор RMS уровня
-      this.analyser = this.ctx.createAnalyser();
-      this.analyser.fftSize = ANALYSIS_FFT_SIZE;
+      // Мягко срезаем высокочастотный шип/цифровой "свист".
+      this.lowpass = this.ctx.createBiquadFilter();
+      this.lowpass.type = 'lowpass';
+      this.lowpass.frequency.value = LOWPASS_FREQ;
+      this.lowpass.Q.value = 0.7;
 
-      // Gate (GainNode) — мягко открывается/закрывается
-      this.gate = this.ctx.createGain();
-      this.gate.gain.value = 1.0;
+      // Лёгкая динамическая компрессия для стабилизации голоса без gating-артефактов.
+      this.compressor = this.ctx.createDynamicsCompressor();
+      this.compressor.threshold.value = COMPRESSOR_THRESHOLD;
+      this.compressor.knee.value = COMPRESSOR_KNEE;
+      this.compressor.ratio.value = COMPRESSOR_RATIO;
+      this.compressor.attack.value = COMPRESSOR_ATTACK;
+      this.compressor.release.value = COMPRESSOR_RELEASE;
 
-      // Цепочка: source → highpass → analyser → gate → destination
+      this.wetGain = this.ctx.createGain();
+      this.dryGain = this.ctx.createGain();
+      this.wetGain.gain.value = 1;
+      this.dryGain.gain.value = 0;
+
+      // Wet (обработанный) путь
       this.source.connect(this.highpass);
-      this.highpass.connect(this.analyser);
-      this.analyser.connect(this.gate);
-      this.gate.connect(this.destination);
+      this.highpass.connect(this.lowpass);
+      this.lowpass.connect(this.compressor);
+      this.compressor.connect(this.wetGain);
 
-      this.startProcessing();
+      // Dry (bypass) путь
+      this.source.connect(this.dryGain);
+
+      this.wetGain.connect(this.destination);
+      this.dryGain.connect(this.destination);
+
+      this.setEnabled(this.enabled);
+      void this.ctx.resume().catch((error) => {
+        logger.debug('[NoiseSuppressor] AudioContext resume skipped/failed', { error });
+      });
       logger.info('[NoiseSuppressor] Граф обработки создан');
     } catch (error) {
       logger.error('[NoiseSuppressor] Ошибка создания графа', { error });
       this.close();
     }
-  }
-
-  private startProcessing(): void {
-    if (!this.analyser || !this.gate || !this.ctx) return;
-
-    const dataArray = new Float32Array(this.analyser.fftSize);
-
-    const process = (): void => {
-      if (!this.analyser || !this.gate || !this.ctx) return;
-
-      this.analyser.getFloatTimeDomainData(dataArray);
-
-      // Вычисляем RMS
-      let sum = 0;
-      for (let i = 0; i < dataArray.length; i++) {
-        sum += dataArray[i] * dataArray[i];
-      }
-      const rms = Math.sqrt(sum / dataArray.length);
-
-      if (this.enabled) {
-        const targetGain = rms > NOISE_FLOOR_RMS ? 1.0 : GATE_CLOSED_GAIN;
-
-        // Плавная интерполяция для избежания щелчков
-        const timeConstant = targetGain > this.smoothGain
-          ? ATTACK_MS / 1000
-          : RELEASE_MS / 1000;
-        const framesPerAnalysis = this.analyser.fftSize / this.ctx.sampleRate;
-        const alpha = 1 - Math.exp(-framesPerAnalysis / timeConstant);
-        this.smoothGain += alpha * (targetGain - this.smoothGain);
-
-        this.gate.gain.setTargetAtTime(this.smoothGain, this.ctx.currentTime, 0.01);
-      } else {
-        this.gate.gain.setTargetAtTime(1.0, this.ctx.currentTime, 0.01);
-      }
-
-      this.rafId = requestAnimationFrame(process);
-    };
-
-    this.rafId = requestAnimationFrame(process);
   }
 
   /** Возвращает обработанный MediaStream (замена оригинального аудио). */
@@ -115,20 +104,34 @@ export class NoiseSuppressor {
   /** Включить/выключить шумоподавление (bypass). */
   setEnabled(on: boolean): void {
     this.enabled = on;
+    const ctx = this.ctx;
+    const wet = this.wetGain;
+    const dry = this.dryGain;
+    if (ctx && wet && dry) {
+      if (ctx.state === 'suspended') {
+        void ctx.resume().catch((error) => {
+          logger.debug('[NoiseSuppressor] AudioContext resume failed during toggle', { error });
+        });
+      }
+      const now = ctx.currentTime;
+      wet.gain.cancelScheduledValues(now);
+      dry.gain.cancelScheduledValues(now);
+      wet.gain.setValueAtTime(wet.gain.value, now);
+      dry.gain.setValueAtTime(dry.gain.value, now);
+      wet.gain.linearRampToValueAtTime(on ? 1 : 0, now + BYPASS_RAMP_SEC);
+      dry.gain.linearRampToValueAtTime(on ? 0 : 1, now + BYPASS_RAMP_SEC);
+    }
     logger.debug('[NoiseSuppressor] Состояние изменено', { enabled: on });
   }
 
   /** Освобождает все ресурсы AudioContext. */
   close(): void {
-    if (this.rafId !== null) {
-      cancelAnimationFrame(this.rafId);
-      this.rafId = null;
-    }
-
     this.source?.disconnect();
     this.highpass?.disconnect();
-    this.analyser?.disconnect();
-    this.gate?.disconnect();
+    this.lowpass?.disconnect();
+    this.compressor?.disconnect();
+    this.wetGain?.disconnect();
+    this.dryGain?.disconnect();
 
     if (this.ctx && this.ctx.state !== 'closed') {
       void this.ctx.close().catch(() => { /* ignore */ });
@@ -136,8 +139,10 @@ export class NoiseSuppressor {
 
     this.source = null;
     this.highpass = null;
-    this.analyser = null;
-    this.gate = null;
+    this.lowpass = null;
+    this.compressor = null;
+    this.wetGain = null;
+    this.dryGain = null;
     this.destination = null;
     this.ctx = null;
 

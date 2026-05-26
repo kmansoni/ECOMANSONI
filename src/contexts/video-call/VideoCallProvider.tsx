@@ -177,6 +177,13 @@ const unansweredCallTimerRef = useRef<number | null>(null);
   // Profile of the callee shown immediately on the call screen before the call record loads from DB
   const [pendingCalleeProfile, setPendingCalleeProfile] = useState<CalleeProfile | null>(null);
   const [remoteScreenStream, setRemoteScreenStream] = useState<MediaStream | null>(null);
+  /** producerId → { roomId, peerDeviceId, peerUserId } for producers arrived before recv transport ready */
+  const pendingProducersToConsumeRef = useRef<Map<string, {
+    roomId: string;
+    peerDeviceId?: string;
+    peerUserId?: string;
+  }>>(new Map());
+  const consumePendingProducersRef = useRef<(() => void) | null>(null);
 
   // ─── Call FSM (primary state source) ──────────────────────────────────────
   const [callState, setCallState] = useState<CallState>("idle");
@@ -401,6 +408,8 @@ const unansweredCallTimerRef = useRef<number | null>(null);
     mediaBootstrapRetryAttemptsRef.current.clear();
     consumerCreateParamsRef.current.clear();
     producerPeerKeyRef.current.clear();
+    pendingProducersToConsumeRef.current.clear();
+    consumePendingProducersRef.current = null;
     peerUserIdByDeviceIdRef.current.clear();
     pendingReceiverTransformsRef.current.clear();
     pipeBreakRetryAtRef.current.clear();
@@ -672,12 +681,14 @@ const unansweredCallTimerRef = useRef<number | null>(null);
      setRemoteMediaStream,
      setRemoteScreenStream,
      callStateRef,
-     dispatchFsm,
-     isCallConnecting,
-     canPromoteInCall: () => isCallActive(callState) || isCallConnecting(callState),
-     markMediaBootstrapProgress,
-     markMediaBootstrapFailed,
-   });
+dispatchFsm,
+      isCallConnecting,
+      canPromoteInCall: () => isCallActive(callState) || isCallConnecting(callState),
+      markMediaBootstrapProgress,
+      markMediaBootstrapFailed,
+      pendingProducersToConsumeRef,
+      consumePendingProducersRef,
+    });
 
   useE2eePipeBreakRecovery(
     sfuManagerRef,

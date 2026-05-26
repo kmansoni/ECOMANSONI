@@ -20,7 +20,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { getStableCallsDeviceId } from "@/lib/platform/device";
 import { logger } from "@/lib/logger";
 import { acquireScreenStream } from "@/lib/calls/screenShare";
-import { NoiseSuppressor } from "@/lib/audio/noiseSuppression";
+import { SmartNoiseSuppressor } from "@/lib/audio/smartNoiseSuppression";
 import { VideoBlurProcessor } from "@/lib/calls/videoBlurProcessor";
 
 // Re-use the canonical VideoCall / VideoCallStatus types to stay DB-schema-aligned
@@ -71,6 +71,37 @@ async function acquireLocalMedia(isVideo: boolean): Promise<{ stream: MediaStrea
     echoCancellation: true,
     noiseSuppression: true,
     autoGainControl: true,
+    // Voice-first defaults: mono + 48kHz reduce codec artifacts and background hiss.
+    channelCount: { ideal: 1, max: 1 },
+    sampleRate: { ideal: 48000 },
+    sampleSize: { ideal: 16 },
+    latency: { ideal: 0.02, max: 0.08 },
+  };
+
+  const tuneAudioTrack = async (stream: MediaStream, label: string): Promise<void> => {
+    const track = stream.getAudioTracks()[0];
+    if (!track) return;
+    if (typeof track.applyConstraints === "function") {
+      try {
+        await track.applyConstraints(baseAudio);
+      } catch (error) {
+        logger.warn("video_call_sfu.audio_track_constraints_apply_failed", { label, error });
+      }
+    } else {
+      logger.debug("video_call_sfu.audio_track_constraints_apply_unsupported", { label });
+    }
+
+    const settings = typeof track.getSettings === "function" ? track.getSettings() : undefined;
+    logger.info("video_call_sfu.audio_track_settings", {
+      label,
+      echoCancellation: settings?.echoCancellation,
+      noiseSuppression: settings?.noiseSuppression,
+      autoGainControl: settings?.autoGainControl,
+      channelCount: settings?.channelCount,
+      sampleRate: settings?.sampleRate,
+      sampleSize: settings?.sampleSize,
+      latency: settings?.latency,
+    });
   };
 
   const hdVideo: MediaTrackConstraints = {
@@ -111,22 +142,26 @@ async function acquireLocalMedia(isVideo: boolean): Promise<{ stream: MediaStrea
     if (isVideo) {
       try {
         const stream = await request({ audio: baseAudio, video: hdVideo }, "video+audio(hd)");
+        await tuneAudioTrack(stream, "video+audio(hd)");
         return { stream, isAudioOnly: false };
       } catch (error) {
         logger.warn("video_call_sfu.acquire_media_hd_failed", { error });
         try {
           const stream = await request({ audio: baseAudio, video: safeVideo }, "video+audio(safe)");
+          await tuneAudioTrack(stream, "video+audio(safe)");
           return { stream, isAudioOnly: false };
         } catch (safeError) {
           logger.warn("video_call_sfu.acquire_media_safe_failed", { error: safeError });
           // Graceful degradation: keep the call alive in audio-only mode.
           const stream = await request({ audio: baseAudio, video: false }, "audio-only fallback");
+          await tuneAudioTrack(stream, "audio-only fallback");
           return { stream, isAudioOnly: true };
         }
       }
     }
 
     const stream = await request({ audio: baseAudio, video: false }, "audio-only");
+    await tuneAudioTrack(stream, "audio-only");
     return { stream, isAudioOnly: true };
   } catch (err) {
     logger.error("video_call_sfu.acquire_local_media_all_failed", { error: err });
@@ -344,7 +379,7 @@ export function useVideoCallSfu(options: UseVideoCallSfuOptions = {}): UseVideoC
 
   // Noise suppression state
   const [noiseSuppressionEnabled, setNoiseSuppressionEnabled] = useState(false);
-  const noiseSuppressorRef = useRef<NoiseSuppressor | null>(null);
+  const noiseSuppressorRef = useRef<SmartNoiseSuppressor | null>(null);
   const originalAudioTrackRef = useRef<MediaStreamTrack | null>(null);
 
   // Background blur state
@@ -908,13 +943,22 @@ export function useVideoCallSfu(options: UseVideoCallSfuOptions = {}): UseVideoC
       if (noiseSuppressorRef.current) {
         const suppressor = noiseSuppressorRef.current;
         const originalTrack = originalAudioTrackRef.current;
-        if (originalTrack && originalTrack.readyState === 'live') {
-          const currentAudio = stream.getAudioTracks()[0];
-          if (currentAudio) {
-            originalTrack.enabled = currentAudio.enabled;
-            await replaceLocalTrack("audio", currentAudio, originalTrack, "noise_suppression_disable");
-          }
+        const currentAudio = stream.getAudioTracks()[0] ?? null;
+        if (!originalTrack || originalTrack.readyState !== 'live') {
+          logger.warn('video_call_sfu.noise_suppression_disable_original_track_unavailable', {
+            hasOriginalTrack: !!originalTrack,
+            originalTrackReadyState: originalTrack?.readyState,
+          });
+          return;
         }
+        if (!currentAudio) {
+          logger.warn('video_call_sfu.noise_suppression_disable_current_track_missing', {});
+          return;
+        }
+
+        originalTrack.enabled = currentAudio.enabled;
+        await replaceLocalTrack("audio", currentAudio, originalTrack, "noise_suppression_disable");
+
         suppressor.close();
         noiseSuppressorRef.current = null;
         originalAudioTrackRef.current = null;
@@ -927,7 +971,7 @@ export function useVideoCallSfu(options: UseVideoCallSfuOptions = {}): UseVideoC
 
         originalAudioTrackRef.current = audioTrack;
         const audioStream = new MediaStream([audioTrack]);
-        const suppressor = new NoiseSuppressor(audioStream);
+        const suppressor = new SmartNoiseSuppressor(audioStream);
         noiseSuppressorRef.current = suppressor;
 
         const processedStream = suppressor.getProcessedStream();
@@ -942,6 +986,12 @@ export function useVideoCallSfu(options: UseVideoCallSfuOptions = {}): UseVideoC
         if (processedTrack) {
           processedTrack.enabled = audioTrack.enabled;
           await replaceLocalTrack("audio", audioTrack, processedTrack, "noise_suppression_enable");
+        } else {
+          suppressor.close();
+          noiseSuppressorRef.current = null;
+          originalAudioTrackRef.current = null;
+          logger.warn('video_call_sfu.noise_suppression_processed_track_missing', {});
+          return;
         }
         setNoiseSuppressionEnabled(true);
         logger.info('video_call_sfu.noise_suppression_enabled', {});
@@ -951,6 +1001,7 @@ export function useVideoCallSfu(options: UseVideoCallSfuOptions = {}): UseVideoC
       noiseSuppressorRef.current?.close();
       noiseSuppressorRef.current = null;
       originalAudioTrackRef.current = null;
+      setNoiseSuppressionEnabled(false);
     }
   }, [replaceLocalTrack]);
 

@@ -19,12 +19,13 @@ const mediaProcessorState = vi.hoisted(() => {
   };
 });
 
-vi.mock("@/lib/audio/noiseSuppression", () => ({
-  NoiseSuppressor: class {
+vi.mock("@/lib/audio/smartNoiseSuppression", () => ({
+  SmartNoiseSuppressor: class {
     close = mediaProcessorState.noiseClose;
     getProcessedStream() {
       return { getAudioTracks: () => [mediaProcessorState.audioProcessedTrack] };
     }
+    setEnabled() {}
   },
 }));
 
