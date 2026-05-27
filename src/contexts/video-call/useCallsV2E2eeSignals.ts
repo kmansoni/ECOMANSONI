@@ -33,6 +33,8 @@ interface UseCallsV2E2eeSignalsParams {
   onDecryptionKeyReady?: (peerKey: string) => void;
 }
 
+const NONCE_TTL_MS = 5 * 60 * 1000;
+
 export function useCallsV2E2eeSignals({
   user,
   callsWsRoomRef,
@@ -55,8 +57,6 @@ export function useCallsV2E2eeSignals({
   const attachedSignalsClientRef = useRef<CallsWsClient | null>(null);
   const detachSignalsRef = useRef<(() => void) | null>(null);
 
-  // TTL = 5 min; evict expired nonces to prevent unbounded growth
-  const NONCE_TTL_MS = 5 * 60 * 1000;
   const addNonce = useCallback((nonce: string) => {
     const now = Date.now();
     keyPackageNonceRef.current.add(nonce);
@@ -69,7 +69,6 @@ export function useCallsV2E2eeSignals({
       }
     }
   }, [keyPackageNonceRef, keyPackageNonceTimestampsRef]);
-
   const base64ToBytes = useCallback((b64: string): Uint8Array => {
     return Uint8Array.from(atob(b64), (char) => char.charCodeAt(0));
   }, []);
@@ -778,7 +777,7 @@ export function useCallsV2E2eeSignals({
     attachedSignalsClientRef.current = client;
 
     // Process pending producers when media is ready
-    const consumePendingProducers = useCallback(() => {
+    const consumePendingProducers = () => {
       if (!sfuManagerRef.current?.loaded || !sfuRouterRtpCapabilitiesRef.current) return;
       const rtpCapabilities = sfuRouterRtpCapabilitiesRef.current;
       const toProcess = Array.from(pendingProducersToConsumeRef.current.entries());
@@ -788,7 +787,7 @@ export function useCallsV2E2eeSignals({
           logger.warn("[VideoCallContext] consume pending producer failed", { producerId, error: err.message });
         });
       }
-    }, [client]);
+    };
     
     // Store the callback ref for external access
     consumePendingProducersRef.current = consumePendingProducers;
@@ -813,6 +812,7 @@ export function useCallsV2E2eeSignals({
     user,
     pendingProducersToConsumeRef,
     consumePendingProducersRef,
+    producerPeerKeyRef,
   ]);
 
   return { attachCallsV2E2eeSignals };
