@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useRef, type MutableRefObject } from "react";
 import { toast } from "sonner";
 import { logger } from "@/lib/logger";
-import { getStableCallsDeviceId } from "@/lib/platform/device";
 import { SfuMediaManager } from "@/calls-v2/sfuMediaManager";
 import { CallMediaEncryption } from "@/calls-v2/callMediaEncryption";
 import type { CallsWsClient } from "@/calls-v2/wsClient";
@@ -12,8 +11,7 @@ import type { CallKeyExchange } from "@/calls-v2/callKeyExchange";
 import type { RtpCapabilities } from "@/calls-v2/types";
 import {
   CALLS_V2_ENABLED,
-  CALLS_V2_WS_URL,
-  CALLS_V2_WS_URLS,
+  CALLS_V2_ENDPOINTS,
   MEDIA_BOOTSTRAP_RETRY_BACKOFF_MS,
   REQUIRE_SFRAME,
   extractRouterCapsFromJoinPayload,
@@ -38,8 +36,7 @@ interface UseCallsV2MediaBootstrapParams {
   callKeyExchangeRef: MutableRefObject<CallKeyExchange | null>;
   callMediaEncryptionRef: MutableRefObject<CallMediaEncryption | null>;
   localProducerIdsRef: MutableRefObject<{ audio: string | null; video: string | null }>;
-  consumerAddedUnsubRef: MutableRefObject<(() => void) | null>;
-  consumerCreateParamsRef: MutableRefObject<Map<string, import("@/calls-v2/types").ConsumedPayload>>;
+  consumerCreateParamsRef: MutableRefObject<Map<string, import("@/calls-v2/types").ConsumerReplayDescriptor>>;
   producerPeerKeyRef: MutableRefObject<Map<string, string>>;
   pendingReceiverTransformsRef: MutableRefObject<Map<string, {
     receiver: RTCRtpReceiver;
@@ -86,7 +83,6 @@ export function useCallsV2MediaBootstrap({
   callKeyExchangeRef,
   callMediaEncryptionRef,
   localProducerIdsRef,
-  consumerAddedUnsubRef,
   consumerCreateParamsRef,
   producerPeerKeyRef,
   pendingReceiverTransformsRef,
@@ -278,7 +274,7 @@ screenStream,
 
   const bootstrapCallsV2Media = useCallback(async (call: VideoCall, stream: MediaStream | null) => {
     if (!CALLS_V2_ENABLED || !user || !stream) return;
-    if (!CALLS_V2_WS_URL && CALLS_V2_WS_URLS.length === 0) return;
+    if (CALLS_V2_ENDPOINTS.length === 0) return;
     const callId = call.id;
     const hintedRoomId = (call as VideoCall & { room_id?: string; calls_v2_room_id?: string }).calls_v2_room_id
       ?? (call as VideoCall & { room_id?: string }).room_id;
@@ -541,173 +537,6 @@ await client.transportConnect({
       // Process pending producers now that recv transport is ready
       consumePendingProducersRef.current?.();
 
-      if (consumerAddedUnsubRef.current) {
-        consumerAddedUnsubRef.current();
-        consumerAddedUnsubRef.current = null;
-      }
-
-      consumerAddedUnsubRef.current = client.on("CONSUMER_ADDED", (frame) => {
-        const p = frame.payload as import("@/calls-v2/types").ConsumedPayload | undefined;
-        if (!p || p.roomId !== roomId) return;
-
-        const localDeviceId = getStableCallsDeviceId();
-        const localProducerIds = localProducerIdsRef.current;
-        const isLocalProducer =
-          p.producerId === localProducerIds.audio
-          || p.producerId === localProducerIds.video
-          || screenShareProducerIdsRef.current.includes(p.producerId);
-
-        const rawPeerId = typeof p.peerId === "string" ? p.peerId : "";
-        const peerSep = rawPeerId.indexOf(":");
-        const peerUserId = peerSep > 0 ? rawPeerId.slice(0, peerSep) : rawPeerId;
-        const peerDeviceId = peerSep > 0 ? rawPeerId.slice(peerSep + 1) : "";
-        const isSelfPeer = !!user?.id && peerUserId === user.id && (!peerDeviceId || peerDeviceId === localDeviceId);
-
-        if (isLocalProducer || isSelfPeer) {
-          logger.warn("[VideoCallContext] skip self-consumer payload", {
-            roomId,
-            consumerId: p.consumerId,
-            producerId: p.producerId,
-            peerId: p.peerId,
-            isLocalProducer,
-            isSelfPeer,
-          });
-          return;
-        }
-
-        if (typeof p.peerId === "string" && p.peerId.length > 0) {
-          producerPeerKeyRef.current.set(p.producerId, p.peerId);
-        }
-
-        logger.debug("[VideoCallContext] CONSUMER_ADDED received", {
-          consumerId: p.consumerId,
-          producerId: p.producerId,
-          kind: p.kind,
-          peerId: p.peerId,
-          roomId: roomId.slice(0, 8),
-        });
-
-        void sfuManager.consume({
-          id: p.consumerId,
-          producerId: p.producerId,
-          kind: p.kind as import("mediasoup-client").types.MediaKind,
-          rtpParameters: p.rtpParameters as import("mediasoup-client").types.RtpParameters,
-          source: p.source,
-        }).then((consumer) => {
-          logger.info("[VideoCallContext] calls-v2 consumer:created", {
-            roomId,
-            consumerId: consumer.id,
-            kind: consumer.kind,
-            trackId: consumer.track?.id,
-            trackKind: consumer.track?.kind,
-            trackState: consumer.track?.readyState,
-          });
-
-          const consumerTrack = consumer.track;
-          if (consumerTrack) {
-            const onTrackLifecycleChanged = () => {
-              logger.debug("[VideoCallContext] consumer track lifecycle changed", {
-                consumerId: consumer.id,
-                trackId: consumerTrack.id,
-                kind: consumerTrack.kind,
-                readyState: consumerTrack.readyState,
-                muted: consumerTrack.muted,
-              });
-              rebuildRemoteStream();
-            };
-
-            consumerTrack.addEventListener("ended", onTrackLifecycleChanged);
-            consumerTrack.addEventListener("mute", onTrackLifecycleChanged);
-            consumerTrack.addEventListener("unmute", onTrackLifecycleChanged);
-          }
-
-          consumerCreateParamsRef.current.set(consumer.id, p);
-          if (REQUIRE_SFRAME && CallMediaEncryption.isSupported()) {
-            const enc = callMediaEncryptionRef.current;
-            const receiver = sfuManagerRef.current?.getConsumerReceiver(consumer.id);
-            const peerKey = p.peerId
-              || producerPeerKeyRef.current.get(p.producerId)
-              || p.producerId;
-            const decryptionPeerIds = enc?.getDecryptionPeerIds() ?? [];
-            logger.debug("[VideoCallContext] E2EE setupReceiverTransform", {
-              consumerId: consumer.id,
-              peerKey,
-              peerIdField: p.peerId,
-              fromProducerRef: producerPeerKeyRef.current.get(p.producerId),
-              producerId: p.producerId,
-hasEncryption: enc?.hasOutboundKey() ?? false,
-               decryptionKeysCount: decryptionPeerIds.length,
-               allDecryptionKeys: decryptionPeerIds,
-            });
-            if (receiver && enc) {
-              try {
-                const hasKey = enc.hasDecryptionKeyForPeer(peerKey);
-                if (hasKey) {
-                  enc.setupReceiverTransform(receiver, peerKey, consumer.id);
-                  logger.info("[VideoCallContext] E2EE setupReceiverTransform:ok", {
-                    peerKey,
-                    consumerId: consumer.id,
-                    decryptionKeysNow: enc.getDecryptionPeerIds(),
-                  });
-                 } else {
-                  const pendingRefs = pendingReceiverTransformsRef.current;
-                  if (pendingRefs) {
-                      const prev = pendingRefs.get(consumer.id);
-                      pendingRefs.set(consumer.id, {
-                        receiver,
-                        peerKey,
-                        deferredAt: prev?.deferredAt ?? Date.now(),
-                        recoveryRequested: prev?.recoveryRequested ?? false,
-                      });
-                    logger.info("[VideoCallContext] E2EE receiver transform deferred: no decryption key yet", {
-                      peerKey,
-                      consumerId: consumer.id,
-                    });
-                  } else {
-                    logger.warn("[VideoCallContext] E2EE receiver transform skipped: pendingReceiverTransformsRef cleared", {
-                      consumerId: consumer.id,
-                      peerKey,
-                    });
-                  }
-                }
-              } catch (e) {
-                // REKEY-FIX: during epoch transition, epochGuard.assertMediaAllowed throws inside
-                // setupReceiverTransform.  We must store the receiver/peerKey as pending so that
-                // onDecryptionKeyReady (called from REKEY_COMMIT handler in VideoCallProvider)
-                // can replay setupReceiverTransform once the new epoch is active.
-                const pendingRefs = pendingReceiverTransformsRef.current;
-                if (pendingRefs) {
-                  const prev = pendingRefs.get(consumer.id);
-                  pendingRefs.set(consumer.id, {
-                    receiver,
-                    peerKey,
-                    deferredAt: prev?.deferredAt ?? Date.now(),
-                    recoveryRequested: prev?.recoveryRequested ?? false,
-                  });
-                  logger.warn("[VideoCallContext] E2EE setupReceiverTransform deferred by epochGuard, will replay on rekey commit", {
-                    consumerId: consumer.id,
-                    peerKey,
-                    reason: e instanceof Error ? e.message : String(e),
-                  });
-                } else {
-                  logger.error("[VideoCallContext] E2EE setupReceiverTransform failed for consumer — pendingReceiverTransformsRef cleared, cannot retry", {
-                    consumerId: consumer.id,
-                    peerKey,
-                    error: e instanceof Error ? e.message : String(e),
-                  });
-                }
-              }
-            }
-          }
-          return client.consumerResume({ roomId, consumerId: consumer.id }).then(() => {
-            logger.debug("[VideoCallContext] consumerResume done, calling rebuildRemoteStream");
-            rebuildRemoteStream();
-          });
-        }).catch((err) => {
-          logger.error("[VideoCallContext] calls-v2 consume/resume failed", err);
-        });
-      });
-
       // Create E2EE key BEFORE producing tracks (H-6 fix: must be set BEFORE setupSenderTransform).
       // FIX: reuse the epoch key already created during room bootstrap to avoid generating
       // a second key for the same epoch.  regenerate = epoch key reset in the encryptor and
@@ -780,7 +609,6 @@ hasEncryption: enc?.hasOutboundKey() ?? false,
     callsWsRef,
     callsWsRoomRef,
     callsWsSendTransportRef,
-    consumerAddedUnsubRef,
     consumerCreateParamsRef,
 dispatchFsm,
     e2eeEpochRef,

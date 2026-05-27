@@ -339,14 +339,14 @@ function send(ws, frame) {
   ws.send(JSON.stringify(frame));
 }
 
-function ack(ws, ackOfMsgId, ok = true, error) {
+function ack(ws, ackOfMsgId, ok = true, error, payload = {}) {
   send(ws, {
     v: 1,
     type: "ACK",
     msgId: uuid(),
     ts: nowMs(),
     ack: { ackOfMsgId, ok, error },
-    payload: {},
+    payload,
   });
 }
 
@@ -385,6 +385,35 @@ function bumpRoomVersion(room) {
   room.roomVersion = Number(room.roomVersion ?? 0) + 1;
 }
 
+function serializeProducer(p) {
+  return {
+    producerId: p.producerId,
+    peerDeviceId: p.peerDeviceId,
+    ownerUserId: p.ownerUserId,
+    ownerDeviceId: p.ownerDeviceId,
+    kind: p.kind,
+    source: p.source,
+    generation: p.generation,
+    createdAt: p.createdAt,
+  };
+}
+
+function serializeConsumer(c) {
+  return {
+    consumerId: c.consumerId,
+    producerId: c.producerId,
+    consumerDeviceId: c.consumerDeviceId,
+    ownerUserId: c.ownerUserId,
+    ownerDeviceId: c.ownerDeviceId,
+    kind: c.kind,
+    source: c.source,
+    state: c.state,
+    generation: c.generation,
+    createdAt: c.createdAt,
+    resumedAt: c.resumedAt,
+  };
+}
+
 function makeSnapshot(room) {
   return {
     roomId: room.roomId,
@@ -403,7 +432,8 @@ function makeSnapshot(room) {
       state: "joined",
       e2eeReady: !!p.e2eeReady,
     })),
-    producers: Array.from(room.producers.values()),
+    producers: Array.from(room.producers.values()).map(serializeProducer),
+    consumers: Array.from(room.consumers.values()).map(serializeConsumer),
     e2ee: {
       required: E2EE_REQUIRED_DEFAULT,
       epoch: room.epoch,
@@ -847,30 +877,30 @@ wss.on("connection", (ws, req) => {
           e2eeReady: !E2EE_REQUIRED_DEFAULT,
           e2eeEpoch: E2EE_REQUIRED_DEFAULT ? -1 : room.epoch,
           transports: new Map(),
+          producerGenerations: new Map(),
         });
         peersByDevice.set(deviceId, ws);
 
-        send(ws, {
-          v: 1,
-          type: "ROOM_JOIN_OK",
-          msgId: uuid(),
-          ts: nowMs(),
-          seq: conn.expectedSeq++,
-          payload: {
-            roomId,
-            callId: room.callId,
-            region: room.region,
-            nodeId: room.nodeId,
-            epoch: room.epoch,
-            memberSetVersion: room.memberSetVersion,
-            mediasoup: {
-              routerRtpCapabilities: room.routerRtpCapabilities,
-              sendTransportOptions: { id: `send_${deviceId}`, iceParameters: {}, dtlsParameters: {} },
-              recvTransportOptions: { id: `recv_${deviceId}`, iceParameters: {}, dtlsParameters: {} },
-            },
-            e2ee: { required: E2EE_REQUIRED_DEFAULT, epoch: room.epoch },
-          },
-        });
+         send(ws, {
+           v: 1,
+           type: "ROOM_JOIN_OK",
+           msgId: uuid(),
+           ts: nowMs(),
+           seq: conn.expectedSeq++,
+           payload: {
+             roomId,
+             callId: room.callId,
+             region: room.region,
+             nodeId: room.nodeId,
+             epoch: room.epoch,
+             memberSetVersion: room.memberSetVersion,
+             roomVersion: room.roomVersion,
+             mediasoup: {
+               routerRtpCapabilities: room.routerRtpCapabilities,
+             },
+             e2ee: { required: E2EE_REQUIRED_DEFAULT, epoch: room.epoch },
+           },
+         });
 
         send(ws, {
           v: 1,
@@ -894,10 +924,10 @@ wss.on("connection", (ws, req) => {
           room,
           {
             v: 1,
-            type: "PEER_JOINED",
-            msgId: uuid(),
-            ts: nowMs(),
-            payload: { roomId, userId: conn.userId, deviceId },
+             type: "PEER_JOINED",
+             msgId: uuid(),
+             ts: nowMs(),
+             payload: { roomId, userId: conn.userId, deviceId, roomVersion: room.roomVersion },
           },
           deviceId
         );
@@ -1034,13 +1064,20 @@ wss.on("connection", (ws, req) => {
           { peerDeviceId: conn.deviceId, userId: conn.userId, source, ...(trackId ? { trackId } : {}) }
         );
         const producerId = produced.id;
+        const peer = room.peers.get(conn.deviceId);
+        const generation = (peer.producerGenerations.get(source) ?? 0) + 1;
+        peer.producerGenerations.set(source, generation);
         const producer = {
           producerId,
           peerDeviceId: conn.deviceId,
           userId: conn.userId,
+          ownerUserId: conn.userId,
+          ownerDeviceId: conn.deviceId,
           kind,
           source,
           paused: false,
+          createdAt: nowMs(),
+          generation,
         };
         room.producers.set(producerId, producer);
         bumpRoomVersion(room);
@@ -1076,7 +1113,7 @@ wss.on("connection", (ws, req) => {
               type: "PRODUCER_REMOVED",
               msgId: uuid(),
               ts: nowMs(),
-              payload: { roomId: room.roomId, producerId, peerDeviceId: conn.deviceId, reason },
+              payload: { roomId: room.roomId, roomVersion: room.roomVersion, producerId, peerDeviceId: conn.deviceId, reason },
             }, conn.deviceId);
 
             broadcastLegacyParticipantStream(room, conn.userId, "remove", false, conn.deviceId);
@@ -1133,7 +1170,7 @@ wss.on("connection", (ws, req) => {
           msgId: uuid(),
           ts: nowMs(),
           seq: conn.expectedSeq++,
-          payload: { roomId: room.roomId, producerId, kind: producer.kind, source: producer.source },
+          payload: { roomId: room.roomId, roomVersion: room.roomVersion, producerId, kind: producer.kind, source: producer.source },
         });
 
         broadcastRoom(
@@ -1143,7 +1180,11 @@ wss.on("connection", (ws, req) => {
             type: "PRODUCER_ADDED",
             msgId: uuid(),
             ts: nowMs(),
-            payload: { roomId: room.roomId, producerId, peerDeviceId: conn.deviceId, kind: producer.kind, source: producer.source },
+            payload: {
+              roomId: room.roomId,
+              roomVersion: room.roomVersion,
+              producer: serializeProducer(producer),
+            },
           },
           conn.deviceId
         );
@@ -1191,11 +1232,21 @@ wss.on("connection", (ws, req) => {
           producerId,
           frame.payload?.rtpCapabilities ?? null
         );
-        room.consumers.set(consumed.id, {
+        const consumerEntry = {
           consumerId: consumed.id,
           peerDeviceId: conn.deviceId,
+          consumerDeviceId: conn.deviceId,
           producerId,
-        });
+          ownerUserId: producerOwnerUserId,
+          ownerDeviceId: producerOwnerDeviceId,
+          kind: consumed.kind ?? producer.kind,
+          source: consumed.source ?? producer.source,
+          state: "created",
+          createdAt: nowMs(),
+          resumedAt: null,
+          generation: 1,
+        };
+        room.consumers.set(consumed.id, consumerEntry);
         send(ws, {
           v: 1,
           type: "CONSUMER_ADDED",
@@ -1204,14 +1255,9 @@ wss.on("connection", (ws, req) => {
           seq: conn.expectedSeq++,
           payload: {
             roomId: room.roomId,
-            consumerId: consumed.id,
-            producerId,
-            kind: consumed.kind ?? producer.kind,
+            roomVersion: room.roomVersion,
+            consumer: serializeConsumer(consumerEntry),
             rtpParameters: consumed.rtpParameters ?? {},
-            source: consumed.source ?? producer.source,
-            peerId: producerOwnerUserId && producerOwnerDeviceId
-              ? `${producerOwnerUserId}:${producerOwnerDeviceId}`
-              : producerOwnerUserId || undefined,
           },
         });
 
@@ -1226,29 +1272,37 @@ wss.on("connection", (ws, req) => {
           ack(ws, frame.msgId, false, wsError("UNAUTHORIZED", "Not a room member", {}, false));
           return;
         }
-        // In mediasoup mode, resume the consumer. In fallback mode, no-op — just ack.
         const consumerId = frame.payload?.consumerId;
-        if (mediaPlane.mode === "mediasoup" && consumerId && typeof mediaPlane.resumeConsumer === "function") {
+        const consumer = consumerId ? room.consumers.get(consumerId) : null;
+        if (!consumerId || !consumer) {
+          ack(ws, frame.msgId, false, wsError("CONSUMER_NOT_FOUND", "Unknown consumer", {}, false));
+          return;
+        }
+        if (consumer.peerDeviceId !== conn.deviceId) {
+          ack(ws, frame.msgId, false, wsError("FORBIDDEN", "Cannot resume consumer owned by another peer", {}, false));
+          return;
+        }
+         // Idempotent: already resumed → just ack
+         if (consumer.state === "resumed") {
+           ack(ws, frame.msgId, true, null, { state: consumer.state });
+           return;
+         }
+        if (mediaPlane.mode === "mediasoup" && typeof mediaPlane.resumeConsumer === "function") {
           try {
             await mediaPlane.resumeConsumer(room.roomId, consumerId);
           } catch (error) {
-            logOperationError("resumeConsumer", {
-              roomId: room.roomId,
-              deviceId: conn.deviceId,
-              consumerId,
-              error,
-            });
+            logOperationError("resumeConsumer", { roomId: room.roomId, deviceId: conn.deviceId, consumerId, error });
             ack(ws, frame.msgId, false, wsError("CONSUMER_RESUME_FAILED", "Failed to resume consumer", {
-              roomId: room.roomId,
-              deviceId: conn.deviceId,
-              consumerId,
-              operation: "resumeConsumer",
+              roomId: room.roomId, deviceId: conn.deviceId, consumerId,
             }, true));
             return;
           }
         }
-        ack(ws, frame.msgId, true);
-        return;
+         consumer.state = "resumed";
+         consumer.resumedAt = nowMs();
+         bumpRoomVersion(room);
+         ack(ws, frame.msgId, true, null, { state: consumer.state, roomVersion: room.roomVersion });
+         return;
       }
 
       case "PRODUCER_CLOSE": {
@@ -1293,7 +1347,7 @@ wss.on("connection", (ws, req) => {
             type: "PRODUCER_REMOVED",
             msgId: uuid(),
             ts: nowMs(),
-            payload: { roomId: room.roomId, producerId, peerDeviceId: conn.deviceId, reason: "CLIENT_CLOSE" },
+            payload: { roomId: room.roomId, roomVersion: room.roomVersion, producerId, peerDeviceId: conn.deviceId, reason: "CLIENT_CLOSE" },
           },
           conn.deviceId
         );
@@ -1549,6 +1603,26 @@ wss.on("connection", (ws, req) => {
         return;
       }
 
+      case "ROOM_STATE_GET": {
+        if (!ensureAuth()) return;
+        const roomId = frame.payload?.roomId ?? conn.roomId;
+        const room = rooms.get(roomId);
+        if (!room || !conn.deviceId || !room.peers.has(conn.deviceId)) {
+          ack(ws, frame.msgId, false, wsError("UNAUTHORIZED", "Not a room member", {}, false));
+          return;
+        }
+        send(ws, {
+          v: 1,
+          type: "ROOM_STATE",
+          msgId: uuid(),
+          ts: nowMs(),
+          seq: conn.expectedSeq++,
+          payload: makeSnapshot(room),
+        });
+        ack(ws, frame.msgId, true);
+        return;
+      }
+
       case "GET_ROUTER_RTP_CAPABILITIES": {
         if (!ensureAuth()) return;
         const roomId = frame.payload?.roomId ?? conn.roomId;
@@ -1621,10 +1695,10 @@ wss.on("connection", (ws, req) => {
           }
           broadcastRoom(room, {
             v: 1,
-            type: "PEER_LEFT",
-            msgId: uuid(),
-            ts: nowMs(),
-            payload: { roomId: room.roomId, userId: conn.userId, deviceId: conn.deviceId },
+             type: "PEER_LEFT",
+             msgId: uuid(),
+             ts: nowMs(),
+             payload: { roomId: room.roomId, userId: conn.userId, deviceId: conn.deviceId, roomVersion: room.roomVersion },
           });
           for (const participantId of removedParticipantIds) {
             broadcastLegacyParticipantStream(room, participantId, "remove", false);
@@ -1724,5 +1798,5 @@ wss.on("connection", (ws, req) => {
 });
 
 server.listen(PORT, () => {
-  console.log(`[sfu] listening on http://localhost:${PORT} (region=${REGION} nodeId=${NODE_ID})`);
+  console.log(`[sfu] listening on https://sfu.mansoni.ru (region=${REGION} nodeId=${NODE_ID})`);
 });

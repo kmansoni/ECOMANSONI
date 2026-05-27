@@ -2,7 +2,7 @@ import { useCallback, useEffect } from "react";
 import { logger } from "@/lib/logger";
 import { toast } from "sonner";
 import type { PipeBreakInfo } from "@/lib/e2ee/insertableStreams";
-import type { ConsumedPayload } from "@/calls-v2/types";
+import type { ConsumerReplayDescriptor } from "@/calls-v2/types";
 import type { SfuMediaManager } from "@/calls-v2/sfuMediaManager";
 import type { CallMediaEncryption } from "@/calls-v2/callMediaEncryption";
 import type { CallsWsClient } from "@/calls-v2/wsClient";
@@ -14,7 +14,7 @@ export function useE2eePipeBreakRecovery(
   callMediaEncryptionRef: { current: CallMediaEncryption | null },
   callsWsRef: { current: CallsWsClient | null },
   callsWsMediaRoomRef: { current: string | null },
-  consumerCreateParamsRef: { current: Map<string, ConsumedPayload> },
+  consumerCreateParamsRef: { current: Map<string, ConsumerReplayDescriptor> },
   localProducerIdsRef: { current: { audio: string | null; video: string | null } },
   producerPeerKeyRef: { current: Map<string, string> },
   pipeBreakRetryAtRef: { current: Map<string, number> },
@@ -144,7 +144,7 @@ export function useE2eePipeBreakRecovery(
 
         const newReceiver = sfuManager.getConsumerReceiver(newConsumer.id);
         const peerKey = peerId
-          || storedParams.peerId
+          || `${storedParams.ownerUserId}:${storedParams.ownerDeviceId}`
           || producerPeerKeyRef.current.get(storedParams.producerId)
           || storedParams.producerId;
         if (newReceiver) {

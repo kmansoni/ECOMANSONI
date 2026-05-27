@@ -415,6 +415,7 @@ export interface ProducedPayload {
   source?: 'camera' | 'microphone' | 'screen' | string;
 }
 
+/** @deprecated Use ConsumerAddedPayload for CONSUMER_ADDED events */
 export interface ConsumedPayload {
   roomId: string;
   consumerId: string;
@@ -422,8 +423,39 @@ export interface ConsumedPayload {
   kind: 'audio' | 'video';
   rtpParameters: RtpParameters;
   source?: 'camera' | 'microphone' | 'screen' | string;
-  /** E2EE peer identifier (userId:deviceId) — set by new servers; absent on legacy servers */
   peerId?: string;
+}
+
+export interface SerializedConsumer {
+  consumerId: string;
+  producerId: string;
+  consumerDeviceId: string;
+  ownerUserId: string;
+  ownerDeviceId: string;
+  kind: 'audio' | 'video';
+  source: 'microphone' | 'camera' | 'screen' | string;
+  state: 'created' | 'resumed' | 'paused' | 'closed';
+  generation: number;
+  createdAt: number;
+  resumedAt: number | null;
+}
+
+export interface ConsumerAddedPayload {
+  roomId: string;
+  roomVersion: number;
+  consumer: SerializedConsumer;
+  rtpParameters: RtpParameters;
+}
+
+/** Runtime descriptor stored in consumerCreateParamsRef for E2EE recovery replay. */
+export interface ConsumerReplayDescriptor {
+  consumerId: string;
+  producerId: string;
+  kind: 'audio' | 'video';
+  source?: string;
+  ownerUserId: string;
+  ownerDeviceId: string;
+  rtpParameters: RtpParameters;
 }
 
 export interface E2EEPolicyPayload {

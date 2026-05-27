@@ -29,30 +29,9 @@ const REQUIRE_SFRAME_CAPS = process.env.CALLS_REQUIRE_SFRAME_CAPS !== "0";
 const REQUIRE_DOUBLE_RATCHET_CAPS = process.env.CALLS_REQUIRE_DOUBLE_RATCHET_CAPS !== "0";
 const REQUIRE_SECURE_TRANSPORT = IS_PROD_LIKE && process.env.CALLS_WS_REQUIRE_SECURE_TRANSPORT !== "0";
 const ENABLE_MEDIA_TRANSPORT_STUBS = !IS_PROD_LIKE && process.env.CALLS_WS_ENABLE_MEDIA_STUBS !== "0";
-
-// Default RTP codecs used in ROOM_JOIN_OK and GET_ROUTER_RTP_CAPABILITIES responses.
-// When a real mediasoup SFU is fronted by this gateway, the SFU should supply these
-// via its own ROOM_JOIN_OK. This gateway-level constant ensures the signaling-only
-// path also produces parseable capabilities so mediasoup-client Device.load() succeeds.
-const GATEWAY_DEFAULT_CODECS = [
-  { kind: "audio", mimeType: "audio/opus", clockRate: 48000, channels: 2,
-    preferredPayloadType: 100,
-    rtcpFeedback: [{ type: "transport-cc" }] },
-  { kind: "video", mimeType: "video/VP8", clockRate: 90000,
-    preferredPayloadType: 96,
-    parameters: { "x-google-start-bitrate": 1000 },
-    rtcpFeedback: [
-      { type: "goog-remb" }, { type: "transport-cc" },
-      { type: "ccm", parameter: "fir" }, { type: "nack" }, { type: "nack", parameter: "pli" }
-    ] },
-  { kind: "video", mimeType: "video/VP9", clockRate: 90000,
-    preferredPayloadType: 98,
-    parameters: { "profile-id": 2, "x-google-start-bitrate": 1000 },
-    rtcpFeedback: [
-      { type: "goog-remb" }, { type: "transport-cc" },
-      { type: "ccm", parameter: "fir" }, { type: "nack" }, { type: "nack", parameter: "pli" }
-    ] },
-];
+if (ENABLE_MEDIA_TRANSPORT_STUBS) {
+  console.warn("[calls-ws] Media transport stubs enabled - this is signaling-only gateway, NOT a real SFU. Connect to SFU endpoint for media.");
+}
 
 // C-2: Trusted proxy list for x-forwarded-for validation.
 // Format: comma-separated exact IP addresses (IPv4 or IPv6, no CIDR needed).
@@ -74,7 +53,7 @@ const TRUSTED_PROXIES = new Set(
  */
 function getClientIp(req) {
   const remoteAddr = req.socket?.remoteAddress ?? "unknown";
-  // Normalise ::ffff:127.0.0.1 → 127.0.0.1
+  // Normalise IPv6-mapped addresses to plain IPv4 form
   const normalizedRemote = remoteAddr.replace(/^::ffff:/i, "");
   if (TRUSTED_PROXIES.has(normalizedRemote)) {
     const xff = (req.headers["x-forwarded-for"] || "").split(",")[0].trim();
@@ -204,7 +183,7 @@ function wsError(code, message, details, retryable) {
 }
 
 // In-memory dev state
-const rooms = new Map(); // roomId -> { callId, region, nodeId, epoch, memberSetVersion, peers: Map(deviceId -> {userId, role, e2eeReady}), producers: [] }
+const rooms = new Map(); // roomId -> { callId, region, nodeId, epoch, memberSetVersion, peers: Map(deviceId -> {userId, role, e2eeReady}), producers: [], consumers: [] }
 
 const deviceSockets = new Map(); // deviceId -> ws
 const userDeviceSockets = new Map(); // userId -> Set<deviceIds> (for broadcast when to_device unknown)
@@ -500,7 +479,20 @@ async function makeSnapshot(roomId) {
       state: "joined",
       e2eeReady: p.e2eeReady,
     })),
-    producers: room.producers,
+    producers: room.producers.map((pr) => ({
+      producerId: pr.producerId,
+      ownerUserId: pr.ownerUserId ?? pr.userId,
+      ownerDeviceId: pr.ownerDeviceId ?? pr.deviceId,
+      kind: pr.kind,
+      source: pr.source ?? (pr.kind === "audio" ? "microphone" : "camera"),
+      generation: pr.generation ?? 1,
+      createdAt: pr.createdAt ?? nowMs(),
+    })),
+    consumers: room.consumers.map((c) => ({
+      consumerId: c.consumerId,
+      producerId: c.producerId,
+      state: c.state ?? "created",
+    })),
     e2ee: {
       required: true,
       epoch: room.epoch,
@@ -826,22 +818,23 @@ wss.on("connection", (ws, req) => {
         const region = frame.payload?.preferredRegion ?? "tr";
         const nodeId = "local-sfu-1";
 
-        rooms.set(roomId, {
-          callId,
-          region,
-          nodeId,
-          ownerUserId: conn.userId,
-          allowedUserIds: normalizeAllowedUserIds(frame.payload?.allowedUserIds, conn.userId),
-          joinToken: issueJoinToken({
-            roomId,
-            callId,
-            allowedUserIds: normalizeAllowedUserIds(frame.payload?.allowedUserIds, conn.userId),
-          }),
-          epoch: 0,
-          memberSetVersion: 0,
-          peers: new Map(),
-          producers: []
-        });
+rooms.set(roomId, {
+           callId,
+           region,
+           nodeId,
+           ownerUserId: conn.userId,
+           allowedUserIds: normalizeAllowedUserIds(frame.payload?.allowedUserIds, conn.userId),
+           joinToken: issueJoinToken({
+             roomId,
+             callId,
+             allowedUserIds: normalizeAllowedUserIds(frame.payload?.allowedUserIds, conn.userId),
+           }),
+           epoch: 0,
+           memberSetVersion: 0,
+           peers: new Map(),
+           producers: [],
+           consumers: []
+         });
 
         // initialize room version
         await store.bumpRoomVersion(callId);
@@ -906,7 +899,7 @@ wss.on("connection", (ws, req) => {
           ack(ws, frame.msgId, false, wsError("ROOM_FULL", `Max participants exceeded (${MAX_PARTICIPANTS_PER_ROOM})`, { roomId }, false));
           return;
         }
-        const bindResult = bindConnectionDevice(conn, ws, frame.payload?.deviceId ?? conn.deviceId);
+const bindResult = bindConnectionDevice(conn, ws, frame.payload?.deviceId ?? conn.deviceId);
         if (!bindResult.ok) {
           ack(ws, frame.msgId, false, wsError("VALIDATION_FAILED", bindResult.reason, {}, false));
           return;
@@ -926,6 +919,7 @@ wss.on("connection", (ws, req) => {
         const iceServers = getTurnIceServersPublic();
         const turnUrls = iceServers.length ? iceServers[0].urls : [];
         const turnAvailable = Array.isArray(turnUrls) && turnUrls.some((u) => typeof u === "string" && /^turns?:/i.test(u));
+        const roomVersion = await store.getRoomVersion(room.callId);
 
         send(ws, {
           v: 1,
@@ -940,23 +934,31 @@ wss.on("connection", (ws, req) => {
             nodeId: room.nodeId,
             epoch: room.epoch,
             memberSetVersion: room.memberSetVersion,
-            mediasoup: {
-              // Provide real codecs so mediasoup-client Device.load() succeeds.
-              // In production the SFU populates this; the gateway uses the static
-              // default so signaling + key-exchange still bootstrap correctly.
-              routerRtpCapabilities: { codecs: GATEWAY_DEFAULT_CODECS },
-              sendTransportOptions: {},
-              recvTransportOptions: {}
-            },
+            roomVersion,
             turn: {
               turnAvailable,
               turnUrls,
-              iceServers, // urls only; never includes username/credential
+              iceServers,
               credsVia: "edge_function",
               forceRelayAfterMs: turnAvailable ? 4000 : 0,
             }
           }
         });
+
+        // Broadcast PEER_JOINED to existing peers
+        for (const [pid, peer] of room.peers.entries()) {
+          if (pid === deviceId) continue;
+          const pws = deviceSockets.get(pid);
+          if (pws && pws.readyState === WebSocket.OPEN) {
+            send(pws, {
+              v: 1,
+              type: "PEER_JOINED",
+              msgId: uuid(),
+              ts: nowMs(),
+              payload: { roomId, userId: conn.userId, deviceId, roomVersion },
+            });
+          }
+        }
 
         // Send snapshot right away
         const snapshot = await makeSnapshot(roomId);
@@ -1402,7 +1404,7 @@ wss.on("connection", (ws, req) => {
           msgId: uuid(),
           ts: nowMs(),
           seq: conn.nextOutboundSeq++,
-          payload: { roomId, routerRtpCapabilities: { codecs: GATEWAY_DEFAULT_CODECS } },
+          payload: { roomId, routerRtpCapabilities: null },
         });
         return ack(ws, frame.msgId, true);
       }
@@ -1489,21 +1491,43 @@ wss.on("connection", (ws, req) => {
         const pRoomId = frame.payload?.roomId;
         const producerId = `pr_${crypto.randomUUID().slice(0, 8)}`;
         const kind = frame.payload?.kind === "audio" ? "audio" : "video";
-        send(ws, {
-          v: 1,
-          type: "PRODUCED",
-          msgId: uuid(),
-          ts: nowMs(),
-          seq: conn.nextOutboundSeq++,
-          payload: { roomId: pRoomId, producerId, kind },
-        });
 
         const room = pRoomId ? rooms.get(pRoomId) : (conn.roomId ? rooms.get(conn.roomId) : null);
         if (room && conn.deviceId && room.peers.has(conn.deviceId)) {
+          const source = kind === "audio" ? "microphone" : "camera";
+          const roomVersion = await store.getRoomVersion(room.callId);
+          room.producers.push({
+            producerId,
+            ownerUserId: conn.userId,
+            ownerDeviceId: conn.deviceId,
+            kind,
+            source,
+            generation: 1,
+            createdAt: nowMs(),
+          });
+
+          send(ws, {
+            v: 1,
+            type: "PRODUCED",
+            msgId: uuid(),
+            ts: nowMs(),
+            seq: conn.nextOutboundSeq++,
+            payload: { roomId: pRoomId, roomVersion, producerId, kind },
+          });
+
+// PRODUCER_ADDED for other peers
+          const producer = { producerId, ownerUserId: conn.userId, ownerDeviceId: conn.deviceId, kind, source, generation: 1, createdAt: nowMs() };
           for (const [peerDeviceId] of room.peers.entries()) {
             if (peerDeviceId === conn.deviceId) continue;
             const targetWs = deviceSockets.get(peerDeviceId);
             if (!targetWs || targetWs.readyState !== WebSocket.OPEN) continue;
+            send(targetWs, {
+              v: 1,
+              type: "PRODUCER_ADDED",
+              msgId: uuid(),
+              ts: nowMs(),
+              payload: { roomId: pRoomId, roomVersion, producer },
+            });
             send(targetWs, {
               v: 1,
               type: "participant-stream",
@@ -1517,6 +1541,15 @@ wss.on("connection", (ws, req) => {
               },
             });
           }
+        } else {
+          send(ws, {
+            v: 1,
+            type: "PRODUCED",
+            msgId: uuid(),
+            ts: nowMs(),
+            seq: conn.nextOutboundSeq++,
+            payload: { roomId: pRoomId, producerId, kind },
+          });
         }
 
         return ack(ws, frame.msgId, true);
@@ -1536,6 +1569,45 @@ wss.on("connection", (ws, req) => {
           ack(ws, frame.msgId, false, wsError("UNAUTHENTICATED", "AUTH required", {}, true));
           return;
         }
+        const cRoomId = frame.payload?.roomId;
+        const producerId = frame.payload?.producerId;
+        const room = cRoomId ? rooms.get(cRoomId) : (conn.roomId ? rooms.get(conn.roomId) : null);
+        if (!room || !conn.deviceId || !room.peers.has(conn.deviceId)) {
+          ack(ws, frame.msgId, false, wsError("UNAUTHORIZED", "Not a room member", {}, false));
+          return;
+        }
+        const producer = room.producers.find((p) => p.producerId === producerId);
+        if (!producerId || !producer) {
+          ack(ws, frame.msgId, false, wsError("PRODUCER_NOT_FOUND", "Unknown producer", {}, false));
+          return;
+        }
+        const consumerId = `co_${crypto.randomUUID().slice(0, 8)}`;
+        const consumer = {
+          consumerId,
+          producerId,
+ownerDeviceId: conn.deviceId,
+          state: "created",
+          createdAt: nowMs(),
+        };
+        room.consumers.push(consumer);
+        const roomVersion = await store.getRoomVersion(room.callId);
+        send(ws, {
+          v: 1,
+          type: "CONSUMER_ADDED",
+          msgId: uuid(),
+          ts: nowMs(),
+          seq: conn.nextOutboundSeq++,
+          payload: {
+            roomId: cRoomId,
+            roomVersion,
+            consumer: {
+              consumerId,
+              producerId,
+              state: "created",
+            },
+            rtpParameters: {},
+          },
+        });
         return ack(ws, frame.msgId, true);
       }
 
@@ -1572,12 +1644,32 @@ wss.on("connection", (ws, req) => {
         }
 
         const pRoomId = frame.payload?.roomId;
+        const producerId = frame.payload?.producerId;
         const room = pRoomId ? rooms.get(pRoomId) : (conn.roomId ? rooms.get(conn.roomId) : null);
         if (room && conn.deviceId && room.peers.has(conn.deviceId)) {
+          const producerIdx = room.producers.findIndex((p) => p.producerId === producerId && p.ownerDeviceId === conn.deviceId);
+          if (producerIdx >= 0) {
+            room.producers.splice(producerIdx, 1);
+          }
+          const removedConsumerIds = room.consumers
+            .filter((c) => c.producerId === producerId)
+            .map((c) => c.consumerId);
+          for (const cid of removedConsumerIds) {
+            const cIdx = room.consumers.findIndex((c) => c.consumerId === cid);
+            if (cIdx >= 0) room.consumers.splice(cIdx, 1);
+          }
+          const roomVersion = await store.getRoomVersion(room.callId);
           for (const [peerDeviceId] of room.peers.entries()) {
             if (peerDeviceId === conn.deviceId) continue;
             const targetWs = deviceSockets.get(peerDeviceId);
             if (!targetWs || targetWs.readyState !== WebSocket.OPEN) continue;
+            send(targetWs, {
+              v: 1,
+              type: "PRODUCER_REMOVED",
+              msgId: uuid(),
+              ts: nowMs(),
+              payload: { roomId: pRoomId, roomVersion, producerId, reason: "CLIENT_CLOSE" },
+            });
             send(targetWs, {
               v: 1,
               type: "participant-stream",
@@ -1593,7 +1685,7 @@ wss.on("connection", (ws, req) => {
           }
         }
 
-        return ack(ws, frame.msgId, true);
+return ack(ws, frame.msgId, true);
       }
 
       case "CONSUMER_CLOSE": {
@@ -1610,6 +1702,13 @@ wss.on("connection", (ws, req) => {
           ack(ws, frame.msgId, false, wsError("UNAUTHENTICATED", "AUTH required", {}, true));
           return;
         }
+        const cRoomId = frame.payload?.roomId;
+        const consumerId = frame.payload?.consumerId;
+        const room = cRoomId ? rooms.get(cRoomId) : (conn.roomId ? rooms.get(conn.roomId) : null);
+        if (room && conn.deviceId && room.peers.has(conn.deviceId)) {
+          const cIdx = room.consumers.findIndex((c) => c.consumerId === consumerId && c.ownerDeviceId === conn.deviceId);
+          if (cIdx >= 0) room.consumers.splice(cIdx, 1);
+        }
         return ack(ws, frame.msgId, true);
       }
 
@@ -1623,6 +1722,7 @@ wss.on("connection", (ws, req) => {
         if (room && conn.deviceId && room.peers.has(conn.deviceId)) {
           room.peers.delete(conn.deviceId);
           room.memberSetVersion++;
+          const roomVersion = await store.getRoomVersion(room.callId);
           // W2: persist member removal to store (was missing — only ws close did this)
           void store.removeMember?.(room.callId, conn.deviceId);
           void store.bumpRoomVersion?.(room.callId);
@@ -1632,7 +1732,7 @@ wss.on("connection", (ws, req) => {
             if (pws && pws.readyState === WebSocket.OPEN) {
               send(pws, {
                 v: 1, type: "PEER_LEFT", msgId: uuid(), ts: nowMs(),
-                payload: { roomId: leaveRoomId, deviceId: conn.deviceId, userId: conn.userId },
+                payload: { roomId: leaveRoomId, deviceId: conn.deviceId, userId: conn.userId, roomVersion },
               });
             }
           }
@@ -1643,7 +1743,7 @@ wss.on("connection", (ws, req) => {
           seq: conn.nextOutboundSeq++,
           payload: { roomId: leaveRoomId },
         });
-        return ack(ws, frame.msgId, true);
+return ack(ws, frame.msgId, true);
       }
 
       case "E2EE_READY": {
@@ -1667,6 +1767,31 @@ wss.on("connection", (ws, req) => {
         return ack(ws, frame.msgId, true);
       }
 
+      case "ROOM_STATE_GET": {
+        if (!conn.authenticated) {
+          ack(ws, frame.msgId, false, wsError("UNAUTHENTICATED", "AUTH required", {}, true));
+          return;
+        }
+        const roomId = frame.payload?.roomId ?? conn.roomId;
+        const room = roomId ? rooms.get(roomId) : null;
+        if (!room || !conn.deviceId || !room.peers.has(conn.deviceId)) {
+          ack(ws, frame.msgId, false, wsError("UNAUTHORIZED", "Not a room member", {}, false));
+          return;
+        }
+        const snapshot = await makeSnapshot(roomId);
+        if (snapshot) {
+          send(ws, {
+            v: 1,
+            type: "ROOM_STATE",
+            msgId: uuid(),
+            ts: nowMs(),
+            seq: conn.nextOutboundSeq++,
+            payload: snapshot,
+          });
+        }
+        return ack(ws, frame.msgId, true);
+      }
+
       case "PING": {
         return ack(ws, frame.msgId, true);
       }
@@ -1674,8 +1799,8 @@ wss.on("connection", (ws, req) => {
       default:
         // Unknown or not implemented
         ack(ws, frame.msgId, false, wsError("VALIDATION_FAILED", `Unsupported type: ${frame.type}`, {}, false));
-    }
-    } catch (err) {
+      }
+     } catch (err) {
       // S-03: isolate store/Redis errors — do not let them surface as unhandled
       // promise rejections and crash the gateway process.
       logger.error(
@@ -1703,12 +1828,27 @@ wss.on("connection", (ws, req) => {
 
     if (!conn.deviceId) return;
 
-    for (const room of rooms.values()) {
+    for (const [roomIdFromLoop, room] of rooms.entries()) {
       if (!room.peers.has(conn.deviceId)) continue;
 
       room.peers.delete(conn.deviceId);
       room.memberSetVersion++;
       void store.removeMember?.(room.callId, conn.deviceId);
+
+      // Notify remaining peers with roomVersion (fire-and-forget async)
+      (async () => {
+        const roomVersion = await store.getRoomVersion(room.callId);
+        for (const [pid, peer] of room.peers.entries()) {
+          const pws = deviceSockets.get(pid);
+          if (pws && pws.readyState === WebSocket.OPEN) {
+            send(pws, {
+              v: 1, type: "PEER_LEFT", msgId: uuid(), ts: nowMs(),
+              payload: { roomId: roomIdFromLoop, deviceId: conn.deviceId, userId: conn.userId, roomVersion },
+            });
+          }
+        }
+      })();
+
       void store.bumpRoomVersion(room.callId);
     }
   });
@@ -1717,6 +1857,6 @@ wss.on("connection", (ws, req) => {
 server.listen(PORT, () => {
   logger.info(
     { event: "server.listen", port: PORT },
-    `[calls-ws] listening on ws://localhost:${PORT}`
+    `[calls-ws] listening on wss://sfu.mansoni.ru/calls-v2`
   );
 });

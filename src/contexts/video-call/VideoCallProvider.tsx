@@ -31,7 +31,6 @@
 import { ReactNode, useState, useCallback, useEffect, useRef, useMemo } from "react";
 import { getStableCallsDeviceId } from "@/lib/platform/device";
 import { useVideoCallSfu, type VideoCall, type VideoCallStatus } from "@/hooks/useVideoCallSfu";
-import { useVideoCall as useLegacyP2pVideoCall } from "@/hooks/useVideoCall";
 import { useIncomingCalls } from "@/hooks/useIncomingCalls";
 import { useAuth } from "@/hooks/useAuth";
 import { toast } from "sonner";
@@ -52,7 +51,6 @@ import { CallMediaEncryption } from "@/calls-v2/callMediaEncryption";
 import { RekeyStateMachine } from "@/calls-v2/rekeyStateMachine";
 import { EpochGuard } from "@/calls-v2/epochGuard";
 import {
-  CALL_ENGINE_MODE,
   transition as fsmTransition,
   isCallActive,
   isCallConnected,
@@ -60,7 +58,7 @@ import {
   fromLegacyStatus,
 } from "@/calls-v2/callStateMachine";
 import type { CallState, CallEvent } from "@/calls-v2/callStateMachine";
-import type { RtpCapabilities } from "@/calls-v2/types";
+import type { RtpCapabilities, ConsumerAddedPayload, ConsumerReplayDescriptor } from "@/calls-v2/types";
 import type { CallIdentity, KeyPackageData } from "@/calls-v2/callKeyExchange";
 import type { RekeyEvent } from "@/calls-v2/rekeyStateMachine";
 
@@ -79,8 +77,7 @@ import type {
 } from "./types";
 import {
   CALLS_V2_ENABLED,
-  CALLS_V2_WS_URL,
-  CALLS_V2_WS_URLS,
+  CALLS_V2_ENDPOINTS,
   SHOULD_USE_PROD_SFU_DEFAULTS,
   TURN_CREDENTIALS_EDGE_FNS,
   TURN_REFRESH_BEFORE_EXPIRY_SEC,
@@ -89,7 +86,6 @@ import {
   REQUIRE_SFRAME,
   MEDIA_BOOTSTRAP_MAX_RETRIES,
   expandWsEndpoints,
-  isLocalEndpoint,
   getCallsConfigIssue,
   getCallsConfigToastDescription,
   hasInsertableStreamsSupport,
@@ -139,6 +135,7 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
   const epochGuardRef = useRef<EpochGuard | null>(null);
   const lastCallsBootstrapErrorRef = useRef<Error | null>(null);
   const consumerAddedUnsubRef = useRef<(() => void) | null>(null);
+  const consumerListenerBoundClientRef = useRef<import("@/calls-v2/wsClient").CallsWsClient | null>(null);
   const producerAddedUnsubRef = useRef<(() => void) | null>(null);
   const mediaBootstrapBlockedUntilRef = useRef<Map<string, number>>(new Map());
   const mediaBootstrapErrorLogAtRef = useRef<Map<string, number>>(new Map());
@@ -151,7 +148,7 @@ const mediaBootstrapCompletedRef = useRef<Map<string, boolean>>(new Map());
 const unansweredCallTimerRef = useRef<number | null>(null);
 
 // E2EE pipe break recovery: stored consumer params for re-consume + debounce
-   const consumerCreateParamsRef = useRef<Map<string, import('@/calls-v2/types').ConsumedPayload>>(new Map());
+   const consumerCreateParamsRef = useRef<Map<string, ConsumerReplayDescriptor>>(new Map());
    const producerPeerKeyRef = useRef<Map<string, string>>(new Map());
    const peerUserIdByDeviceIdRef = useRef<Map<string, string>>(new Map());
    /** trackId → timestamp последней попытки recovery (debounce 10s) */
@@ -224,7 +221,7 @@ const unansweredCallTimerRef = useRef<number | null>(null);
     const issue = getCallsConfigIssue();
     logger.info("[VideoCallContext] calls-v2 config", {
       enabled: CALLS_V2_ENABLED,
-      endpointCount: [CALLS_V2_WS_URL, ...CALLS_V2_WS_URLS].filter(Boolean).length,
+      endpointCount: CALLS_V2_ENDPOINTS.length,
       frameE2eeAdvertiseSframe: FRAME_E2EE_ADVERTISE_SFRAME,
       hasInsertableStreams: hasInsertableStreamsSupport(),
       usingProdSfuDefaults: SHOULD_USE_PROD_SFU_DEFAULTS,
@@ -317,32 +314,26 @@ const unansweredCallTimerRef = useRef<number | null>(null);
   });
 
   // ─── Legacy P2P engine ─────────────────────────────────────────────────────
-  // Always instantiated (React hooks rules) but only active when SFU bootstrap fails.
-  const [legacyEngineActive, setLegacyEngineActive] = useState(false);
-
-  const {
-    status: legacyStatus,
-    currentCall: legacyCurrentCall,
-    localStream: legacyLocalStream,
-    remoteStream: legacyRemoteStream,
-    isMuted: legacyIsMuted,
-    isVideoOff: legacyIsVideoOff,
-    connectionState: legacyConnectionState,
-    startCall: legacyStartVideoCall,
-    answerCall: legacyAnswerVideoCall,
-    endCall: legacyEndVideoCall,
-    toggleMute: legacyToggleMute,
-    toggleVideo: legacyToggleVideo,
-    retryWithFreshCredentials: legacyRetryWithFreshCredentials,
-  } = useLegacyP2pVideoCall({
-    onCallEnded: (call) => {
-      logger.info("[VideoCallContext] Legacy P2P call ended:", call.id.slice(0, 8));
-      setPendingIncomingCall(null);
-      setPendingCalleeProfile(null);
-      setIsCallUiActive(false);
-      setLegacyEngineActive(false);
-    },
-  });
+  // Legacy P2P runtime is intentionally disabled to keep a single SFU production path.
+  const legacyEngineActive = false;
+  const setLegacyEngineActive = (_value: boolean): void => {};
+  const legacyStatus: VideoCallStatus = "idle";
+  const legacyCurrentCall: VideoCall | null = null;
+  const legacyLocalStream: MediaStream | null = null;
+  const legacyRemoteStream: MediaStream | null = null;
+  const legacyIsMuted = false;
+  const legacyIsVideoOff = false;
+  const legacyConnectionState = "new";
+  const legacyStartVideoCall = async (
+    _calleeId: string,
+    _conversationId: string | null,
+    _callType: "video" | "audio",
+  ): Promise<VideoCall | null> => null;
+  const legacyAnswerVideoCall = async (_call: VideoCall): Promise<void> => {};
+  const legacyEndVideoCall = async (_reason?: string): Promise<void> => {};
+  const legacyToggleMute = (): void => {};
+  const legacyToggleVideo = (): void => {};
+  const legacyRetryWithFreshCredentials = async (): Promise<void> => {};
   // ──────────────────────────────────────────────────────────────────────────
 
   const closeCallsV2 = useCallback(() => {
@@ -629,6 +620,7 @@ const unansweredCallTimerRef = useRef<number | null>(null);
     lastCallsBootstrapErrorRef,
     producerPeerKeyRef,
     peerUserIdByDeviceIdRef,
+    pendingProducersToConsumeRef,
     handleE2eePipeBreakRef,
     producerAddedUnsubRef,
     isCallStillActiveForBootstrap: (callId) => activeCallsV2BootstrapCallIdRef.current === callId,
@@ -668,7 +660,6 @@ const unansweredCallTimerRef = useRef<number | null>(null);
      callKeyExchangeRef,
      callMediaEncryptionRef,
      localProducerIdsRef,
-     consumerAddedUnsubRef,
      consumerCreateParamsRef,
      producerPeerKeyRef,
      pendingReceiverTransformsRef,
@@ -703,6 +694,125 @@ dispatchFsm,
     handleE2eePipeBreakRef,
     rebuildRemoteStream,
   );
+
+  // CONSUMER_ADDED handler — bound to ws client instance, not bootstrap lifecycle.
+  // Invariant: exactly one listener per CallsWsClient instance.
+  useEffect(() => {
+    const client = callsWsRef.current;
+    if (!client || consumerListenerBoundClientRef.current === client) return;
+
+    consumerAddedUnsubRef.current?.();
+
+    consumerAddedUnsubRef.current = client.on("CONSUMER_ADDED", (frame) => {
+      const payload = frame.payload as ConsumerAddedPayload | undefined;
+      if (!payload?.consumer) return;
+      const c = payload.consumer;
+      if (c.consumerDeviceId !== getStableCallsDeviceId()) return;
+      const roomId = callsWsMediaRoomRef.current;
+      if (!roomId || payload.roomId !== roomId) return;
+
+      const localDeviceId = getStableCallsDeviceId();
+      const isOwnProducer =
+        c.ownerUserId === user?.id && c.ownerDeviceId === localDeviceId;
+      const localProducerIds = localProducerIdsRef.current;
+      const isLocalProducerFallback =
+        c.producerId === localProducerIds.audio ||
+        c.producerId === localProducerIds.video;
+
+      if (isOwnProducer || isLocalProducerFallback) {
+        if (isOwnProducer && !isLocalProducerFallback) {
+          logger.warn("[VideoCallContext] skip self-consumer", {
+            consumerId: c.consumerId,
+            producerId: c.producerId,
+            ownerDeviceId: c.ownerDeviceId,
+          });
+        }
+        return;
+      }
+
+      const peerKey = `${c.ownerUserId}:${c.ownerDeviceId}`;
+      producerPeerKeyRef.current.set(c.producerId, peerKey);
+
+      logger.debug("[VideoCallContext] CONSUMER_ADDED", {
+        consumerId: c.consumerId,
+        producerId: c.producerId,
+        kind: c.kind,
+        roomId: roomId.slice(0, 8),
+      });
+
+      const sfuManager = sfuManagerRef.current;
+      if (!sfuManager) return;
+
+      void sfuManager.consume({
+        id: c.consumerId,
+        producerId: c.producerId,
+        kind: c.kind as import("mediasoup-client").types.MediaKind,
+        rtpParameters: payload.rtpParameters as import("mediasoup-client").types.RtpParameters,
+        source: c.source,
+      }).then((consumer) => {
+        const descriptor: ConsumerReplayDescriptor = {
+          consumerId: c.consumerId,
+          producerId: c.producerId,
+          kind: c.kind,
+          source: c.source,
+          ownerUserId: c.ownerUserId,
+          ownerDeviceId: c.ownerDeviceId,
+          rtpParameters: payload.rtpParameters,
+        };
+        consumerCreateParamsRef.current.set(consumer.id, descriptor);
+
+        const consumerTrack = consumer.track;
+        if (consumerTrack) {
+          const onTrackChanged = () => rebuildRemoteStream();
+          consumerTrack.addEventListener("ended", onTrackChanged);
+          consumerTrack.addEventListener("mute", onTrackChanged);
+          consumerTrack.addEventListener("unmute", onTrackChanged);
+        }
+
+        if (REQUIRE_SFRAME && CallMediaEncryption.isSupported()) {
+          const enc = callMediaEncryptionRef.current;
+          const receiver = sfuManagerRef.current?.getConsumerReceiver(consumer.id);
+          if (receiver && enc) {
+            try {
+              if (enc.hasDecryptionKeyForPeer(peerKey)) {
+                enc.setupReceiverTransform(receiver, peerKey, consumer.id);
+              } else {
+                const pending = pendingReceiverTransformsRef.current;
+                if (pending) {
+                  const prev = pending.get(consumer.id);
+                  pending.set(consumer.id, {
+                    receiver,
+                    peerKey,
+                    deferredAt: prev?.deferredAt ?? Date.now(),
+                    recoveryRequested: prev?.recoveryRequested ?? false,
+                  });
+                }
+              }
+            } catch (e) {
+              const pending = pendingReceiverTransformsRef.current;
+              if (pending) {
+                const prev = pending.get(consumer.id);
+                pending.set(consumer.id, {
+                  receiver,
+                  peerKey,
+                  deferredAt: prev?.deferredAt ?? Date.now(),
+                  recoveryRequested: prev?.recoveryRequested ?? false,
+                });
+              }
+            }
+          }
+        }
+
+        return client.consumerResume({ roomId, consumerId: consumer.id }).then(() => {
+          rebuildRemoteStream();
+        });
+      }).catch((err) => {
+        logger.error("[VideoCallContext] consume/resume failed", err);
+      });
+    });
+
+    consumerListenerBoundClientRef.current = client;
+  });
 
   useEffect(() => {
     if (!REQUIRE_SFRAME) return;
@@ -981,39 +1091,12 @@ dispatchFsm,
           return;
         }
 
-        // Detect whether the caller used legacy P2P (no SFU room hints were written).
-        // When calls_v2_room_id is absent the caller launched a P2P call — match the protocol.
+        // Detect whether the caller has SFU room hints.
         const hasSfuRoomHints = !!resolvedCall.calls_v2_room_id;
 
-        if (!hasSfuRoomHints && CALL_ENGINE_MODE === "compatibility") {
-          // Legacy P2P fallback for callee — only in compatibility mode.
-          // In sfu_only mode this branch is unreachable; callers always write room hints.
-          logger.info("[VideoCallContext] Answering legacy P2P call (no SFU room hints, compatibility mode)");
-          releaseMediaWithoutDbUpdate();
-          closeCallsV2();
-          setLegacyEngineActive(true);
-          try {
-            await legacyAnswerVideoCall(call);
-          } catch (legacyErr) {
-            logger.error("[VideoCallContext] Legacy P2P answerCall failed", legacyErr);
-            setIsCallUiActive(false);
-            setLegacyEngineActive(false);
-            if (isMediaErrorForCall(legacyErr)) {
-              const toastPayload = getMediaPermissionToastPayload(legacyErr, call.call_type === "video" ? "video" : "audio");
-              toast.error(toastPayload.title, { description: toastPayload.description, duration: 5000 });
-            } else {
-              toast.error("Не удалось принять звонок", {
-                description: "Ошибка сети или сервиса звонков. Попробуйте еще раз",
-                duration: 5000,
-              });
-            }
-          }
-          return;
-        }
-
-        // SFU bootstrap failed (or no room hints in sfu_only mode) → fail-closed.
+        // SFU bootstrap failed (or no room hints) → fail-closed.
         if (!hasSfuRoomHints) {
-          logger.error("[VideoCallContext] No SFU room hints in sfu_only mode — cannot answer call");
+          logger.error("[VideoCallContext] No SFU room hints — cannot answer call in SFU-only mode");
         }
         await endVideoCall("ended");
         closeCallsV2();
@@ -1049,7 +1132,7 @@ dispatchFsm,
       answerCallInFlightRef.current = false;
     }
   }, [answerVideoCall, bootstrapCallsV2RoomWithRetry, clearIncomingCall, endVideoCall,
-    closeCallsV2, releaseMediaWithoutDbUpdate, legacyAnswerVideoCall, dispatchFsm]);
+    closeCallsV2, releaseMediaWithoutDbUpdate, dispatchFsm]);
 
   const declineCall = useCallback(async () => {
     dispatchFsm("CALL_END");
