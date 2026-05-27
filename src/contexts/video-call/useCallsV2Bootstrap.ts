@@ -16,6 +16,7 @@ import {
   CALLS_V2_ENDPOINTS,
   REKEY_INTERVAL_MS,
   REQUIRE_SFRAME,
+  FRAME_E2EE_ADVERTISE_SFRAME,
   hasInsertableStreamsSupport,
   extractRouterCapsFromJoinPayload,
 } from "./videoCallProvider.helpers";
@@ -28,6 +29,7 @@ interface UseCallsV2BootstrapParams {
   fetchTurnIceServers: () => Promise<RTCIceServer[] | null>;
   setPendingIncomingCall: Dispatch<SetStateAction<VideoCall | null>>;
   callsWsRef: MutableRefObject<CallsWsClient | null>;
+  connectingPromiseRef: MutableRefObject<Promise<CallsWsClient | null> | null>;
   sfuManagerRef: MutableRefObject<SfuMediaManager | null>;
   sfuRouterRtpCapabilitiesRef: MutableRefObject<RtpCapabilities | null>;
   callsWsCallIdRef: MutableRefObject<string | null>;
@@ -51,6 +53,7 @@ interface UseCallsV2BootstrapParams {
   producerPeerKeyRef: MutableRefObject<Map<string, string>>;
   peerUserIdByDeviceIdRef: MutableRefObject<Map<string, string>>;
   pendingProducersToConsumeRef: MutableRefObject<Map<string, { roomId: string; peerDeviceId?: string; peerUserId?: string }>>;
+  consumePendingProducersRef: MutableRefObject<(() => void) | null>;
   handleE2eePipeBreakRef: MutableRefObject<((info: PipeBreakInfo) => void) | null>;
   producerAddedUnsubRef: MutableRefObject<(() => void) | null>;
   isCallStillActiveForBootstrap: (callId: string) => boolean;
@@ -63,6 +66,7 @@ export function useCallsV2Bootstrap({
   fetchTurnIceServers,
   setPendingIncomingCall,
   callsWsRef,
+  connectingPromiseRef,
   sfuManagerRef,
   sfuRouterRtpCapabilitiesRef,
   callsWsCallIdRef,
@@ -86,6 +90,7 @@ export function useCallsV2Bootstrap({
   producerPeerKeyRef,
   peerUserIdByDeviceIdRef,
   pendingProducersToConsumeRef,
+  consumePendingProducersRef,
   handleE2eePipeBreakRef,
   producerAddedUnsubRef,
   isCallStillActiveForBootstrap,
@@ -106,48 +111,54 @@ export function useCallsV2Bootstrap({
     epochGuardRef,
     producerPeerKeyRef,
     peerUserIdByDeviceIdRef,
+    pendingProducersToConsumeRef,
+    consumePendingProducersRef,
     handleE2eePipeBreakRef,
     onE2eeActivated,
     onDecryptionKeyReady,
   });
 
-  const ensureCallsV2Connected = useCallback(async (): Promise<CallsWsClient | null> => {
-    if (!CALLS_V2_ENABLED || !user) return null;
+  const ensureCallsV2Connected = useCallback((): Promise<CallsWsClient | null> => {
+    if (!CALLS_V2_ENABLED || !user) return Promise.resolve(null);
     if (CALLS_V2_ENDPOINTS.length === 0) {
-      logger.warn("[VideoCallContext] calls-v2 disabled: no WS endpoint configured");
-      return null;
+      logger.error("[VideoCallContext] CALLS_V2_CONFIG_MISSING", {
+        host: typeof window !== "undefined" ? window.location.hostname : "unknown",
+        envHasUrls: false,
+        prodDefaultsEnabled: false,
+      });
+      return Promise.resolve(null);
     }
-    // Return cached client only when transport is fully ready.
-    // `connecting/reconnecting` is not sufficient for roomCreate/roomJoin.
-    if (callsWsRef.current) {
-      const existingClient = callsWsRef.current;
-      const state = existingClient.connectionState;
-      if (state === "connected") {
-        return existingClient;
-      }
 
+    // Fast path: already connected.
+    if (callsWsRef.current?.connectionState === "connected") {
+      return Promise.resolve(callsWsRef.current);
+    }
+
+    // Single-flight: if a connect is already in progress, share it.
+    if (connectingPromiseRef.current) {
+      return connectingPromiseRef.current;
+    }
+
+    const promise = (async (): Promise<CallsWsClient | null> => {
+    // Discard any existing client that is no longer connected.
+    if (callsWsRef.current) {
+      const state = callsWsRef.current.connectionState;
+      if (state === "connected") return callsWsRef.current;
       if (state === "connecting" || state === "reconnecting") {
         const becameConnected = await new Promise<boolean>((resolve) => {
-          const timeoutId = window.setTimeout(() => {
-            off();
-            resolve(false);
-          }, 2500);
-
-          const off = existingClient.onConnectionStateChange((nextState) => {
+          const timeoutId = window.setTimeout(() => { off(); resolve(false); }, 2500);
+          const off = callsWsRef.current!.onConnectionStateChange((nextState) => {
             if (nextState !== "connected") return;
             window.clearTimeout(timeoutId);
             off();
             resolve(true);
           });
         });
-
-        if (becameConnected && callsWsRef.current === existingClient) {
-          return existingClient;
+        if (becameConnected && callsWsRef.current?.connectionState === "connected") {
+          return callsWsRef.current;
         }
       }
-
-      // Client is in failed/disconnected state — discard and create a new one
-      existingClient.close();
+      callsWsRef.current.close();
       callsWsRef.current = null;
     }
 
@@ -211,14 +222,18 @@ export function useCallsV2Bootstrap({
       if (REQUIRE_SFRAME && !hasInsertableStreams) {
         throw new Error("calls_v2_e2ee_media_unsupported: Insertable Streams required for SFrame");
       }
-      await client.e2eeCaps({
-        insertableStreams: hasInsertableStreams,
-        sframe: hasInsertableStreams,
-        doubleRatchet: true,
-        supportedCipherSuites: ["DOUBLE_RATCHET_P256_AES128GCM"],
-      });
-      logger.info("[VideoCallContext] calls-v2 e2ee_caps:ok");
-      await initializeCallsV2E2ee(client);
+      if (FRAME_E2EE_ADVERTISE_SFRAME || REQUIRE_SFRAME) {
+        await client.e2eeCaps({
+          insertableStreams: hasInsertableStreams,
+          sframe: hasInsertableStreams,
+          doubleRatchet: true,
+          supportedCipherSuites: ["DOUBLE_RATCHET_P256_AES128GCM"],
+        });
+        logger.info("[VideoCallContext] calls-v2 e2ee_caps:ok");
+        await initializeCallsV2E2ee(client);
+      } else {
+        logger.info("[VideoCallContext] calls-v2 e2ee disabled (FRAME_E2EE_ADVERTISE_SFRAME=false, REQUIRE_SFRAME=false)");
+      }
 
       client.on("call.invite", (frame) => {
         const p = (frame.payload ?? {}) as Record<string, unknown>;
@@ -265,6 +280,13 @@ export function useCallsV2Bootstrap({
       client.close();
       return null;
     }
+    })();
+
+    connectingPromiseRef.current = promise;
+    promise.finally(() => {
+      connectingPromiseRef.current = null;
+    });
+    return promise;
   }, [
     callsWsRef,
     fetchTurnIceServers,

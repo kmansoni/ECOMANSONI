@@ -104,6 +104,7 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
   const { user } = useAuth();
   const [pendingIncomingCall, setPendingIncomingCall] = useState<VideoCall | null>(null);
   const callsWsRef = useRef<CallsWsClient | null>(null);
+  const connectingPromiseRef = useRef<Promise<CallsWsClient | null> | null>(null);
   const sfuManagerRef = useRef<SfuMediaManager | null>(null);
   const sfuRouterRtpCapabilitiesRef = useRef<RtpCapabilities | null>(null);
   const callsWsCallIdRef = useRef<string | null>(null);
@@ -597,6 +598,7 @@ const unansweredCallTimerRef = useRef<number | null>(null);
     fetchTurnIceServers,
     setPendingIncomingCall,
     callsWsRef,
+    connectingPromiseRef,
     sfuManagerRef,
     sfuRouterRtpCapabilitiesRef,
     callsWsCallIdRef,
@@ -983,17 +985,20 @@ dispatchFsm,
         attempt,
       });
 
-      // P1-7 fix: if WS client is in a broken state, close it so ensureCallsV2Connected
-      // creates a fresh connection on the next attempt instead of reusing a failed one.
       const ws = callsWsRef.current;
-      if (ws && ws.connectionState !== "connected") {
-        ws.close();
-        callsWsRef.current = null;
+      if (ws) {
+        if (ws.connectionState === "failed") return false;
+        if (ws.connectionState !== "connected") {
+          let settled: string = ws.connectionState;
+          try {
+            settled = await ws.waitForState(["connected", "failed"], 5000);
+          } catch {
+            settled = ws.connectionState;
+          }
+          if (callsWsRef.current !== ws) continue;
+          if (settled === "failed") return false;
+        }
       }
-
-      await new Promise<void>((resolve) => {
-        window.setTimeout(resolve, 1000 * attempt);
-      });
     }
     return false;
   }, [bootstrapCallsV2Room, callsWsRef]);

@@ -34,6 +34,7 @@ import type {
 
 import { logger } from '@/lib/logger';
 import { z } from "zod";
+import { isCallsWsFatalCloseCode } from './callsWsClosePolicy';
 
 function nowMs() {
   return Date.now();
@@ -188,6 +189,11 @@ export class CallsWsClient {
         return;
       } catch (err) {
         lastError = err instanceof Error ? err : new Error(String(err));
+        const closeCode = (lastError as Error & { wsCloseCode?: number }).wsCloseCode;
+        if (isCallsWsFatalCloseCode(closeCode)) {
+          logger.error('[CallsWsClient] fatal close during connect — stopping failover', { url, closeCode });
+          throw lastError;
+        }
         logger.warn('[CallsWsClient] endpoint failed, trying next', { url, err });
       }
     }
@@ -230,7 +236,9 @@ export class CallsWsClient {
         if (settled) return;
         settled = true;
         cleanup();
-        reject(new Error(`WebSocket closed before open: code=${ev.code} reason=${ev.reason}`));
+        const err = new Error(`WebSocket closed before open: code=${ev.code} reason=${ev.reason}`);
+        (err as Error & { wsCloseCode?: number }).wsCloseCode = ev.code;
+        reject(err);
       };
 
       ws.addEventListener('open', onOpen);
@@ -239,17 +247,23 @@ export class CallsWsClient {
     });
   }
 
-  private onWsClose = () => {
-    if (!this.ws) return; // уже очищено
+  private onWsClose = (ev: CloseEvent) => {
+    if (!this.ws) return;
     this.ws = null;
-    this.handleDisconnect();
+    this.handleDisconnect(ev.code, ev.reason);
   };
 
-  private handleDisconnect() {
+  private handleDisconnect(closeCode?: number, closeReason?: string) {
     this.stopHeartbeat();
 
     if (this.manualClose) {
       this.setConnectionState('disconnected');
+      return;
+    }
+
+    if (isCallsWsFatalCloseCode(closeCode)) {
+      logger.error('[CallsWsClient] fatal close — reconnect suppressed', { closeCode, closeReason });
+      this.setConnectionState('failed');
       return;
     }
 
@@ -283,10 +297,10 @@ export class CallsWsClient {
       try {
         this.setConnectionState('connecting');
         await this.connectWithFailover();
-        // P1-6 fix: replay pending ACKs on the new socket so in-flight messages aren't lost
         this.replayPendingAcks();
-      } catch {
-        this.handleDisconnect();
+      } catch (err) {
+        const closeCode = (err as Error & { wsCloseCode?: number }).wsCloseCode;
+        this.handleDisconnect(closeCode, undefined);
       }
     }, delay);
   }
@@ -519,6 +533,28 @@ export class CallsWsClient {
         off();
         reject(new Error(`waitFor timeout for ${event}`));
       }, timeoutMs);
+    });
+  }
+
+  waitForState(
+    targetStates: ConnectionState[],
+    timeoutMs = 5000,
+  ): Promise<ConnectionState> {
+    const current = this._connectionState;
+    if (targetStates.includes(current)) return Promise.resolve(current);
+
+    return new Promise((resolve, reject) => {
+      const timer = window.setTimeout(() => {
+        off();
+        reject(new Error(`waitForState timeout — wanted ${targetStates.join('|')}, got ${this._connectionState}`));
+      }, timeoutMs);
+
+      const off = this.onConnectionStateChange((state) => {
+        if (!targetStates.includes(state)) return;
+        window.clearTimeout(timer);
+        off();
+        resolve(state);
+      });
     });
   }
 
