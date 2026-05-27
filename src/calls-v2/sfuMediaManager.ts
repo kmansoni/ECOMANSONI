@@ -29,28 +29,29 @@ export type IceRestartCallback = (transportId: string, direction: 'send' | 'recv
 export type TransportClosedCallback = (transportId: string, direction: 'send' | 'recv') => void;
 
 export class SfuMediaManager {
-  private device: Device;
-  private sendTransport: mediasoupTypes.Transport | null = null;
-  private recvTransport: mediasoupTypes.Transport | null = null;
-  private producers: Map<string, mediasoupTypes.Producer> = new Map();
-  private consumers: Map<string, mediasoupTypes.Consumer> = new Map();
-  private consumerSources: Map<string, string> = new Map();
-  private readonly requireSenderReceiverAccessForE2ee: boolean;
-  private _closed = false;
-  /** C-1 fix: callback for ICE restart signaling via wsClient */
-  private onIceRestartNeeded: IceRestartCallback | null = null;
-  /** P0-3 fix: callback when transport is permanently closed after exhausting ICE restarts */
-  private onTransportClosed: TransportClosedCallback | null = null;
-  /** C-1 fix: pending ICE restart timers keyed by transportId */
-  private iceRestartTimers: Map<string, number> = new Map();
-  /**
-   * C-3: Кешируем RTCRtpSender/Receiver при produce/consume, пока track доступен.
-   * Заменяет ненадёжный доступ к internal _rtpSender/_rtpReceiver mediasoup-client.
-   */
-  private producerSenders: Map<string, RTCRtpSender> = new Map();
-  private consumerReceivers: Map<string, RTCRtpReceiver> = new Map();
-  private relayStatsCollector = new RelayStatsCollector({ maxHistorySize: 120 });
-  private lastRelayRoute: "none" | "p2p" | "relay" = "none";
+   private device: Device;
+   private sendTransport: mediasoupTypes.Transport | null = null;
+   private recvTransport: mediasoupTypes.Transport | null = null;
+   private producers: Map<string, mediasoupTypes.Producer> = new Map();
+   private consumers: Map<string, mediasoupTypes.Consumer> = new Map();
+   private consumerSources: Map<string, string> = new Map();
+   private readonly requireSenderReceiverAccessForE2ee: boolean;
+   private _closed = false;
+   /** C-1 fix: callback for ICE restart signaling via wsClient */
+   private onIceRestartNeeded: IceRestartCallback | null = null;
+   /** P0-3 fix: callback when transport is permanently closed after exhausting ICE restarts */
+   private onTransportClosed: TransportClosedCallback | null = null;
+   /** C-1 fix: pending ICE restart timers keyed by transportId */
+   private iceRestartTimers: Map<string, number> = new Map();
+   /**
+    * C-3: Кешируем RTCRtpSender/Receiver при produce/consume, пока track доступен.
+    * Заменяет ненадёжный доступ к internal _rtpSender/_rtpReceiver mediasoup-client.
+    */
+   private producerSenders: Map<string, RTCRtpSender> = new Map();
+   private consumerReceivers: Map<string, RTCRtpReceiver> = new Map();
+   private relayStatsCollector = new RelayStatsCollector({ maxHistorySize: 120 });
+   private lastRelayRoute: "none" | "p2p" | "relay" = "none";
+   private _watchdogTimer: number | null = null;
 
   private resolveProducerSender(
     producer: mediasoupTypes.Producer,
@@ -581,6 +582,75 @@ export class SfuMediaManager {
       }
     }
     return null;
+  }
+
+  /**
+   * Get current media diagnostic state for debugging.
+   * Returns transport states, producer/consumer counts, and track info.
+   */
+  getDiagnostics(): {
+    localTracks: Array<{ kind: "audio" | "video"; enabled: boolean; readyState: string }>;
+    sendTransportConnected: boolean;
+    recvTransportConnected: boolean;
+    localProducerCount: number;
+    localConsumerCount: number;
+    remoteTrackCount: number;
+    remoteAudioTrackCount: number;
+    remoteVideoTrackCount: number;
+    bytesReceived?: number;
+    bytesSent?: number;
+    relayUsageRate?: number;
+    isRelaySelected?: boolean;
+  } {
+    const sendTransportConnected = this.sendTransport?.connectionState === "connected";
+    const recvTransportConnected = this.recvTransport?.connectionState === "connected";
+
+    // Collect local track info from producers
+    const localTracks: Array<{ kind: "audio" | "video"; enabled: boolean; readyState: string }> = [];
+    for (const [, producer] of this.producers) {
+      const track = producer.track;
+      if (track) {
+        localTracks.push({
+          kind: track.kind as "audio" | "video",
+          enabled: track.enabled,
+          readyState: track.readyState,
+        });
+      }
+    }
+
+    const remoteTracks = this.getAllRemoteTracks();
+    const remoteAudioCount = remoteTracks.filter(t => t.kind === "audio").length;
+    const remoteVideoCount = remoteTracks.filter(t => t.kind === "video").length;
+
+    // Get bytes from relay stats collector
+    const metrics = this.relayStatsCollector.getMetrics();
+
+    // Get latest relay selection info
+    const samples = this.relayStatsCollector.getSamples();
+    const lastSample = samples[samples.length - 1];
+
+    return {
+      localTracks,
+      sendTransportConnected,
+      recvTransportConnected,
+      localProducerCount: this.producers.size,
+      localConsumerCount: this.consumers.size,
+      remoteTrackCount: remoteTracks.length,
+      remoteAudioTrackCount: remoteAudioCount,
+      remoteVideoTrackCount: remoteVideoCount,
+      bytesReceived: lastSample?.bytesReceived,
+      bytesSent: lastSample?.bytesSent,
+      relayUsageRate: metrics.relay_usage_rate,
+      isRelaySelected: lastSample?.isRelaySelected,
+    };
+  }
+
+  getConsumerSnapshot(): Array<{ consumerId: string; producerId: string; closed: boolean }> {
+    return Array.from(this.consumers.values()).map((c) => ({
+      consumerId: c.id,
+      producerId: c.producerId,
+      closed: c.closed,
+    }));
   }
 
   getProducerAppData(producerId: string): Record<string, unknown> | null {

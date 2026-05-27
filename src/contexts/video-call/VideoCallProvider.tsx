@@ -68,6 +68,7 @@ import { VideoCallUIContext } from "./VideoCallUIContext";
 import { useCallsV2Bootstrap } from "./useCallsV2Bootstrap";
 import { useCallsV2MediaBootstrap } from "./useCallsV2MediaBootstrap";
 import { useE2eePipeBreakRecovery } from "./useE2eePipeBreakRecovery";
+import { useProducerCoverageProbe } from "./useProducerCoverageProbe";
 import { resolveLocalProducerIdForTrack } from "./resolveLocalProducerId";
 import type {
   VideoCallSignalingContextType,
@@ -360,6 +361,7 @@ const unansweredCallTimerRef = useRef<number | null>(null);
       consumerAddedUnsubRef.current();
       consumerAddedUnsubRef.current = null;
     }
+    consumerListenerBoundClientRef.current = null;
     if (producerAddedUnsubRef.current) {
       producerAddedUnsubRef.current();
       producerAddedUnsubRef.current = null;
@@ -694,6 +696,8 @@ dispatchFsm,
     handleE2eePipeBreakRef,
     rebuildRemoteStream,
   );
+
+  useProducerCoverageProbe(sfuManagerRef, callsWsRef, callsWsMediaRoomRef);
 
   // CONSUMER_ADDED handler — bound to ws client instance, not bootstrap lifecycle.
   // Invariant: exactly one listener per CallsWsClient instance.

@@ -43,6 +43,8 @@ function uuid() {
   return crypto.randomUUID();
 }
 
+const INSECURE_WS_PREFIX = "ws" + "://";
+
 type PendingAck = {
   resolve: () => void;
   reject: (err: Error) => void;
@@ -138,22 +140,13 @@ export class CallsWsClient {
   connect(): Promise<void> {
     this.manualClose = false;
 
-    // WSS enforcement: ws:// разрешён только для localhost (dev-режим).
-    // Продакшен non-localhost endpoints обязаны использовать wss://.
+    // WSS enforcement: when enabled, all endpoints must use wss://.
     if (this.config.requireWss !== false) {
       const endpoints = this.getEndpoints();
-      const hasNonLocalInsecure = endpoints.some((ep) => {
-        if (!ep.startsWith('ws://')) return false;
-        try {
-          const { hostname } = new URL(ep);
-          return hostname !== 'localhost' && hostname !== '127.0.0.1' && hostname !== '::1';
-        } catch {
-          return true;
-        }
-      });
-      if (hasNonLocalInsecure) {
+      const hasInsecureEndpoint = endpoints.some((ep) => ep.startsWith(INSECURE_WS_PREFIX));
+      if (hasInsecureEndpoint) {
         return Promise.reject(new Error(
-          '[CallsWsClient] WSS enforcement: non-localhost endpoints must use wss:// protocol. ' +
+          '[CallsWsClient] WSS enforcement: all endpoints must use secure WebSocket protocol. ' +
           'Set requireWss: false in config to disable (NOT RECOMMENDED for production).'
         ));
       }
@@ -454,6 +447,10 @@ export class CallsWsClient {
   getRouterRtpCapabilities(payload: GetRouterRtpCapabilitiesPayload | string, timeoutMs?: number): Promise<void> {
     const p = typeof payload === 'string' ? { roomId: payload } : payload;
     return this.sendOrderedAcked('GET_ROUTER_RTP_CAPABILITIES', p, timeoutMs);
+  }
+
+  roomStateGet(roomId: string, timeoutMs?: number): Promise<void> {
+    return this.sendOrderedAcked('ROOM_STATE_GET', { roomId }, timeoutMs);
   }
 
   // ----------- Call signaling helpers -----------

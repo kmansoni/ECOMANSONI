@@ -426,6 +426,17 @@ export interface ConsumedPayload {
   peerId?: string;
 }
 
+export interface SerializedProducer {
+  producerId: string;
+  peerDeviceId: string;
+  ownerUserId: string;
+  ownerDeviceId: string;
+  kind: 'audio' | 'video';
+  source: string;
+  generation: number;
+  createdAt: number;
+}
+
 export interface SerializedConsumer {
   consumerId: string;
   producerId: string;
@@ -523,6 +534,7 @@ export interface ClientMessageMap {
   KEY_PACKAGE: KeyPackagePayload;
   KEY_ACK: KeyAckPayload;
   GET_ROUTER_RTP_CAPABILITIES: GetRouterRtpCapabilitiesPayload;
+  ROOM_STATE_GET: { roomId: string };
   PING: Record<string, never>;
   'call.invite': CallSignalInvitePayload;
   'call.accept': CallSignalStatePayload;
