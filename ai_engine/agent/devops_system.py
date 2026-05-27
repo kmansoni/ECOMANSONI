@@ -338,7 +338,7 @@ class DeploymentManager:
         return DeploymentResult(
             target=DeployTarget.DOCKER,
             success=run_result.success,
-            url=f"http://localhost:{ports[0]}",
+            url=f"https://api.mansoni.ru/{tag}/{ports[0]}",
             error=run_result.stderr,
         )
 
@@ -499,7 +499,7 @@ class HealthChecker:
         try:
             # Try to connect via API health check
             resp = httpx.get(
-                f"http://localhost:3000/api/health",
+                f"https://api.mansoni.ru/health",
                 timeout=5.0,
             )
             
@@ -616,7 +616,7 @@ class DevOpsSystem:
 
     # === Health ===
 
-    def health_check(self, url: str = "http://localhost:3000") -> dict:
+    def health_check(self, url: str = "https://mansoni.ru") -> dict:
         """Проверить здоровье."""
         return self.health.check_server(url)
 

@@ -17,7 +17,7 @@ port: 7880
 # concurrent publishers (each publisher uses ~5 ports with simulcast).
 # tcp_port: 7881 is the TURN/TCP relay fallback for symmetric-NAT clients.
 # use_external_ip: true — required when server is behind NAT (AWS/GCP/etc).
-# enable_loopback_candidate: false — never expose 127.0.0.1 to remote clients;
+# enable_loopback_candidate: false — never expose loopback candidates to remote clients;
 #   this would cause ICE failure for all non-local viewers (security + bugs).
 # =============================================================================
 rtc:

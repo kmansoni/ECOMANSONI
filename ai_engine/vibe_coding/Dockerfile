@@ -47,7 +47,7 @@ EXPOSE 8000
 
 # Health check (Docker/Kubernetes liveness probe)
 HEALTHCHECK --interval=30s --timeout=10s --start-period=20s --retries=3 \
-    CMD curl -f http://localhost:8000/health || exit 1
+    CMD curl -f http://vibe-coding:8000/health || exit 1
 
 # Uvicorn with production settings:
 # - workers=1 for Kubernetes (horizontal scaling via pod replicas)

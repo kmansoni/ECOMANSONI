@@ -101,7 +101,7 @@ jobs:
             echo "── [ARIA] Waiting for health ────────────────────────"
             for i in $(seq 1 15); do
               sleep 2
-              if curl -sf http://127.0.0.1:7860/health >/dev/null 2>&1; then
+              if curl -sf https://aria.mansoni.ru/health >/dev/null 2>&1; then
                 echo "[ARIA] Container healthy after ${i}×2s"
                 break
               fi

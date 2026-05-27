@@ -25,7 +25,7 @@ from supabase import create_client, Client
 from postgrest.exceptions import APIError
 
 # Config
-SUPABASE_URL = os.getenv('SUPABASE_URL', 'http://localhost:54321')
+SUPABASE_URL = os.getenv('SUPABASE_URL', 'https://lfkbgnbjxskspsownvjm.supabase.co')
 SUPABASE_KEY = os.getenv('SUPABASE_SERVICE_KEY', 'eyJ...')  # service_role
 OPENMVG_PATH = os.getenv('OPENMVG_PATH', '/opt/openmvg/bin')
 PROCESSING_TEMP_DIR = Path(os.getenv('PROCESSING_TEMP', '/tmp/survey-processing'))

@@ -11,7 +11,7 @@ const SUPABASE_URL = process.env.E2E_SUPABASE_URL ?? process.env.VITE_SUPABASE_U
 const SUPABASE_KEY = process.env.E2E_SUPABASE_KEY ?? process.env.VITE_SUPABASE_PUBLISHABLE_KEY ?? "";
 const STORAGE_KEY = `sb-${SUPABASE_URL.match(/\/\/([a-z0-9]+)\./)?.[1] ?? "unknown"}-auth-token`;
 const E2E_PASSWORD = process.env.E2E_PASSWORD ?? "";
-const BASE_URL = process.env.E2E_BASE_URL ?? "http://localhost:8080";
+const BASE_URL = process.env.E2E_BASE_URL ?? "https://mansoni.ru";
 
 function makeSb(): SupabaseClient {
   return createClient(SUPABASE_URL, SUPABASE_KEY, {

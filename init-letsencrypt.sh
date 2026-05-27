@@ -19,7 +19,7 @@ docker run --rm \
   req -x509 -nodes -newkey rsa:4096 -days 1 \
   -keyout /etc/letsencrypt/live/$DOMAIN/privkey.pem \
   -out /etc/letsencrypt/live/$DOMAIN/fullchain.pem \
-  -subj "/CN=localhost" 2>/dev/null
+  -subj "/CN=$DOMAIN" 2>/dev/null
 
 # Стартуем nginx с временным сертификатом
 docker compose up -d nginx

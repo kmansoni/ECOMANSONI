@@ -37,7 +37,7 @@ export const HEALTH_RED = 2;
  * @property {(roomId: string, nodeId: string, leaseTerm: number, fenceToken?: FenceToken) => Promise<GateResult>} checkStability
  */
 
-const DEFAULT_REDIS_URL = process.env.REDIS_URL || "redis://localhost:6379";
+const DEFAULT_REDIS_URL = process.env.REDIS_URL || "redis://redis.mansoni.ru:6379";
 
 const healthKey = (roomId) => `recovery:health:${roomId}`;
 const stateKey = (roomId) => `recovery:state:${roomId}`;

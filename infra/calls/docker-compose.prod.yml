@@ -26,14 +26,14 @@ services:
       - ENV=production
       - CALLS_WS_PORT=8787
       - REDIS_URL=redis://redis:6379
-      - CALLS_WS_TRUSTED_PROXIES=${CALLS_WS_TRUSTED_PROXIES:-127.0.0.1}
+      - CALLS_WS_TRUSTED_PROXIES=${CALLS_WS_TRUSTED_PROXIES:-10.0.0.0/8,172.16.0.0/12,192.168.0.0/16}
     env_file:
       - ../../.env.production
     depends_on:
       redis:
         condition: service_healthy
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:8787/health 2>/dev/null | grep -q '\"ok\"' || wget -qO- http://localhost:8787/ 2>/dev/null || exit 1"]
+      test: ["CMD-SHELL", "wget -qO- http://calls-ws:8787/health 2>/dev/null | grep -q '\"ok\"' || wget -qO- http://calls-ws:8787/ 2>/dev/null || exit 1"]
       interval: 30s
       timeout: 10s
       start_period: 30s
@@ -72,7 +72,7 @@ services:
       - E2EE_REQUIRED_DEFAULT=true
       - SFU_STRICT_VALIDATION=1
       - SFU_INSECURE_DEV_MODE=0
-      - SFU_TRUSTED_PROXIES=${SFU_TRUSTED_PROXIES:-127.0.0.1}
+      - SFU_TRUSTED_PROXIES=${SFU_TRUSTED_PROXIES:-10.0.0.0/8,172.16.0.0/12,192.168.0.0/16}
       - SFU_KEY_PACKAGE_RATE=50
       - SFU_REKEY_BEGIN_RATE=5
       - SFU_WORKER_COUNT=auto

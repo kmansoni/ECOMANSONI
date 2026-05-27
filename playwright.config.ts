@@ -8,7 +8,7 @@ export default defineConfig({
   workers: process.env.CI ? 1 : undefined,
   reporter: "html",
   use: {
-    baseURL: "http://127.0.0.1:8080",
+    baseURL: "https://mansoni.ru",
     trace: "on-first-retry",
     screenshot: "only-on-failure",
     video: "retain-on-failure",
@@ -20,8 +20,8 @@ export default defineConfig({
     },
   ],
   webServer: {
-    command: "npm run dev -- --host 127.0.0.1 --port 8080",
-    url: "http://127.0.0.1:8080",
+    command: "npm run dev -- --host 0.0.0.0 --port 8080",
+    url: "https://mansoni.ru",
     reuseExistingServer: true,
     timeout: 120_000,
   },

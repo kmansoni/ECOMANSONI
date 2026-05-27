@@ -13,7 +13,7 @@ services:
       - '--storage.tsdb.retention.time=30d'
       - '--web.enable-lifecycle'
     ports:
-      - "127.0.0.1:9090:9090"
+      - "9090:9090"
     networks:
       - monitoring
 
@@ -29,7 +29,7 @@ services:
       GF_SERVER_ROOT_URL: https://mansoni.ru/grafana
       GF_SERVER_SERVE_FROM_SUB_PATH: "true"
     ports:
-      - "127.0.0.1:3030:3000"
+      - "3030:3000"
     networks:
       - monitoring
     depends_on:
@@ -42,7 +42,7 @@ services:
     volumes:
       - ./monitoring/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
     ports:
-      - "127.0.0.1:9093:9093"
+      - "9093:9093"
     networks:
       - monitoring
 
@@ -84,7 +84,7 @@ services:
       - loki_data:/loki
     command: -config.file=/etc/loki/local-config.yaml
     ports:
-      - "127.0.0.1:3100:3100"
+      - "3100:3100"
     networks:
       - monitoring
 

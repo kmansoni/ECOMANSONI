@@ -57,7 +57,7 @@ fi
 
 # --- App env file (non-secret values) ---
 cat > "${APP_DIR}/.env.local" <<EOF
-DATABASE_URL=postgresql://mansoni_user:${DB_PASS}@localhost:5432/mansoni
+DATABASE_URL=postgresql://mansoni_user:${DB_PASS}@postgres.mansoni.ru:5432/mansoni
 SMS_PROVIDER=timeweb
 CORS_ALLOWED_ORIGINS=["https://mansoni.ru","https://www.mansoni.ru","https://api.mansoni.ru"]
 NODE_ENV=production
@@ -73,7 +73,7 @@ npm ci --omit=dev
 bash migration.sh
 
 # Optional: validate tables exist (adjust DB name/schema as needed)
-# psql "postgresql://mansoni_user:${DB_PASS}@localhost:5432/mansoni" -c "\dt" | grep -E "users|otp_audit_log|revoked_tokens"
+# psql "postgresql://mansoni_user:${DB_PASS}@postgres.mansoni.ru:5432/mansoni" -c "\dt" | grep -E "users|otp_audit_log|revoked_tokens"
 
 # --- PM2 (no brittle fallbacks) ---
 # Prefer ecosystem file in prod, but minimal safe approach here:
@@ -92,7 +92,7 @@ systemctl start pm2-root >/dev/null 2>&1 || true
 cat > "$NGINX_SNIPPET" <<'NGINXCONF'
 # Phone Auth reverse proxy
 upstream phone_auth_backend {
-  server 127.0.0.1:3001;
+  server phone-auth.mansoni.ru:3001;
   keepalive 32;
 }
 
@@ -125,8 +125,8 @@ nginx -t
 systemctl reload nginx
 
 # --- Post-deploy checks: local first, then public ---
-echo "Local health:"
-curl -fsS "http://127.0.0.1:${PORT}/health" | head -c 200 || true
+echo "Service health:"
+curl -fsS "https://api.mansoni.ru/health" | head -c 200 || true
 echo
 
 echo "Public health:"

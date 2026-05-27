@@ -59,8 +59,8 @@ services:
       SUPABASE_URL: http://postgres:5432  # Or external URL
       SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY}
       MANSONI_JWT_SECRET: ${MANSONI_JWT_SECRET}
-      MANSONI_URL: http://localhost:5173
-      MUSIC_FRONTEND_URL: http://localhost:3001
+      MANSONI_URL: https://mansoni.ru
+      MUSIC_FRONTEND_URL: https://music.mansoni.ru
     depends_on:
       - postgres
     volumes:
@@ -86,7 +86,7 @@ services:
     environment:
       VITE_SUPABASE_URL: ${VITE_SUPABASE_URL}
       VITE_SUPABASE_ANON_KEY: ${VITE_SUPABASE_ANON_KEY}
-      VITE_API_URL: http://localhost:3080
+      VITE_API_URL: https://api.mansoni.ru
     networks:
       - mansoni
     depends_on:
@@ -108,8 +108,8 @@ services:
     environment:
       VITE_SUPABASE_URL: ${VITE_SUPABASE_URL}
       VITE_SUPABASE_ANON_KEY: ${VITE_SUPABASE_ANON_KEY}
-      VITE_MUSIC_MODULE_URL: http://localhost:3080/modules/music-module.js
-      VITE_GODMODE_URL: http://localhost:3077
+      VITE_MUSIC_MODULE_URL: https://api.mansoni.ru/modules/music-module.js
+      VITE_GODMODE_URL: https://api.mansoni.ru/godmode-api
     networks:
       - mansoni
     depends_on:

@@ -140,9 +140,9 @@ docker-compose up -d music-api
 ```
 
 Access:
-- Main app: http://localhost:5173
-- Music frontend dev: http://localhost:3001
-- Music API: http://localhost:3080/health
+- Main app: https://mansoni.ru
+- Music frontend: https://music.mansoni.ru
+- Music API: https://api.mansoni.ru/music-api/health
 
 ---
 
@@ -192,7 +192,7 @@ npm run mobile:ios
 
 ```bash
 # API health
-curl http://localhost:3080/health
+curl https://api.mansoni.ru/music-api/health
 
 # Module manifest
 curl https://cdn.mansoni.com/modules/music/manifest.json

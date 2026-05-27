@@ -157,22 +157,18 @@ function hexToBytes(hex: string): Uint8Array {
 /**
  * Validates that a hostname is safe to connect to — blocking SSRF vectors.
  *
- * SMTP is a user-configurable field, so a malicious authenticated user could
- * supply "127.0.0.1", "169.254.169.254", or an internal hostname to probe
- * internal services via the Edge Function's network position.
+ * SMTP is a user-configurable field.
  *
  * Rules:
  *   - Must not be empty or longer than 253 chars (RFC 1035).
  *   - Must not be a raw IPv4 or IPv6 literal (they bypass DNS resolution and
  *     directly target infrastructure). Legitimate SMTP servers use hostnames.
- *   - Must not be localhost, *.local, or single-label names.
  *   - Port must be one of the known SMTP/IMAP ports to prevent port-scanning
  *     internal services on arbitrary ports.
  *
  * ─────────────────────────────────────────────────────────────────────────
  * KNOWN LIMITATION — DNS-rebinding SSRF not fully mitigated:
- *   A hostname like "evil.attacker.com" could resolve to 127.0.0.1 or an
- *   internal RFC-1918 address (10.x.x.x, 192.168.x.x, 172.16-31.x.x).
+ *   A hostname could resolve to private infrastructure addresses.
  *   This function only blocks *literal* IP strings; it performs no DNS
  *   resolution. Full mitigation requires an async DNS lookup followed by a
  *   post-resolution IP-range check before opening any socket — a
@@ -187,18 +183,11 @@ function hexToBytes(hex: string): Uint8Array {
 function assertSafeSmtpEndpoint(host: string, port: number, context: "smtp" | "imap"): void {
   const normalized = host.trim().replace(/\.+$/g, "").toLowerCase();
 
-    if (!normalized || normalized.length > 253) {
+  if (!normalized || normalized.length > 253) {
     throw new Error("invalid_host");
   }
 
-  // Block raw IP literals — both IPv4 and IPv6
-  const isIPv4 = /^\d{1,3}(\.\d{1,3}){3}$/.test(normalized);
-  const isIPv6 = normalized.includes(":") || normalized.startsWith("[");
-  if (isIPv4 || isIPv6) {
-    throw new Error("ip_literals_not_allowed");
-  }
-
-  // Block localhost and local-only names
+  // Block local/internal hostname forms commonly used for SSRF.
   if (
     normalized === "localhost" ||
     normalized.endsWith(".localhost") ||
@@ -208,40 +197,47 @@ function assertSafeSmtpEndpoint(host: string, port: number, context: "smtp" | "i
     throw new Error("host_not_allowed");
   }
 
-    // Port validation — blacklist approach:
-    //   • Always allow well-known SMTP/IMAP ports (including common alt ports
-    //     used by real providers: 2525, 10025, 8025).
-    //   • For ports ≥ 1024: allow unless on the dangerous-service blacklist.
-    //   • Refuse ports < 1024 that are not in the well-known set (blocks
-    //     scanning privileged services like SSH on :22).
-    // Previous whitelist was too narrow — it broke legitimate providers using
-    // 10025 or 8025, and the right control is blocking known-dangerous ports
-    // rather than only permitting a small known-good set.
-    const SMTP_WELL_KNOWN = new Set([25, 465, 587, 2525, 10025, 8025]);
-    const IMAP_WELL_KNOWN = new Set([143, 220, 993]);
-    const wellKnown = context === "smtp" ? SMTP_WELL_KNOWN : IMAP_WELL_KNOWN;
+  // Block raw IP literals — both IPv4 and IPv6
+  const isIPv4 = /^\d{1,3}(\.\d{1,3}){3}$/.test(normalized);
+  const isIPv6 = normalized.includes(":") || normalized.startsWith("[");
+  if (isIPv4 || isIPv6) {
+    throw new Error("ip_literals_not_allowed");
+  }
 
-    // Infrastructure service ports that must never be SMTP/IMAP targets.
-    const BLOCKED_PORTS = new Set([
-      22,    // SSH
-      23,    // Telnet
-      3306,  // MySQL
-      5432,  // PostgreSQL
-      6379,  // Redis
-      27017, // MongoDB
-      9200,  // Elasticsearch
-      8086,  // InfluxDB
-      11211, // Memcached
-      9092,  // Kafka
-      2181,  // ZooKeeper
-      5672,  // RabbitMQ AMQP
-    ]);
+  // Port validation — blacklist approach:
+  //   • Always allow well-known SMTP/IMAP ports (including common alt ports
+  //     used by real providers: 2525, 10025, 8025).
+  //   • For ports ≥ 1024: allow unless on the dangerous-service blacklist.
+  //   • Refuse ports < 1024 that are not in the well-known set (blocks
+  //     scanning privileged services like SSH on :22).
+  // Previous whitelist was too narrow — it broke legitimate providers using
+  // 10025 or 8025, and the right control is blocking known-dangerous ports
+  // rather than only permitting a small known-good set.
+  const SMTP_WELL_KNOWN = new Set([25, 465, 587, 2525, 10025, 8025]);
+  const IMAP_WELL_KNOWN = new Set([143, 220, 993]);
+  const wellKnown = context === "smtp" ? SMTP_WELL_KNOWN : IMAP_WELL_KNOWN;
 
-    const isWellKnown = wellKnown.has(port);
-    const isHighPortAndSafe = port >= 1024 && !BLOCKED_PORTS.has(port);
-    if (!isWellKnown && !isHighPortAndSafe) {
-      throw new Error(`port_not_allowed:${port}`);
-    }
+  // Infrastructure service ports that must never be SMTP/IMAP targets.
+  const BLOCKED_PORTS = new Set([
+    22,    // SSH
+    23,    // Telnet
+    3306,  // MySQL
+    5432,  // PostgreSQL
+    6379,  // Redis
+    27017, // MongoDB
+    9200,  // Elasticsearch
+    8086,  // InfluxDB
+    11211, // Memcached
+    9092,  // Kafka
+    2181,  // ZooKeeper
+    5672,  // RabbitMQ AMQP
+  ]);
+
+  const isWellKnown = wellKnown.has(port);
+  const isHighPortAndSafe = port >= 1024 && !BLOCKED_PORTS.has(port);
+  if (!isWellKnown && !isHighPortAndSafe) {
+    throw new Error(`port_not_allowed:${port}`);
+  }
 }
 
 // ─── SMTP test via raw TCP ─────────────────────────────────────────────────────

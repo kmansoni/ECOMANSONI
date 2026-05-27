@@ -23,6 +23,8 @@ interface UseCallsV2E2eeBootstrapParams {
   epochGuardRef: MutableRefObject<EpochGuard | null>;
   producerPeerKeyRef: MutableRefObject<Map<string, string>>;
   peerUserIdByDeviceIdRef: MutableRefObject<Map<string, string>>;
+  pendingProducersToConsumeRef: MutableRefObject<Map<string, { roomId: string; peerDeviceId?: string; peerUserId?: string }>>;
+  consumePendingProducersRef: MutableRefObject<(() => void) | null>;
   handleE2eePipeBreakRef: MutableRefObject<((info: PipeBreakInfo) => void) | null>;
   onDecryptionKeyReady?: (peerKey: string) => void;
   onE2eeActivated?: () => void;
@@ -42,6 +44,8 @@ export function useCallsV2E2eeBootstrap({
   epochGuardRef,
   producerPeerKeyRef,
   peerUserIdByDeviceIdRef,
+  pendingProducersToConsumeRef,
+  consumePendingProducersRef,
   handleE2eePipeBreakRef,
   onDecryptionKeyReady,
   onE2eeActivated,
@@ -60,6 +64,8 @@ export function useCallsV2E2eeBootstrap({
     epochGuardRef,
     producerPeerKeyRef,
     peerUserIdByDeviceIdRef,
+    pendingProducersToConsumeRef,
+    consumePendingProducersRef,
     onDecryptionKeyReady,
     onE2eeActivated,
   });

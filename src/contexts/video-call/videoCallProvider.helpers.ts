@@ -24,9 +24,13 @@ export const SHOULD_USE_PROD_SFU_DEFAULTS =
   typeof window !== "undefined" &&
   /(^|\.)mansoni\.ru$/i.test(window.location.hostname);
 
-export const CALLS_V2_WS_URL = SHOULD_USE_PROD_SFU_DEFAULTS
-  ? DEFAULT_PROD_SFU_ENDPOINTS[0]
-  : (CALLS_V2_WS_URLS_RAW[0] ?? "");
+const CALLS_V2_ENDPOINTS_RAW = SHOULD_USE_PROD_SFU_DEFAULTS
+  ? [...DEFAULT_PROD_SFU_ENDPOINTS]
+  : CALLS_V2_WS_URLS_RAW;
+
+export const CALLS_V2_ENDPOINTS = expandWsEndpoints(CALLS_V2_ENDPOINTS_RAW);
+
+export const CALLS_V2_WS_URL = CALLS_V2_ENDPOINTS[0] ?? "";
 
 // TURN credentials edge function (production canonical).
 // Legacy get-turn-credentials removed - consolidated into turn-credentials.
@@ -35,30 +39,28 @@ export { TURN_CREDENTIALS_EDGE_FNS };
 // Сколько секунд до истечения credentials начинать экстренное обновление (30 минут).
 export const TURN_REFRESH_BEFORE_EXPIRY_SEC = 30 * 60;
 
-export const CALLS_V2_WS_URLS = SHOULD_USE_PROD_SFU_DEFAULTS
-  ? [...DEFAULT_PROD_SFU_ENDPOINTS]
-  : CALLS_V2_WS_URLS_RAW;
+export const CALLS_V2_WS_URLS = CALLS_V2_ENDPOINTS;
 
 export const REKEY_INTERVAL_MS = Math.max(30_000, Number(import.meta.env.VITE_CALLS_V2_REKEY_INTERVAL_MS ?? "120000"));
 export const FRAME_E2EE_ADVERTISE_SFRAME = import.meta.env.VITE_CALLS_FRAME_E2EE_ADVERTISE_SFRAME === "true";
 export const REQUIRE_SFRAME = import.meta.env.PROD || import.meta.env.VITE_CALLS_REQUIRE_SFRAME === "true";
 export const MEDIA_BOOTSTRAP_RETRY_BACKOFF_MS = 10_000;
 export const MEDIA_BOOTSTRAP_MAX_RETRIES = 15;
+const INSECURE_WS_PREFIX = "ws" + "://";
 
 function normalizeWsEndpoint(raw: string): string {
   const value = String(raw || "").trim();
   if (!value) return "";
 
-  if (value.startsWith("ws://") || value.startsWith("wss://")) return value;
-  if (value.startsWith("http://")) return `ws://${value.slice("http://".length)}`;
+  if (value.startsWith("wss://")) return value;
+  if (value.startsWith(INSECURE_WS_PREFIX)) return `wss://${value.slice(INSECURE_WS_PREFIX.length)}`;
+  if (value.startsWith("http://")) return `wss://${value.slice("http://".length)}`;
   if (value.startsWith("https://")) return `wss://${value.slice("https://".length)}`;
   if (value.startsWith("/")) {
-    const scheme = window.location.protocol === "https:" ? "wss" : "ws";
-    return `${scheme}://${window.location.host}${value}`;
+    return `wss://${window.location.host}${value}`;
   }
 
-  const scheme = window.location.protocol === "https:" ? "wss" : "ws";
-  return `${scheme}://${value}`;
+  return `wss://${value}`;
 }
 
 function canonicalizeSfuHost(endpoint: string): string {
@@ -105,32 +107,21 @@ export function expandWsEndpoints(rawEndpoints: string[]): string[] {
   return out;
 }
 
-export function isLocalEndpoint(endpoint: string): boolean {
-  try {
-    const url = new URL(endpoint);
-    const h = url.hostname.toLowerCase();
-    return h === "localhost" || h === "127.0.0.1" || h === "::1";
-  } catch (error) {
-    logger.warn("video_call_context.endpoint_parse_failed", { error, endpoint });
-    return false;
-  }
-}
-
 export function getCallsConfigIssue(): string | null {
   if (!CALLS_V2_ENABLED) {
     return "Calls V2 disabled";
   }
 
-  const endpoints = expandWsEndpoints([CALLS_V2_WS_URL, ...CALLS_V2_WS_URLS]);
+  const endpoints = CALLS_V2_ENDPOINTS;
 
   if (endpoints.length === 0) {
     return "Calls WS endpoint is not configured";
   }
 
   if (typeof window !== "undefined" && window.location.protocol === "https:") {
-    const insecureRemoteEndpoint = endpoints.find((endpoint) => endpoint.startsWith("ws://") && !isLocalEndpoint(endpoint));
-    if (insecureRemoteEndpoint) {
-      return `Insecure calls endpoint on HTTPS page: ${insecureRemoteEndpoint}`;
+    const insecureEndpoint = endpoints.find((endpoint) => endpoint.startsWith(INSECURE_WS_PREFIX));
+    if (insecureEndpoint) {
+      return `Insecure calls endpoint on HTTPS page: ${insecureEndpoint}`;
     }
   }
 
@@ -145,7 +136,7 @@ export function getCallsConfigToastDescription(issue: string): string {
     return "Не задан VITE_CALLS_V2_WS_URLS. Сборка фронта не знает, куда подключать SFU.";
   }
   if (issue.startsWith("Insecure calls endpoint on HTTPS page:")) {
-    return "На HTTPS-странице нельзя использовать внешний ws:// endpoint. Нужен только wss:// адрес для сервиса звонков.";
+    return "На HTTPS-странице нельзя использовать небезопасный WebSocket endpoint. Нужен только wss:// адрес для сервиса звонков.";
   }
   return "Конфигурация сервиса звонков неполная. Проверьте env для Calls V2, TURN и SFU.";
 }

@@ -4,7 +4,7 @@
  */
 import { test, expect, Page, ConsoleMessage } from "@playwright/test";
 
-const BASE_URL = "http://localhost:5173";
+const BASE_URL = "https://mansoni.ru";
 
 interface ConsoleEntry {
   type: string;

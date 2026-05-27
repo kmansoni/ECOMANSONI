@@ -43,8 +43,7 @@ services:
       MINIO_UPDATE: "off"
       # Enforce TLS on inter-service calls via env (Nginx handles external TLS)
       MINIO_BROWSER: "on"
-      # Bind console to localhost only — SSH tunnel required
-      MINIO_BROWSER_REDIRECT_URL: "http://localhost:9001"
+      MINIO_BROWSER_REDIRECT_URL: "https://media.mansoni.ru/console"
     volumes:
       - minio-data:/data
     networks:
@@ -55,7 +54,7 @@ services:
       - "9000"
       - "9001"
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      test: ["CMD", "curl", "-f", "http://minio:9000/minio/health/live"]
       interval: 30s
       timeout: 10s
       retries: 5
@@ -134,7 +133,7 @@ services:
     expose:
       - "3100"
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:3100/api/health"]
+      test: ["CMD", "curl", "-f", "http://media-api:3100/api/health"]
       interval: 15s
       timeout: 5s
       retries: 5
@@ -183,7 +182,7 @@ services:
       media-net:
         ipv4_address: 172.28.0.12
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost/nginx-health"]
+      test: ["CMD", "wget", "-qO-", "http://nginx/nginx-health"]
       interval: 30s
       timeout: 5s
       retries: 3

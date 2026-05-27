@@ -4,7 +4,7 @@
  */
 import { test, expect, Page } from "@playwright/test";
 
-const BASE = "http://localhost:5173";
+const BASE = "https://mansoni.ru";
 
 // Enable dev guest mode to bypass auth
 async function enableGuestMode(page: Page) {

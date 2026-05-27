@@ -35,7 +35,7 @@ declare module 'fastify' {
 }
 
 async function livekitPlugin(app: FastifyInstance): Promise<void> {
-  // Convert ws:// → http:// for the REST API base URL
+  // Convert websocket URL to HTTP API base URL for REST client
   // LiveKit SDK accepts both http and ws URL forms for APIs
   const apiUrl = config.LIVEKIT_URL.replace(/^ws(s?):\/\//, 'http$1://')
 

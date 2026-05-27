@@ -56,7 +56,7 @@ app.use(
 app.use(
   cors({
     origin: (origin, callback) => {
-      const allowed = [env.MANSONI_URL, env.MUSIC_FRONTEND_URL, 'http://localhost:5173', 'http://localhost:3001'].filter(
+      const allowed = [env.MANSONI_URL, env.MUSIC_FRONTEND_URL].filter(
         (value): value is string => Boolean(value),
       );
       if (!origin || allowed.some((value) => origin.startsWith(value))) {
@@ -723,7 +723,7 @@ app.get('/api/search', async (req, res) => {
 
 app.listen(PORT, () => {
   console.log(`Music API running on port ${PORT}`);
-  console.log(`Health: http://localhost:${PORT}/health`);
+  console.log(`Health: https://api.mansoni.ru/music-api/health`);
 });
 
 export default app;

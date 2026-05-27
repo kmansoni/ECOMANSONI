@@ -16,10 +16,10 @@ const secret = makeValidator<string>((value: string) => {
   return value.trim()
 })
 
-// Custom validator: URL with ws:// or wss:// scheme
+// Custom validator: URL with websocket scheme (ws/wss)
 const wsUrl = makeValidator<string>((value: string) => {
   if (!/^wss?:\/\//.test(value)) {
-    throw new Error('Must be a WebSocket URL starting with ws:// or wss://')
+    throw new Error('Must be a WebSocket URL starting with ws or wss scheme')
   }
   return value
 })
@@ -47,13 +47,13 @@ export const config = cleanEnv(process.env, {
   }),
 
   // ── CORS ──────────────────────────────────────────────────────────────────
-  CORS_ORIGINS: originList({ default: ['http://localhost:5173'] }),
+  CORS_ORIGINS: originList({ default: ['https://mansoni.ru'] }),
 
   // ── LiveKit ───────────────────────────────────────────────────────────────
   LIVEKIT_API_KEY: secret(),
   LIVEKIT_API_SECRET: secret(),
   // Internal WS URL (server→server): used by SDK RoomServiceClient
-  LIVEKIT_URL: wsUrl({ default: 'ws://livekit-server:7880' }),
+  LIVEKIT_URL: wsUrl({ default: 'wss://live.mansoni.ru' }),
   // Public WS URL handed to browser clients for connection
   LIVEKIT_PUBLIC_URL: wsUrl({ default: 'wss://live.yourdomain.com' }),
   // HMAC secret for verifying LiveKit webhook payloads

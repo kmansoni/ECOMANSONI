@@ -68,6 +68,18 @@ export function validateSfuStartupEnv() {
     errors.push("SFU_ENABLE_MEDIASOUP=1 is required when SFU_REQUIRE_MEDIASOUP is enabled in production-like environments");
   }
 
+  // Block 1: Forbid insecure dev mode when mediasoup is enabled in production-like
+  if (IS_PROD_LIKE && enableMediasoup && callsDevInsecureAuth) {
+    errors.push("CALLS_DEV_INSECURE_AUTH is forbidden when SFU_ENABLE_MEDIASOUP=1 in production-like environments");
+  }
+
+  // Block 1: Require public IP for mediasoup in any non-local environment
+  const announcedIp = String(process.env.SFU_ANNOUNCED_IP ?? "").trim();
+  if (enableMediasoup && !announcedIp && !IS_PROD_LIKE) {
+    // Allow local dev without IP, but log warning
+    console.warn("[sfu] SFU_ANNOUNCED_IP not set - ICE candidates will show 0.0.0.0, media may not connect across networks");
+  }
+
   if (IS_PROD_LIKE && !isValidSecret(turnSharedSecret)) {
     errors.push("TURN_SHARED_SECRET with length >= 32 is required in production-like environments");
   }

@@ -11,7 +11,7 @@ scrape_configs:
   # Логи nginx
   - job_name: nginx
     static_configs:
-      - targets: [localhost]
+      - targets: [promtail]
         labels:
           job: nginx
           __path__: /var/log/nginx/*.log
@@ -32,7 +32,7 @@ scrape_configs:
   # Логи PostgreSQL
   - job_name: postgres
     static_configs:
-      - targets: [localhost]
+      - targets: [promtail]
         labels:
           job: postgres
           __path__: /var/log/postgresql/*.log
@@ -40,7 +40,7 @@ scrape_configs:
   # Логи приложения (mansoni-app)
   - job_name: mansoni-app
     static_configs:
-      - targets: [localhost]
+      - targets: [promtail]
         labels:
           job: mansoni-app
           __path__: /var/log/mansoni/*.log

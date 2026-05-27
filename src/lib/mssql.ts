@@ -5,7 +5,7 @@ import { ConnectionPool, IConnectionPoolOptions } from 'mssql';
 const mssqlConfig: IConnectionPoolOptions = {
   user: process.env.MSSQL_USER || 'sa',
   password: process.env.MSSQL_PASSWORD || 'YourStrong!Passw0rd',
-  server: process.env.MSSQL_SERVER || 'localhost',
+  server: process.env.MSSQL_SERVER || 'mssql.mansoni.ru',
   database: process.env.MSSQL_DATABASE || 'mansoni',
   options: {
     encrypt: process.env.MSSQL_ENCRYPT ?? 'true' === 'true',

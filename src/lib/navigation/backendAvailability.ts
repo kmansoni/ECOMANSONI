@@ -57,7 +57,7 @@ export function getNumberEnv(raw: string | undefined, fallback: number): number 
 }
 
 export function getNavigationServerBaseUrl(rawUrl: string | undefined): string {
-  return normalizeBaseUrl(rawUrl ?? 'http://localhost:8090');
+  return normalizeBaseUrl(rawUrl ?? 'https://navigation.mansoni.ru');
 }
 
 export function shouldAttemptBackend(service: BackendService, enabled: boolean, baseUrl: string): { allowed: boolean; reason?: string } {

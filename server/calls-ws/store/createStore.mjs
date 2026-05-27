@@ -9,7 +9,7 @@ export async function createStoreFromEnv() {
   const configuredRedisUrl = readOptionalStringEnv("REDIS_URL");
   const redisRequired = process.env.CALLS_REDIS_REQUIRED === "1";
   const allowInmem = process.env.CALLS_ALLOW_INMEM_FALLBACK === "1";
-  const redisUrl = configuredRedisUrl || (!IS_PROD_LIKE ? "redis://127.0.0.1:6379" : "");
+  const redisUrl = configuredRedisUrl || (!IS_PROD_LIKE ? "redis://redis.mansoni.ru:6379" : "");
 
   if (!redisUrl && redisRequired) {
     logger.error(

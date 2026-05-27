@@ -159,6 +159,8 @@ const unansweredCallTimerRef = useRef<number | null>(null);
    /** Ref для функции recovery — заполняется после определения, вызывается из closure в CallMediaEncryption */
    const handleE2eePipeBreakRef = useRef<((info: import('@/lib/e2ee/insertableStreams').PipeBreakInfo) => void) | null>(null);
 
+   const remoteTrackListenerCleanupsRef = useRef<Array<() => void>>([]);
+
    /** trackId → deferred inbound receiver waiting for decryption key */
    const pendingReceiverTransformsRef = useRef<Map<string, {
      receiver: RTCRtpReceiver;
@@ -266,24 +268,17 @@ const unansweredCallTimerRef = useRef<number | null>(null);
   } = useVideoCallSfu({
     onCallEnded: (call) => {
       logger.info("[VideoCallContext] Call ended:", call.id.slice(0, 8));
-      dispatchFsm("CLEANUP_DONE");
-      dispatchFsm("RESET");
       if (activeCallsV2BootstrapCallIdRef.current === call.id) {
         activeCallsV2BootstrapCallIdRef.current = null;
       }
-      if (callsWsCallIdRef.current === call.id) {
-        callsWsCallIdRef.current = null;
-        callsWsRoomRef.current = null;
-        lastSnapshotRoomVersionRef.current = -1;
-        callsWsMediaRoomRef.current = null;
-        callsWsMediaBootstrapInFlightRoomRef.current = null;
-        callsWsSendTransportRef.current = null;
-        callsWsRecvTransportRef.current = null;
-      }
+      // Teardown first — WS/SFU must be closed before FSM resets to idle,
+      // otherwise in-flight WS events land on idle FSM and cause invalid transitions.
       closeCallsV2();
       setPendingIncomingCall(null);
       setPendingCalleeProfile(null);
-      setIsCallUiActive(false); // Release UI-lock on call end
+      setIsCallUiActive(false);
+      dispatchFsm("CLEANUP_DONE");
+      dispatchFsm("RESET");
     },
     onRetryMediaBootstrap: async (call, stream) => {
       await bootstrapCallsV2Media(call, stream);
@@ -356,6 +351,8 @@ const unansweredCallTimerRef = useRef<number | null>(null);
       sfuManagerRef.current.close();
       sfuManagerRef.current = null;
     }
+    for (const cleanup of remoteTrackListenerCleanupsRef.current) cleanup();
+    remoteTrackListenerCleanupsRef.current = [];
     localProducerIdsRef.current = { audio: null, video: null };
     if (consumerAddedUnsubRef.current) {
       consumerAddedUnsubRef.current();
@@ -767,10 +764,19 @@ dispatchFsm,
 
         const consumerTrack = consumer.track;
         if (consumerTrack) {
-          const onTrackChanged = () => rebuildRemoteStream();
+          const expectedCallId = callsWsCallIdRef.current;
+          const onTrackChanged = () => {
+            if (callsWsCallIdRef.current !== expectedCallId) return;
+            rebuildRemoteStream();
+          };
           consumerTrack.addEventListener("ended", onTrackChanged);
           consumerTrack.addEventListener("mute", onTrackChanged);
           consumerTrack.addEventListener("unmute", onTrackChanged);
+          remoteTrackListenerCleanupsRef.current.push(() => {
+            consumerTrack.removeEventListener("ended", onTrackChanged);
+            consumerTrack.removeEventListener("mute", onTrackChanged);
+            consumerTrack.removeEventListener("unmute", onTrackChanged);
+          });
         }
 
         if (REQUIRE_SFRAME && CallMediaEncryption.isSupported()) {
@@ -808,6 +814,7 @@ dispatchFsm,
         }
 
         return client.consumerResume({ roomId, consumerId: consumer.id }).then(() => {
+          if (callsWsMediaRoomRef.current !== roomId) return;
           rebuildRemoteStream();
         });
       }).catch((err) => {
@@ -928,7 +935,9 @@ dispatchFsm,
 
   // ─── FSM drift detection (legacy vs FSM) ───────────────────────────────────
   useEffect(() => {
-    if (legacyEngineActive) return; // FSM doesn't track legacy P2P
+    if (legacyEngineActive) return;
+    // After teardown FSM is idle/ended — legacy status lags behind; not a real drift.
+    if (callState === "idle" || callState === "ended") return;
     const expected = fromLegacyStatus(status, connectionState);
     if (expected !== callState) {
       logger.warn("[CallFSM:drift]", { expected, actual: callState, status, connectionState });
@@ -1387,6 +1396,8 @@ dispatchFsm,
        const stream = localStream;
        if (!call || !stream) return;
 
+       if (callsWsCallIdRef.current !== call.id) return;
+
        const currentAttempts = mediaBootstrapRetryAttemptsRef.current.get(call.id) ?? 0;
        if (currentAttempts >= MEDIA_BOOTSTRAP_MAX_RETRIES) {
          window.clearInterval(retryTimer);
@@ -1408,8 +1419,6 @@ dispatchFsm,
          });
          return;
        }
-
-       if (callsWsCallIdRef.current !== call.id) return;
        if (!callsWsRoomRef.current) return;
 
        // Check if media bootstrap has completed successfully instead of comparing room IDs

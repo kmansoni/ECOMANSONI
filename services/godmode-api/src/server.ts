@@ -132,7 +132,7 @@ const server = app.listen(PORT, () => {
     '  ║  ULTRAPLINIAN + CONSORTIUM v2.0.0    ║',
     '  ╚══════════════════════════════════════╝',
     '',
-    `  → http://localhost:${PORT}`,
+    `  → https://api.mansoni.ru/godmode-api`,
     `  → Models: ${getModelsForTier('ultra').length} across 5 tiers`,
     `  → OpenRouter: ${process.env.OPENROUTER_API_KEY ? '✓' : '✗ (set OPENROUTER_API_KEY)'}`,
     `  → Auth: ${process.env.GODMODE_API_KEY || process.env.GODMODE_API_KEYS ? 'Bearer token' : 'open'}`,

@@ -10,6 +10,7 @@ import { toast } from "sonner";
 import { getLastChatSchemaProbe } from "@/lib/chat/schemaProbe";
 import { isTableMissingError } from "@/lib/utils/isTableMissingError";
 import { uploadMedia } from "@/lib/mediaUpload";
+import { requireClientMsgId } from "@/lib/chat/clientMsgId";
 import { buildChatBodyEnvelope, sendMessageV1 } from "@/lib/chat/sendMessageV1";
 import { parseJsonRecord } from "@/lib/chat/decode";
 import { sanitizeReceivedText } from "@/lib/text-encoding";
@@ -754,7 +755,6 @@ export function useMessages(conversationId: string | null) {
   const recoveryPolicy = getChatV11RecoveryPolicyConfig();
   const pollInFlightRef = useRef(false);
   const pendingLocalByClientIdRef = useRef<Map<string, ChatMessage>>(new Map());
-  const inFlightFingerprintRef = useRef<Set<string>>(new Set());
   const lastRealtimeEventAtRef = useRef<number>(Date.now());
 
   const deliveredMaxSeqRef = useRef<number>(0);
@@ -1342,11 +1342,7 @@ export function useMessages(conversationId: string | null) {
       });
     }
 
-    const clientMsgId = opts?.clientMsgId || crypto.randomUUID();
-    const fingerprint = `${conversationId}:${user.id}:${normalizedContent}`;
-
-    if (inFlightFingerprintRef.current.has(fingerprint)) return;
-    inFlightFingerprintRef.current.add(fingerprint);
+    const clientMsgId = requireClientMsgId(opts?.clientMsgId ?? crypto.randomUUID());
 
     let v11ClientWriteSeq: number | null = null;
 
@@ -1528,8 +1524,6 @@ export function useMessages(conversationId: string | null) {
         clearPendingReceiptWatch(v11ClientWriteSeq);
       }
       throw error;
-    } finally {
-      inFlightFingerprintRef.current.delete(fingerprint);
     }
   };
 
@@ -1563,7 +1557,7 @@ export function useMessages(conversationId: string | null) {
       const uploadResult = await uploadMedia(file, { bucket: 'chat-media' });
       const publicUrl = uploadResult.url;
 
-      const clientMsgId = crypto.randomUUID();
+      const clientMsgId = requireClientMsgId(crypto.randomUUID());
       const content = opts?.caption
         ? opts.caption
         : mediaType === 'voice'

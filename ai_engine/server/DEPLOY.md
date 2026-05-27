@@ -10,7 +10,7 @@ pip install -r ai_engine/server/requirements.txt
 ARIA_API_KEY=<SET_STRONG_RANDOM_KEY> python -m uvicorn ai_engine.server.main:app --host 0.0.0.0 --port 8000
 
 # Проверить
-curl http://localhost:8000/health
+curl https://api.mansoni.ru/health
 ```
 
 ## Деплой на Timeweb (mansoni.ru)
@@ -47,7 +47,7 @@ WorkingDirectory=/opt/mansoni
 Environment=PYTHONPATH=/opt/mansoni
 Environment=ARIA_API_KEY=<SET_STRONG_RANDOM_KEY>
 Environment=PORT=8000
-ExecStart=/usr/bin/python3 -m uvicorn ai_engine.server.main:app --host 127.0.0.1 --port 8000 --workers 2
+ExecStart=/usr/bin/python3 -m uvicorn ai_engine.server.main:app --host 0.0.0.0 --port 8000 --workers 2
 Restart=always
 RestartSec=5
 
@@ -77,7 +77,7 @@ server {
     ssl_certificate_key /etc/letsencrypt/live/api.mansoni.ru/privkey.pem;
 
     location / {
-        proxy_pass http://127.0.0.1:8000;
+      proxy_pass http://aria-ai:8000;
         proxy_http_version 1.1;
         proxy_set_header Upgrade $http_upgrade;
         proxy_set_header Connection 'upgrade';

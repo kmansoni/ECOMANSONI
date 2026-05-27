@@ -188,7 +188,7 @@ export function authSupabaseJwt(requiredRoles?: Role[]) {
  * `req.ip` в Express зависит от настройки `trust proxy`:
  *
  *   БЕЗ `app.set('trust proxy', ...)`:
- *     req.ip = IP TCP-соединения (обычно 127.0.0.1 за nginx/k8s).
+ *     req.ip = IP TCP-соединения (обычно loopback-адрес за nginx/k8s).
  *     Если ADMIN_IP_ALLOWLIST содержит реальные IP — проверка ВСЕГДА упадёт.
  *
  *   С `app.set('trust proxy', 1)`:

@@ -36,7 +36,7 @@ python scripts/process_osm.py data/osm/russia.pbf --graph
 
 # Optional: Save to PostgreSQL
 python scripts/process_osm.py data/osm/russia.pbf --db \
-  --host localhost --dbname osm --user postgres --password secret
+  --host postgres.mansoni.ru --dbname osm --user postgres --password secret
 ```
 
 ### 3. Generate Tiles

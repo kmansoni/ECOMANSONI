@@ -22,7 +22,7 @@ Environment=ENV=production
 Environment=SFU_PORT=4443
 Environment=PORT=4443
 Environment=REGION=primary
-Environment=REDIS_URL=redis://127.0.0.1:6379
+Environment=REDIS_URL=redis://redis.mansoni.ru:6379
 Environment=SFU_ENABLE_MEDIASOUP=1
 Environment=SFU_REQUIRE_MEDIASOUP=1
 Environment=SFU_INSECURE_DEV_MODE=0

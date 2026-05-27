@@ -6,7 +6,7 @@ export default defineConfig({
   retries: 0,
   reporter: "line",
   use: {
-    baseURL: "http://127.0.0.1:8080",
+    baseURL: "https://mansoni.ru",
     trace: "retain-on-failure",
     screenshot: "only-on-failure",
     video: "retain-on-failure",
@@ -19,7 +19,7 @@ export default defineConfig({
   ],
   webServer: {
     command: "npm run dev:8080",
-    url: "http://127.0.0.1:8080",
+    url: "https://mansoni.ru",
     reuseExistingServer: true,
     timeout: 120_000,
   },

@@ -93,7 +93,7 @@ const DEFAULT_PAGE_SIZE = 20;
 // ---------------------------------------------------------------------------
 
 serve(async (req: Request): Promise<Response> => {
-  // Shared CORS policy keeps all Edge Functions aligned (localhost/127.0.0.1 + configured origins).
+  // Shared CORS policy keeps all Edge Functions aligned with configured origins.
   const corsPreflight = handleCors(req);
   if (corsPreflight) return corsPreflight;
 

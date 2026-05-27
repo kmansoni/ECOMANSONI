@@ -1,3 +1,5 @@
+/// <reference path="../../types/web-speech.d.ts" />
+
 /**
  * src/lib/audio/speechToText.ts — Сервис транскрипции голосовых сообщений.
  *

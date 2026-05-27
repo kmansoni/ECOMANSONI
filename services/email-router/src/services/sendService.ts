@@ -131,7 +131,7 @@ export class SendService {
       },
     };
 
-    // Auth is optional — in relay setups (Postfix on localhost) no auth needed
+    // Auth is optional — in relay setups (Postfix in local network) no auth needed
     if (env.SMTP_USER) {
       transportOpts.auth = { user: env.SMTP_USER, pass: env.SMTP_PASS };
     }
@@ -188,7 +188,7 @@ export class SendService {
           const env = getEnv();
           // RFC 2822 §3.6.4: Message-ID must be globally unique.
           // Format: <uuid@sending-domain> — domain must match SPF/DKIM domain.
-          // Using os.hostname() or 127.0.0.1 here would produce invalid Message-ID
+          // Using os.hostname() or loopback-style host here would produce invalid Message-ID
           // that triggers spam filters at iCloud/Gmail.
           const messageId = `<${randomUUID()}@${env.MAIL_DOMAIN}>`;
 

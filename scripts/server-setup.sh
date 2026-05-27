@@ -138,7 +138,7 @@ sudo cp /etc/postgresql/15/main/pg_hba.conf /etc/postgresql/15/main/pg_hba.conf.
 sudo tee -a /etc/postgresql/15/main/postgresql.conf > /dev/null <<EOF
 
 # ====== Mansoni Custom Settings ======
-listen_addresses = 'localhost'
+listen_addresses = 'postgres.mansoni.ru'
 max_connections = 200
 shared_buffers = 2GB
 effective_cache_size = 6GB
@@ -153,7 +153,7 @@ sudo tee -a /etc/postgresql/15/main/pg_hba.conf > /dev/null <<EOF
 
 # ====== Mansoni Access Rules ======
 local   $DB_NAME        $DB_USER                                scram-sha-256
-host    $DB_NAME        $DB_USER        127.0.0.1/32            scram-sha-256
+host    $DB_NAME        $DB_USER        10.0.0.0/8              scram-sha-256
 host    $DB_NAME        $DB_USER        ::1/128                 scram-sha-256
 EOF
 
@@ -185,13 +185,13 @@ log_info "Шаг 7/11: Настройка PostgREST..."
 sudo mkdir -p /etc/postgrest
 
 sudo tee /etc/postgrest/mansoni.conf > /dev/null <<EOF
-db-uri = "postgres://$DB_USER:$DB_PASSWORD@localhost:5432/$DB_NAME"
+db-uri = "postgres://$DB_USER:$DB_PASSWORD@postgres.mansoni.ru:5432/$DB_NAME"
 db-schemas = "public"
 db-anon-role = "$DB_USER"
 db-pool = 10
 db-pool-timeout = 10
 
-server-host = "127.0.0.1"
+server-host = "api.mansoni.ru"
 server-port = 3000
 
 jwt-secret = "$JWT_SECRET"
@@ -250,7 +250,7 @@ sudo apt install -y nginx
 # Настройка виртуального хоста
 sudo tee /etc/nginx/sites-available/mansoni-api > /dev/null <<'EOF'
 upstream postgrest {
-    server 127.0.0.1:3000;
+    server postgrest.mansoni.ru:3000;
     keepalive 64;
 }
 
@@ -400,14 +400,14 @@ echo
 log_info "📊 Информация для подключения:"
 echo
 echo "  База данных:"
-echo "    Host:     localhost"
+echo "    Host:     postgres.mansoni.ru"
 echo "    Port:     5432"
 echo "    Database: $DB_NAME"
 echo "    User:     $DB_USER"
 echo "    Password: [установлен]"
 echo
 echo "  PostgREST API:"
-echo "    Internal: http://127.0.0.1:3000"
+echo "    Internal: https://api.mansoni.ru"
 echo "    External: http://$(curl -s ifconfig.me):80"
 echo
 echo "  JWT Secret (сохрани в .env):"
@@ -422,7 +422,7 @@ echo "  2. Примени миграции:"
 echo "     PGPASSWORD='$DB_PASSWORD' psql -U $DB_USER -d $DB_NAME -f /tmp/all-migrations.sql"
 echo
 echo "  3. Проверь API:"
-echo "     curl http://localhost:3000/"
+echo "     curl https://api.mansoni.ru/"
 echo
 echo "  4. Проверь SSL:"
 echo "     curl -I https://$SSL_DOMAIN/health"

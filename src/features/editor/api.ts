@@ -57,7 +57,7 @@ export class ApiError extends Error {
 
 const EDITOR_API_URL =
   (import.meta as unknown as { env?: Record<string, string> }).env?.VITE_EDITOR_API_URL ||
-  'http://localhost:3002';
+  'https://editor-api.mansoni.ru';
 
 /** Кэшированный токен — переиспользуется до тех пор, пока сессия не сменится. */
 let _cachedToken: string | null = null;

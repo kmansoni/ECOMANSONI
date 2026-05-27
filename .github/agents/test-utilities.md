@@ -195,7 +195,7 @@ import { defineConfig } from 'cypress';
 
 export default defineConfig({
   e2e: {
-    baseUrl: 'http://localhost:3000',
+    baseUrl: 'https://mansoni.ru',
     setupNodeEvents(on, config) {
       on('task', {
         seedDatabase: require('./cypress/tasks/seed'),
@@ -277,7 +277,7 @@ export const options = {
 };
 
 export default function () {
-  const res = http.post('http://localhost:3000/api/messages', JSON.stringify({
+  const res = http.post('https://api.mansoni.ru/api/messages', JSON.stringify({
     chatId: 'test-chat',
     content: 'Test message',
   }));

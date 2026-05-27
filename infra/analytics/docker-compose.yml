@@ -18,7 +18,7 @@ services:
       - --kafka-addr
       - PLAINTEXT://0.0.0.0:9092
       - --advertise-kafka-addr
-      - PLAINTEXT://localhost:9092
+      - PLAINTEXT://redpanda.mansoni.ru:9092
       - --pandaproxy-addr
       - 0.0.0.0:8082
     ports:

@@ -122,7 +122,7 @@ final class OfflineTileManager: ObservableObject {
     }
     
     private func fetchTileFromLocalServer(x: Int, y: Int, z: Int) -> Data? {
-        let urlString = "http://localhost:8080/tiles/\(z)/\(x)/\(y).png"
+        let urlString = "https://navigation.mansoni.ru/tiles/\(z)/\(x)/\(y).png"
         
         guard let url = URL(string: urlString) else { return nil }
         

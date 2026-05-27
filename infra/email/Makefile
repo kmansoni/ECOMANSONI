@@ -14,10 +14,10 @@ help: ## Show commands
 up: ## Start all services
 	$(COMPOSE) up -d
 	@echo "✅ Email platform started"
-	@echo "   Router:     http://localhost:$${EMAIL_ROUTER_PORT:-3100}"
-	@echo "   Grafana:    http://localhost:$${GRAFANA_PORT:-3200}"
-	@echo "   Prometheus: http://localhost:$${PROMETHEUS_PORT:-9099}"
-	@echo "   Rspamd UI:  http://localhost:$${RSPAMD_UI_PORT:-11334}"
+	@echo "   Router:     https://email-router.mansoni.ru"
+	@echo "   Grafana:    https://monitoring.mansoni.ru/grafana"
+	@echo "   Prometheus: https://monitoring.mansoni.ru/prometheus"
+	@echo "   Rspamd UI:  https://mail-admin.mansoni.ru/rspamd"
 
 up-dev: ## Start core services only (no observability)
 	$(COMPOSE) up -d postgres redis postfix opendkim opendmarc rspamd email-router
@@ -44,13 +44,13 @@ status: ## Show container status
 # ─── Health & Checks ─────────────────────
 
 health: ## Check email-router health
-	@curl -sf http://localhost:$${EMAIL_ROUTER_PORT:-3100}/health | python3 -m json.tool || echo "❌ Health check failed"
+	@curl -sf https://email-router.mansoni.ru/health | python3 -m json.tool || echo "❌ Health check failed"
 
 ready: ## Check email-router readiness
-	@curl -sf http://localhost:$${EMAIL_ROUTER_PORT:-3100}/ready | python3 -m json.tool || echo "❌ Readiness check failed"
+	@curl -sf https://email-router.mansoni.ru/ready | python3 -m json.tool || echo "❌ Readiness check failed"
 
 metrics: ## Fetch Prometheus metrics
-	@curl -sf http://localhost:$${EMAIL_ROUTER_PORT:-3100}/metrics | head -50
+	@curl -sf https://email-router.mansoni.ru/metrics | head -50
 
 # ─── Build & Deploy ─────────────────────
 
@@ -79,15 +79,15 @@ dkim-gen: ## Generate DKIM keys
 
 test-send: ## Send test email via API
 	@echo "Sending test email..."
-	@curl -sf -X POST http://localhost:$${EMAIL_ROUTER_PORT:-3100}/email/send \
+	@curl -sf -X POST https://email-router.mansoni.ru/email/send \
 		-H "Content-Type: application/json" \
 		-H "Authorization: Bearer YOUR_JWT_TOKEN" \
 		-d '{"to":[{"email":"test@example.com"}],"subject":"Test Email","text":"Hello from email-router!","idempotencyKey":"test-001"}' \
 		| python3 -m json.tool
 
 test-health: ## Run full health check suite
-	@echo "=== Health ===" && curl -sf http://localhost:3100/health | python3 -m json.tool
-	@echo "=== Ready ===" && curl -sf http://localhost:3100/ready | python3 -m json.tool
+	@echo "=== Health ===" && curl -sf https://email-router.mansoni.ru/health | python3 -m json.tool
+	@echo "=== Ready ===" && curl -sf https://email-router.mansoni.ru/ready | python3 -m json.tool
 	@echo "=== Queue Stats ===" && echo "(requires admin JWT)"
 
 # ─── Router Development ─────────────────────

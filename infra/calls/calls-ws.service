@@ -18,8 +18,8 @@ EnvironmentFile=-/opt/mansoni/app/.env
 Environment=NODE_ENV=production
 Environment=ENV=production
 Environment=CALLS_WS_PORT=8787
-Environment=REDIS_URL=redis://127.0.0.1:6379
-Environment=CALLS_WS_TRUSTED_PROXIES=127.0.0.1
+Environment=REDIS_URL=redis://redis.mansoni.ru:6379
+Environment=CALLS_WS_TRUSTED_PROXIES=10.0.0.0/8,172.16.0.0/12,192.168.0.0/16
 
 ExecStart=/usr/bin/node server/calls-ws/index.mjs
 

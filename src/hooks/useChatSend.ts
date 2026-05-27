@@ -2,6 +2,7 @@ import { useRef, useCallback } from "react";
 import { toast } from "sonner";
 import { logger } from "@/lib/logger";
 import { isSingleEmoji } from "@/components/chat/emojiUtils";
+import { requireClientMsgId } from "@/lib/chat/clientMsgId";
 import { buildChatBodyEnvelope, sendMessageV1 } from "@/lib/chat/sendMessageV1";
 import { getHashtagBlockedToastPayload } from "@/lib/hashtagModeration";
 import { getChatSendErrorToast } from "@/lib/chat/sendError";
@@ -58,7 +59,6 @@ export function useChatSend({
   encryptionEnabled, encryptContent, enrichMessageWithDisappear,
   setInlineBotTrigger, setMentionTrigger, setMentionActiveIndex, typingOnKeyDown,
 }: UseChatSendParams) {
-  const sendingFingerprintsRef = useRef(new Set<string>());
   const draftClientMsgIdRef = useRef<string>(crypto.randomUUID());
   const lastDraftTrimmedRef = useRef<string>("");
   const pendingEffectRef = useRef<MessageEffectType | null>(null);
@@ -107,14 +107,10 @@ export function useChatSend({
       return;
     }
 
-    const fingerprint = `${conversationId}:${trimmed}`;
-    if (sendingFingerprintsRef.current.has(fingerprint)) return;
-
     const reply = replyTo;
     const withReply = reply ? `↩️ Ответ на сообщение:\n${reply.preview}\n\n${trimmed}` : trimmed;
-    const clientMsgId = draftClientMsgIdRef.current;
+    const clientMsgId = requireClientMsgId(draftClientMsgIdRef.current);
 
-    sendingFingerprintsRef.current.add(fingerprint);
     setIsSending(true);
 
     setInputText("");
@@ -132,7 +128,6 @@ export function useChatSend({
       if (encryptionEnabled) {
         const encrypted = await encryptContent(withReply);
         if (!encrypted) {
-          sendingFingerprintsRef.current.delete(fingerprint);
           setIsSending(false);
           setInputText(trimmed);
           setReplyTo(reply);
@@ -237,7 +232,6 @@ export function useChatSend({
         });
       }
     } finally {
-      sendingFingerprintsRef.current.delete(fingerprint);
       setIsSending(false);
     }
   };
@@ -250,8 +244,9 @@ export function useChatSend({
   const handleStickerSend = useCallback(async (fileUrl: string) => {
     if (!conversationId || !user) return;
     const envelope = buildChatBodyEnvelope({ kind: 'sticker', media_url: fileUrl });
+    const clientMsgId = requireClientMsgId(crypto.randomUUID());
     try {
-      await sendMessageV1({ conversationId, clientMsgId: crypto.randomUUID(), body: envelope });
+      await sendMessageV1({ conversationId, clientMsgId, body: envelope });
     } catch (e) {
       toast.error("Не удалось отправить");
       logger.error("chat: send sticker failed", { conversationId, error: e });
@@ -261,8 +256,9 @@ export function useChatSend({
   const handleGifSend = useCallback(async (gifUrl: string) => {
     if (!conversationId || !user) return;
     const envelope = buildChatBodyEnvelope({ kind: 'gif', media_url: gifUrl });
+    const clientMsgId = requireClientMsgId(crypto.randomUUID());
     try {
-      await sendMessageV1({ conversationId, clientMsgId: crypto.randomUUID(), body: envelope });
+      await sendMessageV1({ conversationId, clientMsgId, body: envelope });
     } catch (e) {
       toast.error("Не удалось отправить");
       logger.error("chat: send gif failed", { conversationId, error: e });

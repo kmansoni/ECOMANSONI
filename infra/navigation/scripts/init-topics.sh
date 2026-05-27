@@ -5,7 +5,7 @@
 #
 # Usage:
 #   ./scripts/init-topics.sh [BROKER_ADDRESS]
-#   Default broker: localhost:9092
+#   Default broker: redpanda.mansoni.ru:9092
 #
 # Topic format: "name:partitions:retention_hours"
 # Partitions: sized for ~10M concurrent users with 1 Hz location updates.
@@ -17,7 +17,7 @@
 
 set -euo pipefail
 
-BROKER="${1:-localhost:9092}"
+BROKER="${1:-redpanda.mansoni.ru:9092}"
 REPLICATION_FACTOR="${REPLICATION_FACTOR:-1}"
 
 echo "============================================================"

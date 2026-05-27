@@ -516,18 +516,11 @@ export function useGroupVideoCall(roomId: string) {
       realtimeChannelRef.current = channel;
 
       // 4. WS подключение к SFU
-      // В проде endpoint должен приходить из env; для localhost разрешаем auto-derived dev URL.
+      // Endpoint must be configured explicitly through env.
       const configuredSfuUrl = String(import.meta.env.VITE_SFU_WS_URL ?? "").trim();
-      const isLocalDevHost =
-        typeof window !== "undefined" &&
-        (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1");
-      const derivedDevUrl =
-        typeof window !== "undefined"
-          ? `${window.location.protocol === "https:" ? "wss" : "ws"}://${window.location.host}`
-          : "";
-      const sfuUrl = configuredSfuUrl || (isLocalDevHost ? derivedDevUrl : "");
+      const sfuUrl = configuredSfuUrl;
       if (!sfuUrl) {
-        throw new Error("VITE_SFU_WS_URL is required for group calls outside localhost dev");
+        throw new Error("VITE_SFU_WS_URL is required for group calls");
       }
 
       const { data: sessionData } = await supabase.auth.getSession();

@@ -42,7 +42,7 @@ if [ ! -f .jwt_secret ]; then
 fi
 
 JWT_SECRET_VALUE="$(cat .jwt_secret)"
-export DATABASE_URL="postgresql://${DB_USER}:${DB_PASSWORD}@127.0.0.1:5432/${DB_NAME}"
+export DATABASE_URL="postgresql://${DB_USER}:${DB_PASSWORD}@postgres.mansoni.ru:5432/${DB_NAME}"
 export JWT_SECRET="${JWT_SECRET_VALUE}"
 export PHONE_AUTH_PORT="${PORT}"
 export NODE_ENV="production"
@@ -57,4 +57,4 @@ fi
 
 pm2 save || true
 sleep 2
-curl -fsS "http://127.0.0.1:${PORT}/health"
+curl -fsS "https://api.mansoni.ru/health"

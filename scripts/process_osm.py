@@ -369,7 +369,7 @@ def main():
     parser.add_argument('pbf_file', help='Path to PBF file')
     parser.add_argument('--output', default='data/osm/processed', help='Output directory')
     parser.add_argument('--db', action='store_true', help='Save to PostgreSQL')
-    parser.add_argument('--host', default='localhost', help='PostgreSQL host')
+    parser.add_argument('--host', default='postgres.mansoni.ru', help='PostgreSQL host')
     parser.add_argument('--port', default=5432, type=int, help='PostgreSQL port')
     parser.add_argument('--dbname', default='osm', help='Database name')
     parser.add_argument('--user', default='postgres', help='Database user')

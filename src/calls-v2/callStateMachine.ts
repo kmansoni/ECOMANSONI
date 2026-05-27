@@ -7,22 +7,17 @@
  * Design:
  * - Each state has an explicit list of valid transitions.
  * - `transition()` returns new state on valid input, throws on invalid.
- * - CALL_ENGINE_MODE gates whether legacy P2P fallback is allowed.
+ * - Single-engine mode: SFU only (legacy P2P fallback disabled).
  */
 
 // ─── Call engine mode ──────────────────────────────────────────────────────────
-export type CallEngineMode = "sfu_only" | "compatibility";
-
-const CALL_ENGINE_MODE_RAW = String(
-  (typeof import.meta !== "undefined" && import.meta.env?.VITE_CALL_ENGINE_MODE) ?? ""
-).trim().toLowerCase();
+export type CallEngineMode = "sfu_only";
 
 /**
- * Production default: sfu_only.
- * "compatibility" allows legacy P2P fallback for callee when caller has no SFU room hints.
+ * Production and development: strict SFU-only call engine.
+ * Legacy P2P fallback is intentionally disabled to avoid split-brain call behavior.
  */
-export const CALL_ENGINE_MODE: CallEngineMode =
-  CALL_ENGINE_MODE_RAW === "compatibility" ? "compatibility" : "sfu_only";
+export const CALL_ENGINE_MODE: CallEngineMode = "sfu_only";
 
 // ─── Call states ───────────────────────────────────────────────────────────────
 export type CallState =

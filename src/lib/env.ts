@@ -34,7 +34,7 @@ interface ImportMeta {
  */
 export const ENV = {
   // Auth Configuration
-  phoneAuthApiUrl: import.meta.env.VITE_PHONE_AUTH_API_URL || 'http://localhost:3001',
+  phoneAuthApiUrl: import.meta.env.VITE_PHONE_AUTH_API_URL || 'https://api.mansoni.ru/phone-auth',
   phoneAuthFunctionUrl: (import.meta as any).env?.VITE_PHONE_AUTH_FUNCTION_URL || '',
   requireSupabaseEnv: ((import.meta as any).env?.VITE_REQUIRE_SUPABASE_ENV || 'false') === 'true',
   supabaseUrl: import.meta.env.VITE_SUPABASE_URL || '',

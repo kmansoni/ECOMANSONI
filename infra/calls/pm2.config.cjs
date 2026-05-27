@@ -33,8 +33,8 @@ module.exports = {
         NODE_ENV: 'production',
         ENV: 'production',
         CALLS_WS_PORT: '8787',
-        REDIS_URL: 'redis://127.0.0.1:6379',
-        CALLS_WS_TRUSTED_PROXIES: '127.0.0.1',
+        REDIS_URL: 'redis://redis.mansoni.ru:6379',
+        CALLS_WS_TRUSTED_PROXIES: '10.0.0.0/8,172.16.0.0/12,192.168.0.0/16',
       },
 
       // Logging
@@ -69,7 +69,7 @@ module.exports = {
         SFU_PORT: '4443',
         PORT: '4443',
         REGION: 'primary',
-        REDIS_URL: 'redis://127.0.0.1:6379',
+        REDIS_URL: 'redis://redis.mansoni.ru:6379',
         SFU_ENABLE_MEDIASOUP: '1',
         SFU_REQUIRE_MEDIASOUP: '1',
         SFU_INSECURE_DEV_MODE: '0',

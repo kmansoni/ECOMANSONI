@@ -105,12 +105,7 @@ function isProductionEnv(): boolean {
       Deno.env.get("NODE_ENV") ??
       ""
   ).toLowerCase();
-  if (env === "prod" || env === "production") return true;
-
-  const supabaseUrl = (Deno.env.get("SUPABASE_URL") ?? "").toLowerCase();
-  if (!supabaseUrl) return true;
-  if (supabaseUrl.includes("localhost") || supabaseUrl.includes("127.0.0.1")) return false;
-  return true;
+  return env === "prod" || env === "production";
 }
 
 function base64FromArrayBuffer(buf: ArrayBuffer): string {

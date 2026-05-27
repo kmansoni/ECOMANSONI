@@ -19,5 +19,5 @@
     "network"
   ],
   "cdnUrl": "https://cdn.mansoni.com/modules/music.zip",
-  "fallbackUrl": "http://localhost:3080/modules/music.zip"
+  "fallbackUrl": "https://api.mansoni.ru/modules/music.zip"
 }

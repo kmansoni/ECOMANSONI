@@ -4,7 +4,6 @@ interface ImportMetaEnv {
   readonly VITE_SUPABASE_URL: string;
   readonly VITE_SUPABASE_PUBLISHABLE_KEY: string;
   readonly VITE_CALLS_V2_ENABLED: string;
-  readonly VITE_CALLS_V2_WS_URL: string;
   readonly VITE_CALLS_V2_WS_URLS: string;
   readonly VITE_CALLS_V2_REKEY_INTERVAL_MS: string;
   readonly VITE_CALLS_FRAME_E2EE_ADVERTISE_SFRAME: string;

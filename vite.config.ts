@@ -19,7 +19,7 @@ export default defineConfig(({ mode }) => ({
     },
     proxy: mode === "development" ? {
       "/functions/v1": {
-        target: process.env.VITE_SUPABASE_URL || "http://127.0.0.1:54321",
+        target: process.env.VITE_SUPABASE_URL || "https://lfkbgnbjxskspsownvjm.supabase.co",
         changeOrigin: true,
         secure: true,
       },

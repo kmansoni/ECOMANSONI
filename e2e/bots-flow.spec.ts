@@ -9,13 +9,13 @@
 import { test, expect, Page } from "@playwright/test";
 import { createClient } from "@supabase/supabase-js";
 
-const BASE = "http://localhost:5173";
+const BASE = "https://mansoni.ru";
 
 // ── Supabase helpers ──────────────────────────────────────────────────────────
 
 function getSupabaseClient(page: Page) {
   return createClient(
-    process.env.SUPABASE_URL || "http://127.0.0.1:54321",
+    process.env.SUPABASE_URL || "https://lfkbgnbjxskspsownvjm.supabase.co",
     process.env.SUPABASE_ANON_KEY || "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1hbnNvbmkiLCJpYXQiOjE2OTk5OTk5OTksImV4cCI6MjAyMTQ3NjAwOX0.fake-key-for-testing"
   );
 }

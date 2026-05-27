@@ -13,12 +13,9 @@ import type { VideoCall } from "@/hooks/useVideoCallSfu";
 import type { PipeBreakInfo } from "@/lib/e2ee/insertableStreams";
 import {
   CALLS_V2_ENABLED,
-  CALLS_V2_WS_URL,
-  CALLS_V2_WS_URLS,
+  CALLS_V2_ENDPOINTS,
   REKEY_INTERVAL_MS,
   REQUIRE_SFRAME,
-  expandWsEndpoints,
-  isLocalEndpoint,
   hasInsertableStreamsSupport,
   extractRouterCapsFromJoinPayload,
 } from "./videoCallProvider.helpers";
@@ -88,6 +85,7 @@ export function useCallsV2Bootstrap({
   lastCallsBootstrapErrorRef,
   producerPeerKeyRef,
   peerUserIdByDeviceIdRef,
+  pendingProducersToConsumeRef,
   handleE2eePipeBreakRef,
   producerAddedUnsubRef,
   isCallStillActiveForBootstrap,
@@ -115,7 +113,7 @@ export function useCallsV2Bootstrap({
 
   const ensureCallsV2Connected = useCallback(async (): Promise<CallsWsClient | null> => {
     if (!CALLS_V2_ENABLED || !user) return null;
-    if (!CALLS_V2_WS_URL && CALLS_V2_WS_URLS.length === 0) {
+    if (CALLS_V2_ENDPOINTS.length === 0) {
       logger.warn("[VideoCallContext] calls-v2 disabled: no WS endpoint configured");
       return null;
     }
@@ -153,16 +151,11 @@ export function useCallsV2Bootstrap({
       callsWsRef.current = null;
     }
 
-    const rawEndpoints = [CALLS_V2_WS_URL, ...CALLS_V2_WS_URLS].filter((value): value is string => Boolean(value));
-    const endpoints = expandWsEndpoints(rawEndpoints);
-    if (endpoints.length === 0) {
-      logger.warn("[VideoCallContext] calls-v2 disabled: WS endpoints normalized to empty", { rawEndpoints });
-      return null;
-    }
+    const endpoints = CALLS_V2_ENDPOINTS;
 
     await fetchTurnIceServers();
 
-    const requireWss = !import.meta.env.DEV && !endpoints.some(isLocalEndpoint);
+    const requireWss = true;
     logger.info("[VideoCallContext] calls-v2 connect:start", {
       endpointCount: endpoints.length,
       firstEndpoint: endpoints[0],
@@ -284,7 +277,7 @@ export function useCallsV2Bootstrap({
   const bootstrapCallsV2Room = useCallback(
     async (call: VideoCall, role: "caller" | "callee") => {
       if (!CALLS_V2_ENABLED || !user) return false;
-      if (!CALLS_V2_WS_URL && CALLS_V2_WS_URLS.length === 0) return false;
+      if (CALLS_V2_ENDPOINTS.length === 0) return false;
 
       const callId = call.id;
       if (callsWsCallIdRef.current === callId && callsWsRoomRef.current) return true;

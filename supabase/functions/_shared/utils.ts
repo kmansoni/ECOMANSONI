@@ -5,15 +5,6 @@
  * - Error handling
  */
 
-const LOCALHOST_ORIGINS = [
-  "http://localhost:5173",
-  "http://localhost:8080",
-  "http://localhost:3000",
-  "http://127.0.0.1:5173",
-  "http://127.0.0.1:8080",
-  "http://127.0.0.1:3000",
-];
-
 const DEFAULT_ALLOWED_HEADERS = [
   "authorization",
   "x-client-info",
@@ -54,26 +45,18 @@ export function isProductionEnv(): boolean {
     Deno.env.get("NODE_ENV") ??
     ""
   ).toLowerCase();
-  if (env === "prod" || env === "production") return true;
-
-  const supabaseUrl = (Deno.env.get("SUPABASE_URL") ?? "").toLowerCase();
-  if (!supabaseUrl) return true;
-  if (supabaseUrl.includes("localhost") || supabaseUrl.includes("127.0.0.1")) return false;
-  return true;
+  return env === "prod" || env === "production";
 }
 
 function getAllowedOrigins(): string[] {
   const allowed = parseAllowedOrigins();
   if (allowed.length > 0) return allowed;
-  if (!isProductionEnv()) return LOCALHOST_ORIGINS.map((s) => s.replace(/\/$/, ""));
   return [];
 }
 
 function isOriginAllowed(origin: string | null): boolean {
   if (!origin) return true; // Non-browser clients
   const normalized = origin.replace(/\/$/, "");
-  // localhost всегда разрешён (dev-машина, CORS — браузерная защита)
-  if (/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(normalized)) return true;
   // Production first-party domains are always allowed.
   if (/^https?:\/\/([a-z0-9-]+\.)?mansoni\.ru(:\d+)?$/i.test(normalized)) return true;
   const allowed = getAllowedOrigins();

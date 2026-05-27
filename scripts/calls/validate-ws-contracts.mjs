@@ -32,7 +32,7 @@ function readYaml(filePath) {
 async function requireRedisIfNeeded() {
   if (process.env.CALLS_REDIS_REQUIRED !== "1") return;
 
-  const redisUrl = process.env.REDIS_URL ?? "redis://127.0.0.1:6379";
+  const redisUrl = process.env.REDIS_URL ?? "redis://redis.mansoni.ru:6379";
 
   const timeoutMs = Number(process.env.CALLS_VALIDATE_REDIS_TIMEOUT_MS ?? "1500");
   let firstError = null;

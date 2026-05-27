@@ -55,14 +55,14 @@ class Settings(BaseSettings):
     # ── Security ─────────────────────────────────────────────────────────────
     bcrypt_rounds: int = Field(default=12, ge=10, le=14, description="bcrypt cost factor")
     cors_allowed_origins: list[str] = Field(
-        default=["http://localhost:3000", "http://localhost:5173"],
+        default=["https://mansoni.ru", "https://www.mansoni.ru"],
         description="Allowed CORS origins",
     )
 
     # ── Rate Limiting ─────────────────────────────────────────────────────────
     rate_limit_requests_per_minute: int = Field(default=60, ge=10, le=1000)
     rate_limit_burst: int = Field(default=10, ge=5, le=100)
-    redis_url: str = Field(default="redis://localhost:6379/0", description="Redis for rate limiting")
+    redis_url: str = Field(default="redis://redis.mansoni.ru:6379/0", description="Redis for rate limiting")
 
     # ── Pagination ────────────────────────────────────────────────────────────
     default_page_size: int = Field(default=20, ge=1, le=100)

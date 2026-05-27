@@ -96,7 +96,7 @@ graph TB
 | Эндпоинт | Конфигурация | Тип трафика | Риск блокировки |
 |----------|--------------|-------------|-----------------|
 | Supabase API | `VITE_SUPABASE_URL` | HTTPS REST + WebSocket | **Критический** — единая точка |
-| Calls WS | `VITE_CALLS_V2_WS_URL(S)` | WebSocket | **Высокий** — один IP/домен |
+| Calls WS | `VITE_CALLS_V2_WS_URLS` | WebSocket | **Высокий** — один IP/домен |
 | TURN/STUN | `TURN_URLS` env | UDP/TCP | **Средний** — Google STUN как fallback |
 | Email Router | `services/email-router/` | HTTPS | **Высокий** — один endpoint |
 | Media Server | `infra/media/` | HTTPS | **Высокий** — один MinIO/S3 |
@@ -1245,7 +1245,7 @@ export class WSTunnel {
 
 **Интеграция с calls-ws:**
 
-Текущий код подключения к calls-ws использует `VITE_CALLS_V2_WS_URL(S)` env переменные.
+Текущий код подключения к calls-ws использует `VITE_CALLS_V2_WS_URLS` env переменную.
 
 ```pseudocode
 // Модификация подключения к WS:

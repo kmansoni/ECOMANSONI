@@ -1,5 +1,5 @@
 param(
-  [string]$BaseUrl = "http://127.0.0.1:8090",
+  [string]$BaseUrl = "https://email-router.mansoni.ru",
   [string]$Mailbox = "support@example.com",
   [string]$From = "customer@example.com",
   [string]$OutboundTo = "user@example.com",

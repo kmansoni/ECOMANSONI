@@ -9,7 +9,7 @@ const BROKERS = String(process.env.ANALYTICS_KAFKA_BROKERS ?? "")
 const TOPIC = process.env.ANALYTICS_KAFKA_TOPIC ?? "analytics.v1";
 const GROUP_ID = process.env.ANALYTICS_KAFKA_GROUP_ID ?? "mansoni-analytics-consumer";
 
-const CH_URL = process.env.ANALYTICS_CH_URL ?? "http://localhost:8123";
+const CH_URL = process.env.ANALYTICS_CH_URL ?? "https://clickhouse.mansoni.ru";
 const CH_DB = process.env.ANALYTICS_CH_DATABASE ?? "analytics";
 const CH_USER = process.env.ANALYTICS_CH_USER ?? "default";
 const CH_PASSWORD = process.env.ANALYTICS_CH_PASSWORD ?? "";

@@ -1,6 +1,6 @@
 import { test, expect, Page } from "@playwright/test";
 
-const BASE = "http://localhost:5173";
+const BASE = "https://mansoni.ru";
 
 // Helper: collect console errors during page interactions
 async function collectConsoleErrors(page: Page): Promise<string[]> {

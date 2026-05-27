@@ -15,7 +15,7 @@ import {
  *
  * Security:
  * - Requires authenticated caller (JWT).
- * - SSRF mitigation: blocks localhost, IP literals, private hostnames.
+ * - SSRF mitigation: blocks IP literals and private hostnames.
  * - Redirect loop cap at 3.
  * - HTML body cap at 512 KB.
  * - Caches results in `link_previews` table for 24 hours.
@@ -121,6 +121,7 @@ const BLOCKED_SUFFIXES = [
 
 // Exact match blocked hosts
 const BLOCKED_HOSTS = new Set([
+  "localhost",
   "metadata",
   "metadata.google",
   "metadata.google.internal",
@@ -135,6 +136,7 @@ const BLOCKED_HOSTS = new Set([
 
 // Wildcard DNS services that resolve to embedded IP
 const WILDCARD_DNS_PATTERNS = [
+  /(^|\.)localhost$/i,
   /\.nip\.io$/i,
   /\.sslip\.io$/i,
   /\.xip\.io$/i,
@@ -144,10 +146,6 @@ const WILDCARD_DNS_PATTERNS = [
   /\.lacolhost\.com$/i,
   /\.fuf\.me$/i,
   /\.traefik\.me$/i,
-  /\.127\.0\.0\.1\.?/i,  // embedded IP patterns — trailing dot optional (DEFECT-8)
-  /\.0\.0\.0\.0\.?/i,
-  /\.127\.0\.0\.1$/i,    // trailing match without dot
-  /\.0\.0\.0\.0$/i,
 ];
 
 function assertSafeHost(host: string): void {
@@ -159,7 +157,11 @@ function assertSafeHost(host: string): void {
     normalized === "localhost" ||
     normalized.endsWith(".localhost") ||
     normalized.endsWith(".local") ||
-    !normalized.includes(".") ||
+    !normalized.includes(".")
+  ) {
+    throw new Error("host_not_allowed");
+  }
+  if (
     isIpv4Literal(normalized) ||
     isIpv6Literal(normalized)
   ) {
@@ -178,7 +180,7 @@ function assertSafeHost(host: string): void {
 
 /** IPv4 private/reserved ranges as [networkInt, maskInt] */
 const PRIVATE_RANGES_V4: Array<[number, number]> = [
-  [0x7F000000, 0xFF000000], // 127.0.0.0/8    loopback
+  [0x7F000000, 0xFF000000], // loopback
   [0x0A000000, 0xFF000000], // 10.0.0.0/8     RFC 1918
   [0xAC100000, 0xFFF00000], // 172.16.0.0/12  RFC 1918
   [0xC0A80000, 0xFFFF0000], // 192.168.0.0/16 RFC 1918
@@ -209,7 +211,8 @@ function isPrivateIpv4(ip: string): boolean {
 
 function isPrivateIpv6(ip: string): boolean {
   const lower = ip.toLowerCase();
-  if (lower === "::1" || lower === "::") return true;                    // loopback / unspecified
+  if (lower === "::") return true;                    // unspecified
+  if (lower === "::1") return true;                   // loopback
   // DEFECT-6: fe80::/10 = fe80..febf — prefix check must cover fe81–febf
   if (/^fe[89ab][0-9a-f]:/.test(lower)) return true;                    // link-local /10
   if (lower.startsWith("fc") || lower.startsWith("fd")) return true;    // ULA

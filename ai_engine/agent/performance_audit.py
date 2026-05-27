@@ -223,7 +223,7 @@ class PerformanceAuditor:
 
     def full_audit(
         self,
-        url: str = "http://localhost:3000",
+        url: str = "https://mansoni.ru",
     ) -> PerformanceReport:
         """
         Полный аудит.

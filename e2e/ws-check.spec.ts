@@ -34,7 +34,7 @@ test("WebSocket к SFU с патчем apikey", async ({ browser }) => {
     })();`,
   });
   const page = await ctx.newPage();
-  await page.goto("http://127.0.0.1:8080/", { waitUntil: "commit" });
+  await page.goto("https://mansoni.ru/", { waitUntil: "commit" });
   const result = await page.evaluate(
     () =>
       new Promise<string>((resolve) => {

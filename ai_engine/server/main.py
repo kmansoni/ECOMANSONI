@@ -69,7 +69,7 @@ app = FastAPI(
     lifespan=_lifespan,
 )
 
-_cors_origins_env = os.environ.get("ARIA_CORS_ALLOWED_ORIGINS", "http://localhost:3000,http://localhost:5173")
+_cors_origins_env = os.environ.get("ARIA_CORS_ALLOWED_ORIGINS", "https://mansoni.ru,https://www.mansoni.ru")
 _cors_origins = [origin.strip() for origin in _cors_origins_env.split(",") if origin.strip()]
 if "*" in _cors_origins:
     raise RuntimeError(

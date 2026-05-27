@@ -28,7 +28,7 @@ function requireEnv(name: string): string {
 export function readConfig(): RouterConfig {
   return {
     nodeEnv: process.env.NODE_ENV ?? "development",
-    redisUrl: process.env.REDIS_URL ?? "redis://127.0.0.1:6379",
+    redisUrl: process.env.REDIS_URL ?? "redis://redis.mansoni.ru:6379",
     queuePrefix: process.env.NOTIF_QUEUE_PREFIX ?? "mansoni:notif",
     supabaseUrl: requireEnv("SUPABASE_URL"),
     supabaseServiceRoleKey: requireEnv("SUPABASE_SERVICE_ROLE_KEY"),

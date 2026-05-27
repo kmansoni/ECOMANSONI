@@ -107,7 +107,7 @@ check_env() {
 check_minio_alias() {
   if ! mc alias list "$MINIO_ALIAS" &>/dev/null; then
     error "MinIO alias '${MINIO_ALIAS}' не найден."
-    error "Создайте его: mc alias set ${MINIO_ALIAS} http://localhost:9000 ACCESS_KEY SECRET_KEY"
+    error "Создайте его: mc alias set ${MINIO_ALIAS} https://minio.mansoni.ru ACCESS_KEY SECRET_KEY"
     exit 1
   fi
   info "MinIO alias '${MINIO_ALIAS}' доступен ✓"

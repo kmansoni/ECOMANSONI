@@ -338,7 +338,7 @@ global:
 scrape_configs:
   - job_name: 'app'
     static_configs:
-      - targets: ['localhost:3000']
+            - targets: ['mansoni.ru:443']
 '''
 
 

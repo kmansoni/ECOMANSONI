@@ -47,6 +47,8 @@ export function useCallsV2E2eeSignals({
   epochGuardRef,
   producerPeerKeyRef,
   peerUserIdByDeviceIdRef,
+  pendingProducersToConsumeRef,
+  consumePendingProducersRef,
   onDecryptionKeyReady,
   onE2eeActivated,
 }: UseCallsV2E2eeSignalsParams) {

@@ -39,7 +39,7 @@ ENV CALLS_WS_PORT=8787
 EXPOSE 8787
 
 HEALTHCHECK --interval=30s --timeout=10s --start-period=20s --retries=3 \
-  CMD wget -qO- http://localhost:8787/health 2>/dev/null | grep -q '"ok"' || \
-      wget -qO- http://localhost:8787/ 2>/dev/null || exit 1
+  CMD wget -qO- http://calls-ws:8787/health 2>/dev/null | grep -q '"ok"' || \
+      wget -qO- http://calls-ws:8787/ 2>/dev/null || exit 1
 
 CMD ["node", "server/calls-ws/index.mjs"]

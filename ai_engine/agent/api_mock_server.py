@@ -319,7 +319,7 @@ class MockServerRunner:
                 
                 return jsonify(response), status
             
-            print(f"🎭 Mock server running on http://localhost:{self.server.port}")
+            print(f"🎭 Mock server running on https://api.mansoni.ru/mock/{self.server.port}")
             app.run(port=self.server.port)
             
         except ImportError:

@@ -2,7 +2,7 @@ import { test, expect } from '@playwright/test';
 
 test.describe('Profile Page Tests', () => {
   test.beforeEach(async ({ page }) => {
-    await page.goto('http://127.0.0.1:8080/profile');
+    await page.goto('https://mansoni.ru/profile');
   });
 
   test('Profile page should load without critical errors', async ({ page }) => {

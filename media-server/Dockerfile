@@ -44,6 +44,6 @@ ENV NODE_ENV=production
 EXPOSE 3100
 
 HEALTHCHECK --interval=15s --timeout=5s --start-period=10s --retries=3 \
-  CMD wget --spider -q http://localhost:3100/health || exit 1
+  CMD wget --spider -q http://media-server:3100/health || exit 1
 
 CMD ["node", "dist/index.js"]

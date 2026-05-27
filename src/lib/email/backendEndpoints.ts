@@ -31,7 +31,7 @@ export function getEmailEdgeFunctionUrl(): string {
  * multi-region failover:
  *   VITE_EMAIL_ROUTER_API_URL="https://email1.example.com,https://email2.example.com"
  *
- * In dev mode, falls back to http://localhost:8090 if not configured.
+ * If not configured explicitly, falls back to production router endpoint.
  * Returns empty array in production.
  */
 export function getEmailRouterApiBases(): string[] {
@@ -42,9 +42,9 @@ export function getEmailRouterApiBases(): string[] {
     .map((url) => url.trim().replace(/\/$/, ''))
     .filter((url) => url.length > 0);
 
-  // Dev-mode fallback: if no URL configured, try localhost
+  // Fallback to production router endpoint when no URL configured.
   if (bases.length === 0 && (import.meta as any).env?.DEV) {
-    bases.push('http://localhost:8090');
+    bases.push('https://email-router.mansoni.ru');
   }
 
   return bases;

@@ -31,7 +31,7 @@ const envSchema = z.object({
   DATABASE_POOL_MAX: z.coerce.number().default(10),
 
   // Redis
-  REDIS_URL: z.string().default('redis://localhost:6379'),
+  REDIS_URL: z.string().default('redis://redis.mansoni.ru:6379'),
   REDIS_PASSWORD: z.string().optional(),
 
   // Supabase JWT
@@ -61,10 +61,10 @@ const envSchema = z.object({
   EMAIL_ENCRYPTION_KEY: z.string().min(32),
 
   // CORS
-  CORS_ORIGINS: z.string().default('http://localhost:3000,http://localhost:5173'),
+  CORS_ORIGINS: z.string().default('https://mansoni.ru,https://www.mansoni.ru'),
 
   // Admin
-  ADMIN_IP_ALLOWLIST: z.string().default('127.0.0.1,::1'),
+  ADMIN_IP_ALLOWLIST: z.string().default(''),
 
   // Bounce webhook HMAC authentication.
   // Must be a shared secret between this service and the bounce notification

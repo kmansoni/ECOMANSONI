@@ -71,7 +71,7 @@ HEALTHCHECK \
   --timeout=5s \
   --start-period=20s \
   --retries=3 \
-  CMD curl -f http://localhost:3100/health || exit 1
+  CMD curl -f http://livestream-gateway:3100/health || exit 1
 
 # Run as non-root node user (uid 1000, gid 1000 in alpine node image)
 USER node

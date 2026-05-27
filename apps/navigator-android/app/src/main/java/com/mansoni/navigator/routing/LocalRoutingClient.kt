@@ -13,8 +13,7 @@ import kotlinx.serialization.json.*
 
 class LocalRoutingClient(private val context: Context) {
 
-    private val localApiBase = "http://10.0.2.2:8080" // localhost emulator
-    // Для физического устройства: http://<IP_PC>:8080
+    private val localApiBase = "https://navigation.mansoni.ru"
     private val embeddedRouter = DijkstraRouter()
 
     suspend fun calculateRoutes(

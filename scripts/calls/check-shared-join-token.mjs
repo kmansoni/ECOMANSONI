@@ -109,7 +109,7 @@ class ProtoClient {
 }
 
 async function main() {
-  const wsUrl = process.env.CALLS_WS_URL || "ws://127.0.0.1:8787";
+  const wsUrl = process.env.CALLS_WS_URL || "wss://sfu-ru.mansoni.ru/ws";
   const callerUserId = "dev_caller-t";
   const calleeUserId = "dev_callee-t";
   const callerToken = "caller-token-1234567890";

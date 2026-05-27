@@ -120,7 +120,7 @@ export async function buildApp(): Promise<FastifyInstance> {
           version: '1.0.0',
         },
         servers: [
-          { url: 'http://localhost:3100', description: 'Local development' },
+          { url: 'https://live.mansoni.ru/api', description: 'Production API' },
         ],
         components: {
           securitySchemes: {

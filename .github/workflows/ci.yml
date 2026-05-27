@@ -84,7 +84,7 @@ jobs:
       - name: Validate Calls WS contracts
         run: npm run calls:validate
         env:
-          REDIS_URL: redis://localhost:6379
+          REDIS_URL: redis://redis:6379
           CALLS_REDIS_REQUIRED: "1"
           CALLS_ALLOW_INMEM_FALLBACK: "0"
 

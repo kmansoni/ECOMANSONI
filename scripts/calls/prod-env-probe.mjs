@@ -29,11 +29,6 @@ function parseWsList(listValue) {
   return [...new Set(items)];
 }
 
-function isLocalHost(hostname) {
-  const h = String(hostname || "").toLowerCase();
-  return h === "localhost" || h === "127.0.0.1" || h === "::1";
-}
-
 function validateWsEndpoints(endpoints) {
   const errors = [];
   for (const endpoint of endpoints) {
@@ -49,8 +44,8 @@ function validateWsEndpoints(endpoints) {
       errors.push(`missing /ws path: ${endpoint}`);
     }
 
-    if (url.protocol !== "wss:" && !(url.protocol === "ws:" && isLocalHost(url.hostname))) {
-      errors.push(`insecure WS protocol (must be wss:// for remote): ${endpoint}`);
+    if (url.protocol !== "wss:") {
+      errors.push(`insecure WS protocol (must be wss://): ${endpoint}`);
     }
 
     // Production policy: SFU ingress is provisioned on mansoni.ru.

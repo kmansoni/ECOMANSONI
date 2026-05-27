@@ -74,7 +74,7 @@ export class QueueService {
     //    Queue (producer) объекты этого не требуют, но мы используем один
     //    this.connection для обоих — с null безопасно для producer'ов тоже.
     this.connection = {
-      host: redis.options.host ?? '127.0.0.1',
+          host: redis.options.host ?? 'redis.mansoni.ru',
       port: redis.options.port ?? 6379,
       password: redis.options.password as string | undefined,
       db: typeof redis.options.db === 'number' ? redis.options.db : 0,
