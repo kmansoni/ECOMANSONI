@@ -110,6 +110,10 @@ ensure_frontend_env
 npm ci
 npm run build
 
+# Ensure nginx symlink current → dist exists after every build
+ln -sfn "$APP_DIR/dist" "$APP_DIR/current"
+echo "Symlink updated: $APP_DIR/current -> $APP_DIR/dist"
+
 if [ -n "$SYSTEMD_SERVICES" ]; then
   for svc in $SYSTEMD_SERVICES; do
     sudo systemctl restart "$svc"
