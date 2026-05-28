@@ -69,8 +69,8 @@ async function acquireLocalMedia(isVideo: boolean): Promise<{ stream: MediaStrea
 
   const baseAudio: MediaTrackConstraints = {
     echoCancellation: true,
-    noiseSuppression: true,
-    autoGainControl: true,
+    noiseSuppression: false,
+    autoGainControl: false,
     // Voice-first defaults: mono + 48kHz reduce codec artifacts and background hiss.
     channelCount: { ideal: 1, max: 1 },
     sampleRate: { ideal: 48000 },
