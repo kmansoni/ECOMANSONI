@@ -19,17 +19,6 @@ import {
   exportPublicKey,
 } from './crypto';
 
-// ─── Auto-clear module-level cache on logout ─────────────────────────────────
-// publicKeyCache is module-level (shared across all call sites in the same JS
-// context).  On account switch the stale keys from the previous user must be
-// evicted immediately — otherwise MITM verification may use a cached key from
-// a different principal for up to PUBLIC_KEY_CACHE_TTL_MS (5 min).
-// NOTE: Placed after all imports to avoid confusing module evaluation order.
-supabase.auth.onAuthStateChange((event) => {
-  if (event === 'SIGNED_OUT') {
-    publicKeyCache.clear();
-  }
-});
 
 /**
  * Ошибка, сигнализирующая об обнаружении потенциальной MITM-атаки.
@@ -75,6 +64,13 @@ export interface KeyDistributionResult {
 const PUBLIC_KEY_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
 const publicKeyCache = new Map<string, { key: CryptoKey; raw: string; fingerprint: string; cachedAt: number }>();
 export const IDENTITY_KEY_RETRY_DELAYS_MS = [0, 80, 200] as const;
+
+// Clear cache on logout — must be after publicKeyCache declaration to avoid TDZ
+supabase.auth.onAuthStateChange((event) => {
+  if (event === 'SIGNED_OUT') {
+    publicKeyCache.clear();
+  }
+});
 
 // ─── Утилиты ─────────────────────────────────────────────────────────────────
 
