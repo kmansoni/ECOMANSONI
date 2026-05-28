@@ -23,7 +23,9 @@ const STUN_URLS = (process.env.STUN_URLS ?? "stun:stun.l.google.com:19302").spli
 function generateTurnCredentials(userId) {
   if (!TURN_SHARED_SECRET || TURN_URLS.length === 0) return null;
   const expiry = Math.floor(Date.now() / 1000) + TURN_TTL_SECONDS;
-  const username = `${expiry}:${userId.slice(0, 20)}`;
+  // Hash userId to avoid leaking PII in TURN username (visible in coturn logs / WebRTC stats)
+  const userHash = crypto.createHmac("sha256", TURN_SHARED_SECRET).update(userId).digest("base64url").slice(0, 20);
+  const username = `${expiry}:u_${userHash}`;
   const credential = crypto.createHmac("sha1", TURN_SHARED_SECRET).update(username).digest("base64");
   return { username, credential, expiry };
 }
@@ -53,12 +55,39 @@ const requireDoubleRatchet = (() => {
   return IS_PROD_LIKE;
 })();
 const REQUIRE_SECURE_WS = IS_PROD_LIKE && process.env.SFU_REQUIRE_SECURE_WS !== "0";
-const TRUSTED_PROXIES = new Set(
-  (process.env.SFU_TRUSTED_PROXIES || "")
-    .split(",")
-    .map((value) => value.trim())
-    .filter(Boolean)
-);
+
+// Parse SFU_TRUSTED_PROXIES — supports both exact IPs and CIDR notation (e.g. 10.0.0.0/8).
+// Always includes loopback so nginx on the same host works without extra config.
+const _trustedProxyEntries = (process.env.SFU_TRUSTED_PROXIES || "")
+  .split(",").map((v) => v.trim()).filter(Boolean);
+
+function _ipToInt(ip) {
+  return ip.split(".").reduce((acc, octet) => (acc << 8) | (Number(octet) & 0xff), 0) >>> 0;
+}
+
+const _trustedCidrs = _trustedProxyEntries
+  .filter((e) => e.includes("/"))
+  .map((cidr) => {
+    const [base, bits] = cidr.split("/");
+    const mask = bits === "0" ? 0 : (~0 << (32 - Number(bits))) >>> 0;
+    return { base: _ipToInt(base) & mask, mask };
+  });
+
+const _trustedExact = new Set([
+  ..._trustedProxyEntries.filter((e) => !e.includes("/")),
+  "127.0.0.1", "::1", // always trust loopback
+]);
+
+function isTrustedProxy(ip) {
+  if (!ip) return false;
+  const normalized = ip.replace(/^::ffff:/i, "");
+  if (_trustedExact.has(normalized)) return true;
+  if (_trustedCidrs.length === 0) return false;
+  // Only IPv4 CIDR matching supported
+  if (!/^\d+\.\d+\.\d+\.\d+$/.test(normalized)) return false;
+  const ipInt = _ipToInt(normalized);
+  return _trustedCidrs.some(({ base, mask }) => (ipInt & mask) === base);
+}
 const SUPABASE_URL = process.env.SUPABASE_URL ?? process.env.VITE_SUPABASE_URL ?? "";
 const SUPABASE_AUTH_KEY = process.env.SUPABASE_PUBLISHABLE_KEY ?? process.env.SUPABASE_ANON_KEY ?? process.env.VITE_SUPABASE_PUBLISHABLE_KEY ?? process.env.VITE_SUPABASE_ANON_KEY ?? "";
 const STARTED_AT = Date.now();
@@ -289,9 +318,7 @@ function isSecureUpgradeRequest(req) {
   if (!xForwardedProto) return false;
 
   const remoteAddress = getRemoteAddress(req);
-  if (TRUSTED_PROXIES.size > 0 && !TRUSTED_PROXIES.has(remoteAddress)) {
-    return false;
-  }
+  if (!isTrustedProxy(remoteAddress)) return false;
 
   const proto = String(Array.isArray(xForwardedProto) ? xForwardedProto[0] : xForwardedProto)
     .split(",")[0]
@@ -333,6 +360,10 @@ function uuid() {
 
 function wsError(code, message, details = {}, retryable = false) {
   return { code, message, details, retryable };
+}
+
+function hasNonEmptyRouterCaps(routerRtpCapabilities) {
+  return !!routerRtpCapabilities && Array.isArray(routerRtpCapabilities.codecs) && routerRtpCapabilities.codecs.length > 0;
 }
 
 function send(ws, frame) {
@@ -860,6 +891,14 @@ wss.on("connection", (ws, req) => {
         const room = ensureRoom(roomId, callId, frame.payload?.preferredRegion ?? REGION);
         const ensured = await mediaPlane.createRoom(roomId);
         room.routerRtpCapabilities = ensured?.routerRtpCapabilities ?? room.routerRtpCapabilities;
+        if (!hasNonEmptyRouterCaps(room.routerRtpCapabilities)) {
+          ack(ws, frame.msgId, false, wsError("SFU_NOT_READY", "Room router RTP capabilities are unavailable", {
+            roomId,
+            hasRouterCaps: !!room.routerRtpCapabilities,
+            codecsLength: Array.isArray(room.routerRtpCapabilities?.codecs) ? room.routerRtpCapabilities.codecs.length : 0,
+          }, true));
+          return;
+        }
         if (room.peers.size >= MAX_PARTICIPANTS_PER_ROOM) {
           ack(ws, frame.msgId, false, wsError("ROOM_FULL", `Max participants exceeded (${MAX_PARTICIPANTS_PER_ROOM})`, { roomId }, false));
           return;
@@ -1628,6 +1667,14 @@ wss.on("connection", (ws, req) => {
         const roomId = frame.payload?.roomId ?? conn.roomId;
         const room = rooms.get(roomId);
         const caps = room?.routerRtpCapabilities ?? { codecs: [] };
+        if (!hasNonEmptyRouterCaps(caps)) {
+          ack(ws, frame.msgId, false, wsError("SFU_NOT_READY", "Router RTP capabilities are unavailable", {
+            roomId,
+            hasRoom: !!room,
+            codecsLength: Array.isArray(caps?.codecs) ? caps.codecs.length : 0,
+          }, true));
+          return;
+        }
         send(ws, {
           v: 1,
           type: "ROUTER_RTP_CAPABILITIES",

@@ -33,57 +33,48 @@ if (ENABLE_MEDIA_TRANSPORT_STUBS) {
   console.warn("[calls-ws] Media transport stubs enabled - this is signaling-only gateway, NOT a real SFU. Connect to SFU endpoint for media.");
 }
 
-// C-2: Trusted proxy list for x-forwarded-for validation.
-// Format: comma-separated exact IP addresses (IPv4 or IPv6, no CIDR needed).
-// Empty string (default) = no trusted proxies → always use socket.remoteAddress.
-const TRUSTED_PROXIES = new Set(
-  (process.env.CALLS_WS_TRUSTED_PROXIES || "").split(",").map((s) => s.trim()).filter(Boolean)
-);
+// C-2: Trusted proxy list — supports exact IPs and CIDR notation (e.g. 10.0.0.0/8).
+// Always trusts loopback so nginx on the same host works without extra config.
+const _wsProxyEntries = (process.env.CALLS_WS_TRUSTED_PROXIES || "").split(",").map((s) => s.trim()).filter(Boolean);
 
-/**
- * C-2: Resolve the real client IP from the request.
- * x-forwarded-for is ONLY trusted when the direct socket peer is in TRUSTED_PROXIES.
- * This prevents a malicious client from spoofing their IP to bypass per-IP limits.
- *
- * IPv6-mapped IPv4 addresses (::ffff:x.x.x.x) are normalised to plain IPv4
- * so proxy list entries do not need to list both forms.
- *
- * @param {import("node:http").IncomingMessage} req
- * @returns {string}
- */
+function _wsIpToInt(ip) {
+  return ip.split(".").reduce((acc, o) => (acc << 8) | (Number(o) & 0xff), 0) >>> 0;
+}
+const _wsProxyCidrs = _wsProxyEntries.filter((e) => e.includes("/")).map((cidr) => {
+  const [base, bits] = cidr.split("/");
+  const mask = bits === "0" ? 0 : (~0 << (32 - Number(bits))) >>> 0;
+  return { base: _wsIpToInt(base) & mask, mask };
+});
+const _wsProxyExact = new Set([..._wsProxyEntries.filter((e) => !e.includes("/")), "127.0.0.1", "::1"]);
+
+function isTrustedWsProxy(ip) {
+  if (!ip) return false;
+  const n = ip.replace(/^::ffff:/i, "");
+  if (_wsProxyExact.has(n)) return true;
+  if (_wsProxyCidrs.length === 0) return false;
+  if (!/^\d+\.\d+\.\d+\.\d+$/.test(n)) return false;
+  const ipInt = _wsIpToInt(n);
+  return _wsProxyCidrs.some(({ base, mask }) => (ipInt & mask) === base);
+}
+
 function getClientIp(req) {
   const remoteAddr = req.socket?.remoteAddress ?? "unknown";
-  // Normalise IPv6-mapped addresses to plain IPv4 form
   const normalizedRemote = remoteAddr.replace(/^::ffff:/i, "");
-  if (TRUSTED_PROXIES.has(normalizedRemote)) {
+  if (isTrustedWsProxy(normalizedRemote)) {
     const xff = (req.headers["x-forwarded-for"] || "").split(",")[0].trim();
     return xff || normalizedRemote;
   }
   return normalizedRemote;
 }
 
-/**
- * Requires TLS at the gateway boundary in production-like mode.
- * Accepts either direct TLS socket or trusted x-forwarded-proto=https/wss.
- *
- * @param {import("node:http").IncomingMessage} req
- * @returns {boolean}
- */
 function isSecureTransport(req) {
   if (req.socket?.encrypted === true) return true;
-
   const remoteAddr = req.socket?.remoteAddress ?? "";
   const normalizedRemote = remoteAddr.replace(/^::ffff:/i, "");
-  if (!TRUSTED_PROXIES.has(normalizedRemote)) {
-    return false;
-  }
-
+  if (!isTrustedWsProxy(normalizedRemote)) return false;
   const xfpRaw = req.headers["x-forwarded-proto"];
   if (!xfpRaw) return false;
-  const proto = String(Array.isArray(xfpRaw) ? xfpRaw[0] : xfpRaw)
-    .split(",")[0]
-    .trim()
-    .toLowerCase();
+  const proto = String(Array.isArray(xfpRaw) ? xfpRaw[0] : xfpRaw).split(",")[0].trim().toLowerCase();
   return proto === "https" || proto === "wss";
 }
 const CALLS_JOIN_TOKEN_TTL_SEC = readPositiveIntEnv("CALLS_JOIN_TOKEN_TTL_SEC", 600, { min: 30 });
