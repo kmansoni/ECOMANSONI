@@ -10,7 +10,6 @@ create table if not exists public.channel_capability_catalog (
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
-
 create table if not exists public.channel_role_capabilities (
   id uuid primary key default gen_random_uuid(),
   role text not null check (role in ('owner', 'admin', 'member', 'guest')),
@@ -19,7 +18,6 @@ create table if not exists public.channel_role_capabilities (
   created_at timestamptz not null default now(),
   unique (role, capability_key)
 );
-
 create table if not exists public.channel_capability_overrides (
   id uuid primary key default gen_random_uuid(),
   channel_id uuid not null references public.channels(id) on delete cascade,
@@ -31,38 +29,32 @@ create table if not exists public.channel_capability_overrides (
   updated_at timestamptz not null default now(),
   unique (channel_id, capability_key)
 );
-
 create index if not exists idx_channel_capability_catalog_domain_active
   on public.channel_capability_catalog(domain, is_active);
 create index if not exists idx_channel_role_caps_role
   on public.channel_role_capabilities(role);
 create index if not exists idx_channel_capability_overrides_channel
   on public.channel_capability_overrides(channel_id, updated_at desc);
-
 alter table public.channel_capability_catalog enable row level security;
 alter table public.channel_role_capabilities enable row level security;
 alter table public.channel_capability_overrides enable row level security;
-
 drop policy if exists "capability_catalog_read_all" on public.channel_capability_catalog;
 create policy "capability_catalog_read_all"
 on public.channel_capability_catalog
 for select
 using (true);
-
 drop policy if exists "role_caps_read_authenticated" on public.channel_role_capabilities;
 create policy "role_caps_read_authenticated"
 on public.channel_role_capabilities
 for select
 to authenticated
 using (true);
-
 drop policy if exists "channel_overrides_select_for_members" on public.channel_capability_overrides;
 create policy "channel_overrides_select_for_members"
 on public.channel_capability_overrides
 for select
 to authenticated
 using (public.is_channel_member(channel_id, auth.uid()));
-
 drop policy if exists "channel_overrides_insert_for_admins" on public.channel_capability_overrides;
 create policy "channel_overrides_insert_for_admins"
 on public.channel_capability_overrides
@@ -72,7 +64,6 @@ with check (
   public.is_channel_admin(channel_id, auth.uid())
   and created_by = auth.uid()
 );
-
 drop policy if exists "channel_overrides_update_for_admins" on public.channel_capability_overrides;
 create policy "channel_overrides_update_for_admins"
 on public.channel_capability_overrides
@@ -80,14 +71,12 @@ for update
 to authenticated
 using (public.is_channel_admin(channel_id, auth.uid()))
 with check (public.is_channel_admin(channel_id, auth.uid()));
-
 drop policy if exists "channel_overrides_delete_for_admins" on public.channel_capability_overrides;
 create policy "channel_overrides_delete_for_admins"
 on public.channel_capability_overrides
 for delete
 to authenticated
 using (public.is_channel_admin(channel_id, auth.uid()));
-
 create or replace function public.set_channel_capability_updated_at()
 returns trigger
 language plpgsql
@@ -97,17 +86,14 @@ begin
   return new;
 end;
 $$;
-
 drop trigger if exists trg_channel_capability_catalog_updated_at on public.channel_capability_catalog;
 create trigger trg_channel_capability_catalog_updated_at
 before update on public.channel_capability_catalog
 for each row execute function public.set_channel_capability_updated_at();
-
 drop trigger if exists trg_channel_capability_overrides_updated_at on public.channel_capability_overrides;
 create trigger trg_channel_capability_overrides_updated_at
 before update on public.channel_capability_overrides
 for each row execute function public.set_channel_capability_updated_at();
-
 create or replace function public.channel_has_capability(
   _channel_id uuid,
   _user_id uuid,
@@ -148,9 +134,7 @@ as $$
       else (select allowed from role_allow)
     end;
 $$;
-
 grant execute on function public.channel_has_capability(uuid, uuid, text) to authenticated;
-
 insert into public.channel_capability_catalog(key, domain, title, description, default_params)
 values
   ('channel.posts.read', 'channel_posts', 'Read posts', 'View posts in channel', '{}'::jsonb),
@@ -172,12 +156,10 @@ on conflict (key) do update set
   default_params = excluded.default_params,
   is_active = true,
   updated_at = now();
-
 insert into public.channel_role_capabilities(role, capability_key, is_allowed)
 select 'owner', c.key, true
 from public.channel_capability_catalog c
 on conflict (role, capability_key) do update set is_allowed = excluded.is_allowed;
-
 insert into public.channel_role_capabilities(role, capability_key, is_allowed)
 values
   ('admin', 'channel.posts.read', true),
@@ -215,4 +197,3 @@ values
   ('guest', 'channel.reactions.moderate', false),
   ('guest', 'channel.ads.manage', false)
 on conflict (role, capability_key) do update set is_allowed = excluded.is_allowed;
-

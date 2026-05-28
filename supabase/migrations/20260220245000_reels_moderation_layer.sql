@@ -19,14 +19,11 @@ ALTER TABLE public.reels
   ADD COLUMN IF NOT EXISTS moderation_notes TEXT,
   ADD COLUMN IF NOT EXISTS moderated_at TIMESTAMPTZ,
   ADD COLUMN IF NOT EXISTS moderated_by UUID;
-
 CREATE INDEX IF NOT EXISTS idx_reels_moderation_status
   ON public.reels(moderation_status, created_at DESC);
-
 CREATE INDEX IF NOT EXISTS idx_reels_channel_id
   ON public.reels(channel_id, created_at DESC)
   WHERE channel_id IS NOT NULL;
-
 -- 2) Audit log for moderation decisions
 CREATE TABLE IF NOT EXISTS public.reel_moderation_audit (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -40,16 +37,12 @@ CREATE TABLE IF NOT EXISTS public.reel_moderation_audit (
   notes TEXT,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
-
 CREATE INDEX IF NOT EXISTS idx_reel_moderation_audit_reel
   ON public.reel_moderation_audit(reel_id, created_at DESC);
-
 ALTER TABLE public.reel_moderation_audit ENABLE ROW LEVEL SECURITY;
-
 -- Only service_role can read/write audit rows (no public policies)
 REVOKE ALL ON TABLE public.reel_moderation_audit FROM PUBLIC;
 GRANT SELECT, INSERT ON TABLE public.reel_moderation_audit TO service_role;
-
 -- 3) Service RPC: set moderation labels (AI pipeline / admin tooling)
 CREATE OR REPLACE FUNCTION public.set_reel_moderation_labels(
   p_reel_id UUID,
@@ -106,13 +99,10 @@ BEGIN
   );
 END;
 $$;
-
 REVOKE ALL ON FUNCTION public.set_reel_moderation_labels(UUID, TEXT, BOOLEAN, BOOLEAN, BOOLEAN, TEXT, TEXT) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.set_reel_moderation_labels(UUID, TEXT, BOOLEAN, BOOLEAN, BOOLEAN, TEXT, TEXT) TO service_role;
-
 COMMENT ON FUNCTION public.set_reel_moderation_labels IS
   'Service-only: sets reels moderation flags/status and writes an audit row.';
-
 -- 4) Enforce moderation rules in main feed
 -- Public feed rules:
 --   - Never show blocked
@@ -416,7 +406,7 @@ BEGIN
       ) AS final_score,
       'Exploration' AS recommendation_reason
     FROM scored s
-    WHERE s.id NOT IN (SELECT e.id FROM exploitation e)
+    WHERE s.id NOT IN (SELECT id FROM exploitation)
       AND (s.tiktok_quality_score + s.trend_boost_score + s.cold_start_boost) >= 20.0
     ORDER BY random()
     LIMIT v_exploration_limit
@@ -463,7 +453,5 @@ BEGIN
   LIMIT p_limit;
 END;
 $$;
-
 REVOKE ALL ON FUNCTION public.get_reels_feed_v2(INTEGER, INTEGER, TEXT, NUMERIC, INTEGER, INTEGER, TEXT) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.get_reels_feed_v2(INTEGER, INTEGER, TEXT, NUMERIC, INTEGER, INTEGER, TEXT) TO authenticated, anon;
-

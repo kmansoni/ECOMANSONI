@@ -90,9 +90,7 @@ BEGIN
   OFFSET GREATEST(0, COALESCE(p_offset, 0));
 END;
 $$;
-
 REVOKE ALL ON FUNCTION public.get_user_reels_v1(UUID, INTEGER, INTEGER) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.get_user_reels_v1(UUID, INTEGER, INTEGER) TO authenticated, anon;
-
 COMMENT ON FUNCTION public.get_user_reels_v1 IS
   'Profile RPC: returns reels for a specific author_id with moderation/channel visibility enforcement and pagination.';

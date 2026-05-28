@@ -8,7 +8,6 @@ BEGIN
     EXECUTE FUNCTION public.update_post_comments_count();
   END IF;
 END $$;
-
 -- Триггер для views_count (если не существует)
 DO $$
 BEGIN

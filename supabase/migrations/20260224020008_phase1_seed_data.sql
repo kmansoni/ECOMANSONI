@@ -13,7 +13,6 @@ INSERT INTO scope_definitions(scope,description,is_delegable,risk_level)VALUES
 ('admin:content','Content moderation',false,'critical'),
 ('system:impersonate','Impersonate users',false,'critical')
 ON CONFLICT(scope)DO NOTHING;
-
 INSERT INTO rate_limit_configs(scope,tier,action,algorithm,limit_value,window_seconds,burst)VALUES
 ('global','A','token:issue','fixed_window',100,3600,120),
 ('global','B','token:issue','fixed_window',30,3600,40),
@@ -28,6 +27,5 @@ INSERT INTO rate_limit_configs(scope,tier,action,algorithm,limit_value,window_se
 ('global','C','media:upload','token_bucket',5,60,8),
 ('global','D','media:upload','token_bucket',1,60,2)
 ON CONFLICT(scope,tier,action)DO NOTHING;
-
 COMMENT ON TABLE scope_definitions IS'Phase 1 SSOT for delegable scopes with risk classification';
 COMMENT ON TABLE rate_limit_configs IS'Phase 1 tiered rate limiting:A(trusted)B(default)C(restricted)D(high-risk)';

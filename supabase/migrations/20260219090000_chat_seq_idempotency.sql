@@ -5,27 +5,21 @@
 -- 1) Conversations: keep a monotonically increasing message sequence.
 ALTER TABLE public.conversations
 ADD COLUMN IF NOT EXISTS last_message_seq BIGINT NOT NULL DEFAULT 0;
-
 -- 2) Messages: client-side id for retry safety + server-assigned seq.
 ALTER TABLE public.messages
 ADD COLUMN IF NOT EXISTS client_msg_id UUID;
-
 ALTER TABLE public.messages
 ADD COLUMN IF NOT EXISTS seq BIGINT;
-
 -- 3) Uniqueness + read/query performance.
 CREATE UNIQUE INDEX IF NOT EXISTS idx_messages_conv_sender_client_msg
   ON public.messages (conversation_id, sender_id, client_msg_id)
   WHERE client_msg_id IS NOT NULL;
-
 CREATE UNIQUE INDEX IF NOT EXISTS idx_messages_conv_seq_unique
   ON public.messages (conversation_id, seq)
   WHERE seq IS NOT NULL;
-
 CREATE INDEX IF NOT EXISTS idx_messages_conv_seq
   ON public.messages (conversation_id, seq)
   WHERE seq IS NOT NULL;
-
 -- 4) Assign seq + touch conversation.updated_at in the same transaction.
 --    This keeps conversation ordering fresh even if clients don't update conversations.
 CREATE OR REPLACE FUNCTION public.assign_message_seq_and_touch_conversation()
@@ -57,9 +51,7 @@ BEGIN
   RETURN NEW;
 END;
 $$;
-
 DROP TRIGGER IF EXISTS trg_messages_assign_seq_touch_conversation ON public.messages;
-
 CREATE TRIGGER trg_messages_assign_seq_touch_conversation
 BEFORE INSERT ON public.messages
 FOR EACH ROW

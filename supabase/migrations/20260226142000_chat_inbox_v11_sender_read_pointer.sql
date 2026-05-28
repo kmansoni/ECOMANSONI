@@ -82,6 +82,5 @@ BEGIN
   ORDER BY b.sort_key ASC, b.dialog_id ASC;
 END;
 $$;
-
 REVOKE ALL ON FUNCTION public.chat_get_inbox_v11_with_pointers(INTEGER, TEXT) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.chat_get_inbox_v11_with_pointers(INTEGER, TEXT) TO authenticated;

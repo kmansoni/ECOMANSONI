@@ -30,10 +30,8 @@ CREATE TABLE IF NOT EXISTS public.hashtag_categories (
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
-
 CREATE INDEX IF NOT EXISTS idx_hashtag_categories_active
   ON public.hashtag_categories(is_active, sort_order);
-
 -- Map hashtags to categories (many-to-many)
 CREATE TABLE IF NOT EXISTS public.hashtag_category_mapping (
   mapping_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -43,13 +41,10 @@ CREATE TABLE IF NOT EXISTS public.hashtag_category_mapping (
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   UNIQUE(hashtag_id, category_id)
 );
-
 CREATE INDEX IF NOT EXISTS idx_hashtag_category_mapping_category
   ON public.hashtag_category_mapping(category_id, relevance_score DESC);
-
 CREATE INDEX IF NOT EXISTS idx_hashtag_category_mapping_hashtag
   ON public.hashtag_category_mapping(hashtag_id);
-
 -- Seed initial categories (Russian-first platform)
 INSERT INTO public.hashtag_categories (category_name, display_name_ru, display_name_en, icon_name, sort_order)
 VALUES
@@ -69,7 +64,6 @@ VALUES
   ('beauty', 'Красота', 'Beauty', 'rose', 14),
   ('life', 'Жизнь', 'Life', 'heart', 15)
 ON CONFLICT (category_name) DO NOTHING;
-
 -- 2) Fresh Creators: Enhanced with quality filter
 -- Only show creators with min content quality + decent trust score
 
@@ -119,13 +113,10 @@ AS $$
   ORDER BY p.created_at DESC
   LIMIT GREATEST(1, LEAST(p_limit, 50));
 $$;
-
 REVOKE ALL ON FUNCTION public.get_explore_fresh_creators_v1(INTEGER, INTEGER, INTEGER, INTEGER) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.get_explore_fresh_creators_v1(INTEGER, INTEGER, INTEGER, INTEGER) TO anon, authenticated;
-
 COMMENT ON FUNCTION public.get_explore_fresh_creators_v1(INTEGER, INTEGER, INTEGER, INTEGER) IS
   'Phase 1 EPIC G: Get fresh creators for Explore with quality filter (min reels, min trust score, max age)';
-
 -- 3) Categories section: Get top reels per category
 
 CREATE OR REPLACE FUNCTION public.get_explore_categories_v1(
@@ -199,13 +190,10 @@ BEGIN
   END LOOP;
 END;
 $$;
-
 REVOKE ALL ON FUNCTION public.get_explore_categories_v1(INTEGER, INTEGER) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.get_explore_categories_v1(INTEGER, INTEGER) TO anon, authenticated;
-
 COMMENT ON FUNCTION public.get_explore_categories_v1(INTEGER, INTEGER) IS
   'Phase 1 EPIC G: Get categories with top reels per category for Explore';
-
 -- 4) Enhanced Explore Page v2: Integrates EPIC H + G
 
 CREATE OR REPLACE FUNCTION public.get_explore_page_v2(
@@ -394,13 +382,10 @@ BEGIN
   RETURN v_payload;
 END;
 $$;
-
 REVOKE ALL ON FUNCTION public.get_explore_page_v2(UUID, TEXT, TEXT, TEXT, BOOLEAN, BOOLEAN) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.get_explore_page_v2(UUID, TEXT, TEXT, TEXT, BOOLEAN, BOOLEAN) TO anon, authenticated;
-
 COMMENT ON FUNCTION public.get_explore_page_v2(UUID, TEXT, TEXT, TEXT, BOOLEAN, BOOLEAN) IS
   'Phase 1 EPIC G: Enhanced Explore page with EPIC H trending integration, categories, fresh creators, safety enforcement';
-
 -- ============================================================================
 -- Summary:
 -- - ✅ Categories implemented (hashtag_categories + mapping)
@@ -408,4 +393,4 @@ COMMENT ON FUNCTION public.get_explore_page_v2(UUID, TEXT, TEXT, TEXT, BOOLEAN, 
 -- - ✅ Trending Now uses EPIC H trust-weighted trends
 -- - ✅ Safety enforcement (only green content, no controversial flags)
 -- - ✅ get_explore_page_v2() unified API
--- ============================================================================
+-- ============================================================================;

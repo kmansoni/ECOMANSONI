@@ -7,6 +7,7 @@ APP_DIR="${APP_DIR:-/opt/mansoni/app}"
 CURRENT_LINK="$APP_DIR/current"
 BLUE_DIR="$APP_DIR/releases/blue"
 GREEN_DIR="$APP_DIR/releases/green"
+TARGET_ROOT="$CURRENT_LINK"
 
 log() { echo "[$(date '+%H:%M:%S')] $*"; }
 
@@ -72,10 +73,14 @@ ln -sfn "$INACTIVE_DIR" "$CURRENT_LINK"
 
 # Обновляем nginx root
 if [ -n "$NGINX_CONF" ]; then
-  sudo sed -i "s|root $APP_DIR/releases/$ACTIVE|root $INACTIVE_DIR|g" "$NGINX_CONF"
+  if grep -Eq "root[[:space:]]+$APP_DIR/(dist|current|releases/blue|releases/green)" "$NGINX_CONF"; then
+    sudo sed -Ei "s|root[[:space:]]+$APP_DIR/(dist|current|releases/blue|releases/green)|root $TARGET_ROOT|g" "$NGINX_CONF"
+  else
+    log "WARNING: root directive for $APP_DIR not found in $NGINX_CONF"
+  fi
   if sudo nginx -t 2>/dev/null; then
     sudo systemctl reload nginx
-    log "Nginx reloaded → $INACTIVE_DIR"
+    log "Nginx reloaded → $TARGET_ROOT ($(readlink -f "$CURRENT_LINK" || echo "unknown"))"
   else
     log "WARNING: nginx -t failed, skipping reload"
   fi
@@ -83,4 +88,4 @@ else
   log "WARNING: nginx config not found"
 fi
 
-log "Deployment successful — serving from $INACTIVE slot"
+log "Deployment successful — current points to $(readlink -f "$CURRENT_LINK" || echo "unknown")"

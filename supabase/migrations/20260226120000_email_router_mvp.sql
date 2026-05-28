@@ -11,7 +11,6 @@ CREATE TABLE IF NOT EXISTS public.email_templates (
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
-
 CREATE TABLE IF NOT EXISTS public.email_outbox (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   idempotency_key TEXT NULL UNIQUE,
@@ -34,7 +33,6 @@ CREATE TABLE IF NOT EXISTS public.email_outbox (
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
-
 CREATE TABLE IF NOT EXISTS public.email_deliveries (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   outbox_id UUID NOT NULL REFERENCES public.email_outbox(id) ON DELETE CASCADE,
@@ -45,18 +43,14 @@ CREATE TABLE IF NOT EXISTS public.email_deliveries (
   error_message TEXT NULL,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
-
 CREATE INDEX IF NOT EXISTS idx_email_outbox_pending
   ON public.email_outbox (status, next_attempt_at)
   WHERE status = 'pending';
-
 CREATE INDEX IF NOT EXISTS idx_email_outbox_locked
   ON public.email_outbox (locked_until)
   WHERE status = 'processing';
-
 CREATE INDEX IF NOT EXISTS idx_email_deliveries_outbox
   ON public.email_deliveries (outbox_id, created_at DESC);
-
 CREATE OR REPLACE FUNCTION public.touch_email_updated_at()
 RETURNS TRIGGER
 LANGUAGE plpgsql
@@ -66,19 +60,16 @@ BEGIN
   RETURN NEW;
 END;
 $$;
-
 DROP TRIGGER IF EXISTS trg_email_templates_updated_at ON public.email_templates;
 CREATE TRIGGER trg_email_templates_updated_at
 BEFORE UPDATE ON public.email_templates
 FOR EACH ROW
 EXECUTE FUNCTION public.touch_email_updated_at();
-
 DROP TRIGGER IF EXISTS trg_email_outbox_updated_at ON public.email_outbox;
 CREATE TRIGGER trg_email_outbox_updated_at
 BEFORE UPDATE ON public.email_outbox
 FOR EACH ROW
 EXECUTE FUNCTION public.touch_email_updated_at();
-
 CREATE OR REPLACE FUNCTION public.claim_email_outbox_batch(
   p_limit INTEGER DEFAULT 25,
   p_lock_seconds INTEGER DEFAULT 90
@@ -115,7 +106,6 @@ BEGIN
   SELECT * FROM updated;
 END;
 $$;
-
 REVOKE ALL ON FUNCTION public.claim_email_outbox_batch(INTEGER, INTEGER) FROM PUBLIC;
 DO $$
 BEGIN

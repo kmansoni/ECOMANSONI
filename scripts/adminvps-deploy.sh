@@ -33,9 +33,11 @@ ensure_frontend_env() {
   local env_file="$APP_DIR/.env.production"
   local supabase_url
   local supabase_key
+  local calls_ws_urls
 
   supabase_url="$(resolve_env_value "${VITE_SUPABASE_URL:-}" "${SUPABASE_URL:-}")"
   supabase_key="$(resolve_env_value "${VITE_SUPABASE_PUBLISHABLE_KEY:-}" "${VITE_SUPABASE_ANON_KEY:-${SUPABASE_ANON_KEY:-}}")"
+  calls_ws_urls="$(resolve_env_value "${VITE_CALLS_V2_WS_URLS:-}" "${CALLS_V2_WS_URLS:-}")"
 
   if [ -f "$env_file" ]; then
     if [ -z "$supabase_url" ]; then
@@ -44,6 +46,9 @@ ensure_frontend_env() {
     if [ -z "$supabase_key" ]; then
       supabase_key="$(grep -E '^VITE_SUPABASE_PUBLISHABLE_KEY=' "$env_file" | head -n1 | cut -d'=' -f2- | tr -d '"' || true)"
     fi
+    if [ -z "$calls_ws_urls" ]; then
+      calls_ws_urls="$(grep -E '^VITE_CALLS_V2_WS_URLS=' "$env_file" | head -n1 | cut -d'=' -f2- | tr -d '"' || true)"
+    fi
   fi
 
   if [ -z "$supabase_url" ] || [ -z "$supabase_key" ]; then
@@ -51,10 +56,25 @@ ensure_frontend_env() {
     exit 1
   fi
 
-  cat > "$env_file" <<EOF
-VITE_SUPABASE_URL="$supabase_url"
-VITE_SUPABASE_PUBLISHABLE_KEY="$supabase_key"
-EOF
+  if [ -z "$calls_ws_urls" ]; then
+    calls_ws_urls="wss://sfu-ru.mansoni.ru/ws"
+  fi
+
+  touch "$env_file"
+
+  upsert_env() {
+    local key="$1"
+    local value="$2"
+    if grep -qE "^${key}=" "$env_file"; then
+      sed -i "s#^${key}=.*#${key}=\"${value}\"#" "$env_file"
+    else
+      printf '%s="%s"\n' "$key" "$value" >> "$env_file"
+    fi
+  }
+
+  upsert_env "VITE_SUPABASE_URL" "$supabase_url"
+  upsert_env "VITE_SUPABASE_PUBLISHABLE_KEY" "$supabase_key"
+  upsert_env "VITE_CALLS_V2_WS_URLS" "$calls_ws_urls"
 }
 
 if [ ! -d "$APP_DIR/.git" ]; then

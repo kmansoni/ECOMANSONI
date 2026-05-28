@@ -9,12 +9,9 @@ create table if not exists public.internal_event_dedup (
   source text,
   payload_hash text
 );
-
 create index if not exists internal_event_dedup_seen_idx
   on public.internal_event_dedup(seen_at desc);
-
 alter table public.internal_event_dedup enable row level security;
-
 -- No direct policies for client roles. Access via service-role RPC only.
 
 create or replace function public.internal_event_register_v1(
@@ -58,7 +55,6 @@ begin
   return v_inserted = 1;
 end;
 $$;
-
 create or replace function public.internal_event_gc_v1(
   p_keep_seconds integer default 604800
 )
@@ -77,9 +73,7 @@ begin
   return v_deleted;
 end;
 $$;
-
 revoke all on function public.internal_event_register_v1(uuid, bigint, bigint, text, text) from public;
 revoke all on function public.internal_event_gc_v1(integer) from public;
-
 grant execute on function public.internal_event_register_v1(uuid, bigint, bigint, text, text) to service_role;
 grant execute on function public.internal_event_gc_v1(integer) to service_role;

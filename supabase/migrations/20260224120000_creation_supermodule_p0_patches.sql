@@ -20,10 +20,8 @@ create table if not exists public.idempotency_keys (
   check (length(scope) between 3 and 80),
   check (length(key) between 8 and 200)
 );
-
 create index if not exists idx_idempotency_keys_expires_at
   on public.idempotency_keys (expires_at);
-
 create table if not exists public.drafts (
   id uuid primary key default gen_random_uuid(),
   author_id uuid not null default auth.uid(),
@@ -53,10 +51,8 @@ create table if not exists public.drafts (
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
-
 create index if not exists idx_drafts_author_state_updated
   on public.drafts (author_id, state, updated_at desc);
-
 create table if not exists public.draft_versions (
   draft_id uuid not null references public.drafts(id) on delete cascade,
   rev integer not null check (rev >= 1),
@@ -66,7 +62,6 @@ create table if not exists public.draft_versions (
   created_at timestamptz not null default now(),
   primary key (draft_id, rev)
 );
-
 create or replace function public.sync_draft_current_rev_v1()
 returns trigger
 language plpgsql
@@ -80,13 +75,11 @@ begin
   return new;
 end;
 $$;
-
 drop trigger if exists trg_sync_draft_current_rev_v1 on public.draft_versions;
 create trigger trg_sync_draft_current_rev_v1
 after insert on public.draft_versions
 for each row
 execute function public.sync_draft_current_rev_v1();
-
 create table if not exists public.uploads (
   id uuid primary key default gen_random_uuid(),
   draft_id uuid not null references public.drafts(id) on delete cascade,
@@ -99,10 +92,8 @@ create table if not exists public.uploads (
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
-
 create index if not exists idx_uploads_draft_created
   on public.uploads (draft_id, created_at desc);
-
 create table if not exists public.upload_parts (
   upload_id uuid not null references public.uploads(id) on delete cascade,
   part_no integer not null check (part_no > 0),
@@ -112,10 +103,8 @@ create table if not exists public.upload_parts (
   committed_at timestamptz not null default now(),
   primary key (upload_id, part_no)
 );
-
 create index if not exists idx_upload_parts_upload_committed
   on public.upload_parts (upload_id, committed_at desc);
-
 create table if not exists public.assets (
   id uuid primary key default gen_random_uuid(),
   draft_id uuid not null references public.drafts(id) on delete cascade,
@@ -126,10 +115,8 @@ create table if not exists public.assets (
   metadata jsonb not null default '{}'::jsonb,
   created_at timestamptz not null default now()
 );
-
 create index if not exists idx_assets_draft
   on public.assets (draft_id);
-
 create table if not exists public.transcode_jobs (
   id uuid primary key default gen_random_uuid(),
   asset_id uuid not null references public.assets(id) on delete cascade,
@@ -140,19 +127,15 @@ create table if not exists public.transcode_jobs (
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
-
 create index if not exists idx_transcode_jobs_state_created
   on public.transcode_jobs (state, created_at);
-
 alter table public.posts
   add column if not exists draft_id uuid references public.drafts(id),
   add column if not exists publish_state text default 'published',
   add column if not exists visibility text default 'public';
-
 create unique index if not exists idx_posts_draft_id_uniq
   on public.posts(draft_id)
   where draft_id is not null;
-
 create table if not exists public.story_segments (
   id uuid primary key default gen_random_uuid(),
   story_id uuid not null references public.stories(id) on delete cascade,
@@ -163,19 +146,15 @@ create table if not exists public.story_segments (
   created_at timestamptz not null default now(),
   unique (story_id, segment_index)
 );
-
 create index if not exists idx_story_segments_story_idx
   on public.story_segments(story_id, segment_index);
-
 alter table public.reels
   add column if not exists draft_id uuid references public.drafts(id),
   add column if not exists publish_state text default 'published',
   add column if not exists visibility text default 'public';
-
 create unique index if not exists idx_reels_draft_id_uniq
   on public.reels(draft_id)
   where draft_id is not null;
-
 create table if not exists public.live_sessions (
   id uuid primary key default gen_random_uuid(),
   author_id uuid not null,
@@ -188,10 +167,8 @@ create table if not exists public.live_sessions (
   replay_asset_id uuid references public.assets(id) on delete set null,
   created_at timestamptz not null default now()
 );
-
 create index if not exists idx_live_sessions_author_created
   on public.live_sessions(author_id, created_at desc);
-
 create table if not exists public.publish_events (
   id uuid primary key default gen_random_uuid(),
   draft_id uuid not null references public.drafts(id) on delete cascade,
@@ -205,10 +182,8 @@ create table if not exists public.publish_events (
   foreign key (idempotency_scope, idempotency_key)
     references public.idempotency_keys(scope, key)
 );
-
 create index if not exists idx_publish_events_draft_created
   on public.publish_events(draft_id, created_at desc);
-
 create table if not exists public.moderation_events (
   id uuid primary key default gen_random_uuid(),
   draft_id uuid not null references public.drafts(id) on delete cascade,
@@ -219,7 +194,6 @@ create table if not exists public.moderation_events (
   applied_rev integer,
   created_at timestamptz not null default now()
 );
-
 create table if not exists public.rights_events (
   id uuid primary key default gen_random_uuid(),
   draft_id uuid not null references public.drafts(id) on delete cascade,
@@ -230,7 +204,6 @@ create table if not exists public.rights_events (
   applied_rev integer,
   created_at timestamptz not null default now()
 );
-
 create table if not exists public.publish_outbox (
   id uuid primary key default gen_random_uuid(),
   topic text not null check (topic in ('publish.notifications', 'publish.search', 'publish.feed_fanout')),
@@ -242,10 +215,8 @@ create table if not exists public.publish_outbox (
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
-
 create index if not exists idx_publish_outbox_pending
   on public.publish_outbox(state, next_attempt_at, created_at);
-
 create table if not exists public.telemetry_events (
   event_id uuid not null default gen_random_uuid(),
   event_name text not null,
@@ -259,17 +230,13 @@ create table if not exists public.telemetry_events (
   primary key (event_id, dedupe_bucket_date),
   unique (event_name, dedupe_key, dedupe_bucket_date)
 ) partition by range (dedupe_bucket_date);
-
 create table if not exists public.telemetry_events_2026_h1
   partition of public.telemetry_events
   for values from ('2026-01-01') to ('2026-07-01');
-
 create table if not exists public.telemetry_events_2026_h2
   partition of public.telemetry_events
   for values from ('2026-07-01') to ('2027-01-01');
-
 create index if not exists idx_telemetry_events_name_time
   on public.telemetry_events (event_name, event_time desc);
-
 create index if not exists idx_telemetry_events_content_time
   on public.telemetry_events (content_id, event_time desc);

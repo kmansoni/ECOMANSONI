@@ -117,12 +117,18 @@ async function runProbe(
 
   if (missing.length === 0 && duplicates.length === 0) return;
 
-  logger.warn("CALLS_PRODUCER_COVERAGE_DIFF", {
+  const missingSummary = missing.map((m) => `${m.producerId}/${m.kind}/${m.source}:${m.persistenceMs}ms`).join(",");
+  const duplicateSummary = duplicates.map((d) => `${d.producerId}x${d.count}`).join(",");
+
+  logger.warn(
+    `CALLS_PRODUCER_COVERAGE_DIFF server=${serverProducers.length} local=${localConsumers.filter((c) => !c.closed).length} missing=[${missingSummary || "none"}] duplicates=[${duplicateSummary || "none"}]`,
+    {
     pollIndex,
     timeSinceJoinMs,
     serverProducerCount: serverProducers.length,
     localConsumerCount: localConsumers.filter((c) => !c.closed).length,
     missing,
     duplicates,
-  });
+    }
+  );
 }

@@ -86,7 +86,6 @@ CREATE TABLE IF NOT EXISTS public.core_scopes (
   -- Metadata (opaque JSON)
   metadata JSONB DEFAULT '{}'::jsonb
 );
-
 -- Indexes
 CREATE UNIQUE INDEX idx_core_scopes_dm_pair ON public.core_scopes(dm_user_low, dm_user_high)
   WHERE scope_type = 'dm';
@@ -96,10 +95,8 @@ CREATE INDEX idx_core_scopes_system_mode ON public.core_scopes(system_mode)
   WHERE system_mode <> 'normal';
 CREATE INDEX idx_core_scopes_projection_mode ON public.core_scopes(projection_mode)
   WHERE projection_mode <> 'normal';
-
 -- Enable RLS (section 5: SECURITY DEFINER RPC only)
 ALTER TABLE public.core_scopes ENABLE ROW LEVEL SECURITY;
-
 -- ============================================================================
 -- 2. core_events table (append-only, immutable)
 -- INV-SEQ-01: Gap detection mandatory
@@ -142,17 +139,14 @@ CREATE TABLE IF NOT EXISTS public.core_events (
   UNIQUE (scope_id, event_seq),
   UNIQUE (actor_id, scope_id, command_type, idempotency_key_norm, event_seq)
 );
-
 -- Indexes
 CREATE INDEX idx_core_events_scope_id ON public.core_events(scope_id);
 CREATE INDEX idx_core_events_actor_id ON public.core_events(actor_id);
 CREATE INDEX idx_core_events_command_type ON public.core_events(command_type);
 CREATE INDEX idx_core_events_created_at ON public.core_events(created_at);
 CREATE INDEX idx_core_events_server_time ON public.core_events(server_time);
-
 -- Enforce append-only: prevent updates and deletes
 ALTER TABLE public.core_events ENABLE ROW LEVEL SECURITY;
-
 -- ============================================================================
 -- 3. core_scope_members table
 -- INV-MEM-01: Removed members have memberships cleared
@@ -188,16 +182,13 @@ CREATE TABLE IF NOT EXISTS public.core_scope_members (
   ),
   CONSTRAINT monotonic_receipts CHECK (last_read_seq <= last_delivered_seq)
 );
-
 -- Indexes
 CREATE INDEX idx_core_scope_members_user_id ON public.core_scope_members(user_id);
 CREATE INDEX idx_core_scope_members_role ON public.core_scope_members(role);
 CREATE INDEX idx_core_scope_members_join_state ON public.core_scope_members(join_state);
 CREATE INDEX idx_core_scope_members_removed_at ON public.core_scope_members(removed_at)
   WHERE removed_at IS NOT NULL;
-
 ALTER TABLE public.core_scope_members ENABLE ROW LEVEL SECURITY;
-
 -- ============================================================================
 -- 4. scope_invites table
 -- INV-INV-01: Invites audit and policy snapshot
@@ -235,15 +226,12 @@ CREATE TABLE IF NOT EXISTS public.scope_invites (
     (status <> 'accepted' AND accepted_at IS NULL)
   )
 );
-
 -- Indexes
 CREATE INDEX idx_scope_invites_scope_id ON public.scope_invites(scope_id);
 CREATE INDEX idx_scope_invites_invited_user ON public.scope_invites(invited_user);
 CREATE INDEX idx_scope_invites_status ON public.scope_invites(status);
 CREATE INDEX idx_scope_invites_expires_at ON public.scope_invites(expires_at);
-
 ALTER TABLE public.scope_invites ENABLE ROW LEVEL SECURITY;
-
 -- ============================================================================
 -- 5. core_receipts table (monotonic pointers)
 -- ============================================================================
@@ -265,13 +253,10 @@ CREATE TABLE IF NOT EXISTS public.core_receipts (
   
   PRIMARY KEY (scope_id, user_id)
 );
-
 -- Indexes
 CREATE INDEX idx_core_receipts_user_id ON public.core_receipts(user_id);
 CREATE INDEX idx_core_receipts_read_at ON public.core_receipts(read_at);
-
 ALTER TABLE public.core_receipts ENABLE ROW LEVEL SECURITY;
-
 -- ============================================================================
 -- 6. idempotency_outcomes_hot table (2-year retention)
 -- INV-IDEMP-01: Perpetual idempotency, two-tier model
@@ -298,14 +283,11 @@ CREATE TABLE IF NOT EXISTS public.idempotency_outcomes_hot (
   
   PRIMARY KEY (actor_id, scope_id, command_type, idempotency_key_norm)
 );
-
 -- Indexes
 CREATE INDEX idx_idempotency_outcomes_hot_scope_id ON public.idempotency_outcomes_hot(scope_id);
 CREATE INDEX idx_idempotency_outcomes_hot_actor_id ON public.idempotency_outcomes_hot(actor_id);
 CREATE INDEX idx_idempotency_outcomes_hot_expires_at ON public.idempotency_outcomes_hot(expires_at);
-
 ALTER TABLE public.idempotency_outcomes_hot ENABLE ROW LEVEL SECURITY;
-
 -- ============================================================================
 -- 7. idempotency_outcomes_archive table (indefinite retention)
 -- Section 3.3: Archive perpetually, never delete for anti-replay
@@ -334,13 +316,10 @@ CREATE TABLE IF NOT EXISTS public.idempotency_outcomes_archive (
   
   PRIMARY KEY (actor_id, scope_id, command_type, idempotency_key_norm)
 );
-
 -- Indexes
 CREATE INDEX idx_idempotency_outcomes_archive_scope_id ON public.idempotency_outcomes_archive(scope_id);
 CREATE INDEX idx_idempotency_outcomes_archive_actor_id ON public.idempotency_outcomes_archive(actor_id);
-
 ALTER TABLE public.idempotency_outcomes_archive ENABLE ROW LEVEL SECURITY;
-
 -- ============================================================================
 -- 8. idempotency_locks table (in-flight race prevention)
 -- Short-lived: < 30 seconds
@@ -357,10 +336,8 @@ CREATE TABLE IF NOT EXISTS public.idempotency_locks (
   
   PRIMARY KEY (idempotency_key_norm, scope_id, actor_id)
 );
-
 -- Indexes
 CREATE INDEX idx_idempotency_locks_expires_at ON public.idempotency_locks(expires_at);
-
 -- ============================================================================
 -- 9. projection_watermarks table
 -- INV-PROJ-01: Monotonic increase, server-time ordering
@@ -388,13 +365,10 @@ CREATE TABLE IF NOT EXISTS public.projection_watermarks (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   version INT NOT NULL DEFAULT 1 CHECK (version > 0)
 );
-
 -- Indexes
 CREATE INDEX idx_projection_watermarks_projection_mode ON public.projection_watermarks(projection_mode)
   WHERE projection_mode <> 'normal';
-
 ALTER TABLE public.projection_watermarks ENABLE ROW LEVEL SECURITY;
-
 -- ============================================================================
 -- 10. admin_action_log table (audit trail)
 -- G-ADM-01: Admin reason allowlist + PII screen
@@ -429,15 +403,12 @@ CREATE TABLE IF NOT EXISTS public.admin_action_log (
   -- Timestamps
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
-
 -- Indexes
 CREATE INDEX idx_admin_action_log_admin_user_id ON public.admin_action_log(admin_user_id);
 CREATE INDEX idx_admin_action_log_target_scope_id ON public.admin_action_log(target_scope_id);
 CREATE INDEX idx_admin_action_log_reason_code ON public.admin_action_log(reason_code);
 CREATE INDEX idx_admin_action_log_created_at ON public.admin_action_log(created_at);
-
 ALTER TABLE public.admin_action_log ENABLE ROW LEVEL SECURITY;
-
 -- ============================================================================
 -- Grant RLS enforcement
 -- Section 5: REVOKE direct writes; allow only SECURITY DEFINER RPC

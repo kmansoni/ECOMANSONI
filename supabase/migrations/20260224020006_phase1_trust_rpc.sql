@@ -13,7 +13,6 @@ BEGIN
   END LOOP;
   RETURN GREATEST(0,LEAST(100,v_total));
 END;$$LANGUAGE plpgsql SECURITY DEFINER;
-
 CREATE OR REPLACE FUNCTION enforce_rate_limit_v1(p_action TEXT,p_actor_type actor_type,p_actor_id TEXT,p_cost INT DEFAULT 1)
 RETURNS BOOLEAN AS $$
 DECLARE v_tier risk_tier;v_config RECORD;v_consumed INT;v_window_start TIMESTAMPTZ;v_temp_table TEXT;
@@ -30,7 +29,6 @@ BEGIN
   EXECUTE format('INSERT INTO %I(actor_id,consumed,window_start)VALUES($1,$2,$3)ON CONFLICT(actor_id,window_start)DO UPDATE SET consumed=%I.consumed+$2',v_temp_table,v_temp_table)USING p_actor_id,p_cost,v_window_start;
   RETURN true;
 END;$$LANGUAGE plpgsql SECURITY DEFINER;
-
 CREATE OR REPLACE FUNCTION issue_delegation_token_v1(p_auth_context JSONB,p_service_id TEXT,p_scopes TEXT[],p_expires_minutes INT DEFAULT 60)
 RETURNS TABLE(delegation_id UUID,token_jwt TEXT) AS $$
 DECLARE v_user_id UUID;v_tenant_id UUID;v_delegation_id UUID;v_key BYTEA;v_payload JSONB;v_jwt TEXT:='JWT_GENERATION_REQUIRES_APP_LAYER_OR_PGJWT_EXTENSION';v_hash TEXT;
@@ -46,7 +44,6 @@ BEGIN
   INSERT INTO delegation_tokens(tenant_id,delegation_id,service_key_id,token_hash,jti,expires_at)VALUES(v_tenant_id,v_delegation_id,'placeholder',v_hash,v_payload->>'jti',to_timestamp((v_payload->>'exp')::NUMERIC));
   RETURN QUERY SELECT v_delegation_id,v_jwt;
 END;$$LANGUAGE plpgsql SECURITY DEFINER;
-
 CREATE OR REPLACE FUNCTION revoke_delegation_v1(p_auth_context JSONB,p_delegation_id UUID)
 RETURNS BOOLEAN AS $$
 DECLARE v_user_id UUID;v_tenant_id UUID;

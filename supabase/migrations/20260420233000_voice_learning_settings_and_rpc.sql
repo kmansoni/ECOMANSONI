@@ -6,7 +6,6 @@ ALTER TABLE public.navigator_settings
   ADD COLUMN IF NOT EXISTS voice_learning_enabled BOOLEAN NOT NULL DEFAULT true,
   ADD COLUMN IF NOT EXISTS voice_backend_sync_enabled BOOLEAN NOT NULL DEFAULT true,
   ADD COLUMN IF NOT EXISTS voice_allow_online_fallback BOOLEAN NOT NULL DEFAULT false;
-
 CREATE OR REPLACE FUNCTION public.upsert_navigator_settings(
   p_user_id UUID,
   p_settings JSONB
@@ -59,7 +58,6 @@ BEGIN
   RETURN to_jsonb(result);
 END;
 $$;
-
 CREATE OR REPLACE FUNCTION public.nav_record_voice_learning_event(
   p_transcript_draft TEXT,
   p_transcript_final TEXT DEFAULT NULL,
@@ -138,7 +136,6 @@ BEGIN
   RETURN v_id;
 END;
 $$;
-
 CREATE OR REPLACE FUNCTION public.nav_record_voice_feedback(
   p_utterance_id UUID,
   p_corrected_transcript TEXT,
@@ -242,9 +239,7 @@ BEGIN
   );
 END;
 $$;
-
 REVOKE ALL ON FUNCTION public.nav_record_voice_learning_event(TEXT, TEXT, TEXT, TEXT, TEXT, NUMERIC, JSONB, TEXT, JSONB, JSONB) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.nav_record_voice_learning_event(TEXT, TEXT, TEXT, TEXT, TEXT, NUMERIC, JSONB, TEXT, JSONB, JSONB) TO authenticated;
-
 REVOKE ALL ON FUNCTION public.nav_record_voice_feedback(UUID, TEXT, JSONB, TEXT, TEXT, TEXT, NUMERIC, NUMERIC) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.nav_record_voice_feedback(UUID, TEXT, JSONB, TEXT, TEXT, TEXT, NUMERIC, NUMERIC) TO authenticated;

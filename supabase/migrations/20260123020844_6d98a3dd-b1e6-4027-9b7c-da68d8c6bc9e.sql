@@ -12,13 +12,11 @@ BEGIN
     RETURN NEW;
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
-
 DROP TRIGGER IF EXISTS on_post_like_create_notification ON public.post_likes;
 CREATE TRIGGER on_post_like_create_notification
     AFTER INSERT ON public.post_likes
     FOR EACH ROW
     EXECUTE FUNCTION public.handle_post_like_notification();
-
 -- Function to create notification on comment
 CREATE OR REPLACE FUNCTION public.handle_comment_notification()
 RETURNS TRIGGER AS $$
@@ -33,13 +31,11 @@ BEGIN
     RETURN NEW;
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
-
 DROP TRIGGER IF EXISTS on_comment_create_notification ON public.comments;
 CREATE TRIGGER on_comment_create_notification
     AFTER INSERT ON public.comments
     FOR EACH ROW
     EXECUTE FUNCTION public.handle_comment_notification();
-
 -- Function to create notification on follow
 CREATE OR REPLACE FUNCTION public.handle_follow_notification()
 RETURNS TRIGGER AS $$
@@ -49,13 +45,11 @@ BEGIN
     RETURN NEW;
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
-
 DROP TRIGGER IF EXISTS on_follow_create_notification ON public.followers;
 CREATE TRIGGER on_follow_create_notification
     AFTER INSERT ON public.followers
     FOR EACH ROW
     EXECUTE FUNCTION public.handle_follow_notification();
-
 -- Function to update reel likes count
 CREATE OR REPLACE FUNCTION public.update_reel_likes_count()
 RETURNS TRIGGER AS $$
@@ -68,13 +62,11 @@ BEGIN
     RETURN COALESCE(NEW, OLD);
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
-
 DROP TRIGGER IF EXISTS on_reel_like_update_count ON public.reel_likes;
 CREATE TRIGGER on_reel_like_update_count
     AFTER INSERT OR DELETE ON public.reel_likes
     FOR EACH ROW
     EXECUTE FUNCTION public.update_reel_likes_count();
-
 -- Function to update reel views count
 CREATE OR REPLACE FUNCTION public.update_reel_views_count()
 RETURNS TRIGGER AS $$
@@ -83,7 +75,6 @@ BEGIN
     RETURN NEW;
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
-
 DROP TRIGGER IF EXISTS on_reel_view_update_count ON public.reel_views;
 CREATE TRIGGER on_reel_view_update_count
     AFTER INSERT ON public.reel_views

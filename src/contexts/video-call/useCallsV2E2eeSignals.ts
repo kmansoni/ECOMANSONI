@@ -49,6 +49,9 @@ export function useCallsV2E2eeSignals({
   epochGuardRef,
   producerPeerKeyRef,
   peerUserIdByDeviceIdRef,
+  callsWsRef,
+  sfuManagerRef,
+  sfuRouterRtpCapabilitiesRef,
   pendingProducersToConsumeRef,
   consumePendingProducersRef,
   onDecryptionKeyReady,
@@ -160,6 +163,7 @@ export function useCallsV2E2eeSignals({
 
      on("ROOM_SNAPSHOT", (frame) => {
        const snapshot = frame.payload as {
+         roomId?: string;
          roomVersion?: number | string;
          e2ee?: { leaderDeviceId?: string };
          peers?: Array<{ peerId?: string; userId?: string; deviceId?: string }>;
@@ -198,20 +202,57 @@ export function useCallsV2E2eeSignals({
        }
        // Process producers from snapshot
        const snapshotProducers = (snapshot as { producers?: Array<{ producerId?: string; peerDeviceId?: string; kind?: string; source?: string }> } | null)?.producers;
-       if (Array.isArray(snapshotProducers) && callsWsRoomRef.current) {
-         const activeRoomId = callsWsRoomRef.current;
+       const snapshotRoomId = snapshot?.roomId;
+       const activeRoomId = callsWsRoomRef.current ?? snapshotRoomId ?? null;
+       if (callsWsRoomRef.current && snapshotRoomId && snapshotRoomId !== callsWsRoomRef.current) {
+         logger.debug("[VideoCallContext] ROOM_SNAPSHOT producers ignored: room mismatch", {
+           activeRoomId: callsWsRoomRef.current,
+           snapshotRoomId,
+         });
+         return;
+       }
+       if (Array.isArray(snapshotProducers) && activeRoomId) {
          const localDeviceId = getStableCallsDeviceId();
+         logger.debug("[VideoCallContext] ROOM_SNAPSHOT producers received", {
+           roomId: activeRoomId,
+           producers: snapshotProducers.length,
+           localDeviceId,
+           mediaLoaded: Boolean(sfuManagerRef.current?.loaded),
+           hasRouterCaps: Boolean(sfuRouterRtpCapabilitiesRef.current),
+         });
          for (const prod of snapshotProducers) {
            if (prod.producerId && prod.peerDeviceId !== localDeviceId) {
              if (sfuManagerRef.current?.loaded && sfuRouterRtpCapabilitiesRef.current) {
-               void client.consume({ roomId: activeRoomId, producerId: prod.producerId, rtpCapabilities: sfuRouterRtpCapabilitiesRef.current }).catch((err) => {
-                 logger.warn("[VideoCallContext] consume from snapshot failed", err);
+               logger.debug("[VideoCallContext] consume from snapshot dispatch", {
+                 producerId: prod.producerId,
+                 roomId: activeRoomId,
+                 peerDeviceId: prod.peerDeviceId,
                });
+                void client.consume({ roomId: activeRoomId, producerId: prod.producerId, rtpCapabilities: sfuRouterRtpCapabilitiesRef.current }).catch((err) => {
+                  // Do not drop producer on transient failures (transport race / ack timeout).
+                  // Re-queue for the shared pending-consume retry path.
+                  pendingProducersToConsumeRef.current.set(prod.producerId!, {
+                    roomId: activeRoomId,
+                    peerDeviceId: prod.peerDeviceId,
+                    peerUserId: prod.peerDeviceId ? peerUserIdByDeviceIdRef.current.get(prod.peerDeviceId) : undefined,
+                  });
+                  logger.warn("[VideoCallContext] consume from snapshot failed; producer re-queued", {
+                    producerId: prod.producerId,
+                    roomId: activeRoomId,
+                    error: err instanceof Error ? err.message : String(err),
+                  });
+                });
              } else {
                pendingProducersToConsumeRef.current.set(prod.producerId, {
                  roomId: activeRoomId,
                  peerDeviceId: prod.peerDeviceId,
                  peerUserId: peerUserIdByDeviceIdRef.current.get(prod.peerDeviceId),
+               });
+               logger.debug("[VideoCallContext] snapshot producer queued for pending consume", {
+                 producerId: prod.producerId,
+                 roomId: activeRoomId,
+                 peerDeviceId: prod.peerDeviceId,
+                 pendingSize: pendingProducersToConsumeRef.current.size,
                });
                if (peerUserIdByDeviceIdRef.current.get(prod.peerDeviceId)) {
                  producerPeerKeyRef.current.set(prod.producerId, `${peerUserIdByDeviceIdRef.current.get(prod.peerDeviceId)}:${prod.peerDeviceId}`);
@@ -781,10 +822,23 @@ export function useCallsV2E2eeSignals({
       if (!sfuManagerRef.current?.loaded || !sfuRouterRtpCapabilitiesRef.current) return;
       const rtpCapabilities = sfuRouterRtpCapabilitiesRef.current;
       const toProcess = Array.from(pendingProducersToConsumeRef.current.entries());
+      logger.debug("[VideoCallContext] consume pending producers start", {
+        count: toProcess.length,
+      });
       pendingProducersToConsumeRef.current.clear();
-      for (const [producerId, { roomId }] of toProcess) {
+      for (const [producerId, descriptor] of toProcess) {
+        const { roomId } = descriptor;
+        logger.debug("[VideoCallContext] consume pending producer dispatch", {
+          producerId,
+          roomId,
+        });
         void client.consume({ roomId, producerId, rtpCapabilities }).catch((err) => {
-          logger.warn("[VideoCallContext] consume pending producer failed", { producerId, error: err.message });
+          pendingProducersToConsumeRef.current.set(producerId, descriptor);
+          logger.warn("[VideoCallContext] consume pending producer failed; will retry", {
+            producerId,
+            roomId,
+            error: err instanceof Error ? err.message : String(err),
+          });
         });
       }
     };
@@ -807,6 +861,9 @@ export function useCallsV2E2eeSignals({
     onDecryptionKeyReady,
     onE2eeActivated,
     peerUserIdByDeviceIdRef,
+    callsWsRef,
+    sfuManagerRef,
+    sfuRouterRtpCapabilitiesRef,
     resolvePeerIdentity,
     rekeyMachineRef,
     user,

@@ -1,9 +1,9 @@
 import type { LatLng } from '@/types/taxi';
 import type { SpeedCamera } from '@/types/navigation';
-import { calculateDistance } from '@/lib/taxi/calculations';
 import { dbLoose } from "@/lib/supabase";
 import { logger } from '@/lib/logger';
 import { getOfflineSpeedCameras } from './offlineSearch';
+import { calculateDistance } from './distance';
 
 // Камеры Москвы и СПб — статичный набор, расширяется через offline data / Supabase
 const BUILTIN_CAMERAS: SpeedCamera[] = [

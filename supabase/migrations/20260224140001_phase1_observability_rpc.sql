@@ -119,9 +119,7 @@ BEGIN
   );
 END;
 $$;
-
 COMMENT ON FUNCTION evaluate_guardrails_v1 IS 'Phase 1 EPIC M: Record metric sample + evaluate guardrails + auto-rollback on breach';
-
 -- ============================================================================
 -- 2) Get SLO Status (aggregate metrics vs targets)
 -- ============================================================================
@@ -235,9 +233,7 @@ BEGIN
   );
 END;
 $$;
-
 COMMENT ON FUNCTION get_slo_status_v1 IS 'Phase 1 EPIC M: Get current SLO status for a domain (or all domains)';
-
 -- ============================================================================
 -- 3) Get Active Guardrail Breaches (real-time monitoring)
 -- ============================================================================
@@ -310,9 +306,7 @@ BEGIN
   );
 END;
 $$;
-
 COMMENT ON FUNCTION get_active_guardrail_breaches_v1 IS 'Phase 1 EPIC M: Get currently active guardrail breaches for monitoring';
-
 -- ============================================================================
 -- 4) Get Metric Samples (query helper for debugging)
 -- ============================================================================
@@ -340,9 +334,7 @@ BEGIN
   LIMIT p_limit;
 END;
 $$;
-
 COMMENT ON FUNCTION get_metric_samples_v1 IS 'Phase 1 EPIC M: Query metric samples for debugging (limited to 100 rows)';
-
 -- ============================================================================
 -- 5) Cleanup Old Samples (retention policy)
 -- ============================================================================
@@ -370,9 +362,7 @@ BEGIN
   );
 END;
 $$;
-
 COMMENT ON FUNCTION cleanup_old_metric_samples_v1 IS 'Phase 1 EPIC M: Cleanup metric samples older than retention period (default 7 days)';
-
 -- ============================================================================
 -- 6) Grants
 -- ============================================================================

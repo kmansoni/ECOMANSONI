@@ -57,18 +57,32 @@ export class SfuMediaManager {
     producer: mediasoupTypes.Producer,
     senderFromCallback: RTCRtpSender | null,
   ): RTCRtpSender | null {
+    const producerAny = producer as unknown as {
+      _rtpSender?: RTCRtpSender;
+      _sender?: RTCRtpSender;
+    };
+
     return senderFromCallback
       ?? producer.rtpSender
-      ?? ((producer as unknown as { _rtpSender?: RTCRtpSender })._rtpSender ?? null);
+      ?? producerAny._rtpSender
+      ?? producerAny._sender
+      ?? null;
   }
 
   private resolveConsumerReceiver(
     consumer: mediasoupTypes.Consumer,
     receiverFromCallback: RTCRtpReceiver | null,
   ): RTCRtpReceiver | null {
+    const consumerAny = consumer as unknown as {
+      _rtpReceiver?: RTCRtpReceiver;
+      _receiver?: RTCRtpReceiver;
+    };
+
     return receiverFromCallback
       ?? consumer.rtpReceiver
-      ?? ((consumer as unknown as { _rtpReceiver?: RTCRtpReceiver })._rtpReceiver ?? null);
+      ?? consumerAny._rtpReceiver
+      ?? consumerAny._receiver
+      ?? null;
   }
 
   constructor(options?: { requireSenderReceiverAccessForE2ee?: boolean; onIceRestartNeeded?: IceRestartCallback; onTransportClosed?: TransportClosedCallback }) {

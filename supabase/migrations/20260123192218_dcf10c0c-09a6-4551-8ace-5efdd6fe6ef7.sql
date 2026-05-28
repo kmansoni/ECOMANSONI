@@ -1,4 +1,3 @@
--- ALLOW_NON_IDEMPOTENT_POLICY_DDL: legacy migration already applied to production; non-idempotent policies are intentional here.
 -- =============================================
 -- ЭТАП 1: Расширение схемы страхования
 -- =============================================
@@ -8,7 +7,6 @@ CREATE TYPE public.agent_status AS ENUM ('pending', 'active', 'suspended', 'bloc
 CREATE TYPE public.calculation_status AS ENUM ('draft', 'sent', 'expired', 'converted');
 CREATE TYPE public.payout_status AS ENUM ('pending', 'processing', 'completed', 'failed');
 CREATE TYPE public.commission_status AS ENUM ('pending', 'confirmed', 'paid', 'cancelled');
-
 -- 2. Таблица профилей агентов
 CREATE TABLE public.agent_profiles (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -28,7 +26,6 @@ CREATE TABLE public.agent_profiles (
     created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
     updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now()
 );
-
 -- 3. Таблица клиентов агента
 CREATE TABLE public.insurance_clients (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -46,7 +43,6 @@ CREATE TABLE public.insurance_clients (
     created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
     updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now()
 );
-
 -- 4. Таблица черновиков расчётов
 CREATE TABLE public.insurance_calculations (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -64,7 +60,6 @@ CREATE TABLE public.insurance_calculations (
     created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
     updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now()
 );
-
 -- 5. Таблица комиссий
 CREATE TABLE public.insurance_commissions (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -78,7 +73,6 @@ CREATE TABLE public.insurance_commissions (
     paid_at TIMESTAMP WITH TIME ZONE,
     created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now()
 );
-
 -- 6. Таблица выводов средств
 CREATE TABLE public.insurance_payouts (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -91,7 +85,6 @@ CREATE TABLE public.insurance_payouts (
     error_message TEXT,
     created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now()
 );
-
 -- 7. Таблица напоминаний о пролонгации
 CREATE TABLE public.policy_renewals (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -105,7 +98,6 @@ CREATE TABLE public.policy_renewals (
     new_policy_id UUID REFERENCES public.insurance_policies(id),
     created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now()
 );
-
 -- 8. Расширяем таблицу insurance_companies
 ALTER TABLE public.insurance_companies 
 ADD COLUMN IF NOT EXISTS api_enabled BOOLEAN DEFAULT false,
@@ -116,7 +108,6 @@ ADD COLUMN IF NOT EXISTS regions TEXT[],
 ADD COLUMN IF NOT EXISTS description TEXT,
 ADD COLUMN IF NOT EXISTS website TEXT,
 ADD COLUMN IF NOT EXISTS phone TEXT;
-
 -- 9. Расширяем таблицу insurance_products
 ALTER TABLE public.insurance_products 
 ADD COLUMN IF NOT EXISTS min_term_days INTEGER,
@@ -125,7 +116,6 @@ ADD COLUMN IF NOT EXISTS calculation_params JSONB,
 ADD COLUMN IF NOT EXISTS documents_required TEXT[],
 ADD COLUMN IF NOT EXISTS terms_url TEXT,
 ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT true;
-
 -- 10. Расширяем таблицу insurance_policies
 ALTER TABLE public.insurance_policies 
 ADD COLUMN IF NOT EXISTS agent_id UUID REFERENCES public.agent_profiles(id) ON DELETE SET NULL,
@@ -136,133 +126,106 @@ ADD COLUMN IF NOT EXISTS source TEXT DEFAULT 'direct',
 ADD COLUMN IF NOT EXISTS vehicle_data JSONB,
 ADD COLUMN IF NOT EXISTS property_data JSONB,
 ADD COLUMN IF NOT EXISTS additional_data JSONB;
-
 -- =============================================
 -- RLS POLICIES
 -- =============================================
 
 -- Agent Profiles
 ALTER TABLE public.agent_profiles ENABLE ROW LEVEL SECURITY;
-
 CREATE POLICY "Users can view own agent profile"
 ON public.agent_profiles FOR SELECT
 USING (auth.uid() = user_id);
-
 CREATE POLICY "Users can create own agent profile"
 ON public.agent_profiles FOR INSERT
 WITH CHECK (auth.uid() = user_id);
-
 CREATE POLICY "Users can update own agent profile"
 ON public.agent_profiles FOR UPDATE
 USING (auth.uid() = user_id);
-
 CREATE POLICY "Admins can manage all agent profiles"
 ON public.agent_profiles FOR ALL
 USING (has_role(auth.uid(), 'admin'));
-
 -- Insurance Clients
 ALTER TABLE public.insurance_clients ENABLE ROW LEVEL SECURITY;
-
 CREATE POLICY "Agents can view own clients"
 ON public.insurance_clients FOR SELECT
 USING (
     agent_id IN (SELECT id FROM public.agent_profiles WHERE user_id = auth.uid())
     OR user_id = auth.uid()
 );
-
 CREATE POLICY "Agents can create clients"
 ON public.insurance_clients FOR INSERT
 WITH CHECK (
     agent_id IN (SELECT id FROM public.agent_profiles WHERE user_id = auth.uid())
     OR user_id = auth.uid()
 );
-
 CREATE POLICY "Agents can update own clients"
 ON public.insurance_clients FOR UPDATE
 USING (
     agent_id IN (SELECT id FROM public.agent_profiles WHERE user_id = auth.uid())
     OR user_id = auth.uid()
 );
-
 CREATE POLICY "Agents can delete own clients"
 ON public.insurance_clients FOR DELETE
 USING (agent_id IN (SELECT id FROM public.agent_profiles WHERE user_id = auth.uid()));
-
 -- Insurance Calculations
 ALTER TABLE public.insurance_calculations ENABLE ROW LEVEL SECURITY;
-
 CREATE POLICY "Users can view own calculations"
 ON public.insurance_calculations FOR SELECT
 USING (
     user_id = auth.uid()
     OR agent_id IN (SELECT id FROM public.agent_profiles WHERE user_id = auth.uid())
 );
-
 CREATE POLICY "Users can create calculations"
 ON public.insurance_calculations FOR INSERT
 WITH CHECK (
     user_id = auth.uid()
     OR agent_id IN (SELECT id FROM public.agent_profiles WHERE user_id = auth.uid())
 );
-
 CREATE POLICY "Users can update own calculations"
 ON public.insurance_calculations FOR UPDATE
 USING (
     user_id = auth.uid()
     OR agent_id IN (SELECT id FROM public.agent_profiles WHERE user_id = auth.uid())
 );
-
 CREATE POLICY "Users can delete own calculations"
 ON public.insurance_calculations FOR DELETE
 USING (
     user_id = auth.uid()
     OR agent_id IN (SELECT id FROM public.agent_profiles WHERE user_id = auth.uid())
 );
-
 -- Insurance Commissions
 ALTER TABLE public.insurance_commissions ENABLE ROW LEVEL SECURITY;
-
 CREATE POLICY "Agents can view own commissions"
 ON public.insurance_commissions FOR SELECT
 USING (agent_id IN (SELECT id FROM public.agent_profiles WHERE user_id = auth.uid()));
-
 CREATE POLICY "System can create commissions"
 ON public.insurance_commissions FOR INSERT
 WITH CHECK (true);
-
 CREATE POLICY "Admins can manage commissions"
 ON public.insurance_commissions FOR ALL
 USING (has_role(auth.uid(), 'admin'));
-
 -- Insurance Payouts
 ALTER TABLE public.insurance_payouts ENABLE ROW LEVEL SECURITY;
-
 CREATE POLICY "Agents can view own payouts"
 ON public.insurance_payouts FOR SELECT
 USING (agent_id IN (SELECT id FROM public.agent_profiles WHERE user_id = auth.uid()));
-
 CREATE POLICY "Agents can request payouts"
 ON public.insurance_payouts FOR INSERT
 WITH CHECK (agent_id IN (SELECT id FROM public.agent_profiles WHERE user_id = auth.uid()));
-
 CREATE POLICY "Admins can manage payouts"
 ON public.insurance_payouts FOR ALL
 USING (has_role(auth.uid(), 'admin'));
-
 -- Policy Renewals
 ALTER TABLE public.policy_renewals ENABLE ROW LEVEL SECURITY;
-
 CREATE POLICY "Users can view own renewals"
 ON public.policy_renewals FOR SELECT
 USING (
     policy_id IN (SELECT id FROM public.insurance_policies WHERE user_id = auth.uid())
     OR agent_id IN (SELECT id FROM public.agent_profiles WHERE user_id = auth.uid())
 );
-
 CREATE POLICY "System can manage renewals"
 ON public.policy_renewals FOR ALL
 USING (has_role(auth.uid(), 'admin'));
-
 -- =============================================
 -- TRIGGERS
 -- =============================================
@@ -277,28 +240,23 @@ BEGIN
     RETURN NEW;
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
-
 CREATE TRIGGER set_agent_referral_code
 BEFORE INSERT ON public.agent_profiles
 FOR EACH ROW
 EXECUTE FUNCTION public.generate_referral_code();
-
 -- Update timestamps
 CREATE TRIGGER update_agent_profiles_updated_at
 BEFORE UPDATE ON public.agent_profiles
 FOR EACH ROW
 EXECUTE FUNCTION public.update_updated_at_column();
-
 CREATE TRIGGER update_insurance_clients_updated_at
 BEFORE UPDATE ON public.insurance_clients
 FOR EACH ROW
 EXECUTE FUNCTION public.update_updated_at_column();
-
 CREATE TRIGGER update_insurance_calculations_updated_at
 BEFORE UPDATE ON public.insurance_calculations
 FOR EACH ROW
 EXECUTE FUNCTION public.update_updated_at_column();
-
 -- Create renewal reminders when policy is created
 CREATE OR REPLACE FUNCTION public.create_policy_renewals()
 RETURNS TRIGGER AS $$
@@ -313,7 +271,6 @@ BEGIN
     RETURN NEW;
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
-
 CREATE TRIGGER create_policy_renewal_reminders
 AFTER INSERT ON public.insurance_policies
 FOR EACH ROW

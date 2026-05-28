@@ -1,4 +1,3 @@
--- ALLOW_NON_IDEMPOTENT_POLICY_DDL: legacy migration already applied to production; non-idempotent policies are intentional here.
 -- ============================================================================
 -- PATCH: ЭТАП 1 (ML foundation) — привести схему к нужному виду,
 -- даже если таблицы были созданы ранее другими миграциями.
@@ -7,7 +6,6 @@
 
 -- 0) Extensions
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
-
 -- ============================================================================
 -- 1) user_reel_interactions: расширяем до полного набора сигналов
 -- ============================================================================
@@ -19,7 +17,6 @@ ALTER TABLE public.user_reel_interactions
   ADD COLUMN IF NOT EXISTS skipped_at_second INTEGER,
   ADD COLUMN IF NOT EXISTS report_reason TEXT,
   ADD COLUMN IF NOT EXISTS session_id TEXT;
-
 -- Normalize completion_rate if older schema stored 0..1
 DO $$
 BEGIN
@@ -44,37 +41,28 @@ EXCEPTION
     -- table might not exist in some environments
     NULL;
 END $$;
-
 -- Ensure negative-signal columns exist
 ALTER TABLE public.user_reel_interactions
   ADD COLUMN IF NOT EXISTS hidden BOOLEAN DEFAULT false,
   ADD COLUMN IF NOT EXISTS reported BOOLEAN DEFAULT false;
-
 -- Indices (idempotent)
 CREATE INDEX IF NOT EXISTS idx_user_interactions_user_time
   ON public.user_reel_interactions(user_id, last_interaction_at DESC);
-
 CREATE INDEX IF NOT EXISTS idx_user_interactions_reel
   ON public.user_reel_interactions(reel_id, last_interaction_at DESC);
-
 CREATE INDEX IF NOT EXISTS idx_user_interactions_completion
   ON public.user_reel_interactions(completion_rate DESC)
   WHERE viewed = true;
-
 CREATE INDEX IF NOT EXISTS idx_user_interactions_rewatched
   ON public.user_reel_interactions(user_id)
   WHERE rewatched = true;
-
 CREATE INDEX IF NOT EXISTS idx_interactions_user_completion
   ON public.user_reel_interactions(user_id, completion_rate DESC, last_interaction_at DESC);
-
 CREATE INDEX IF NOT EXISTS idx_interactions_negative
   ON public.user_reel_interactions(user_id, reel_id)
   WHERE hidden = true OR reported = true;
-
 -- RLS policies (safe create)
 ALTER TABLE public.user_reel_interactions ENABLE ROW LEVEL SECURITY;
-
 DO $$
 BEGIN
   BEGIN
@@ -94,7 +82,6 @@ BEGIN
   EXCEPTION WHEN duplicate_object THEN NULL;
   END;
 END $$;
-
 -- ============================================================================
 -- 2) user_author_affinity: расширяем под продвинутую аналитику
 -- ============================================================================
@@ -114,15 +101,11 @@ ALTER TABLE public.user_author_affinity
   ADD COLUMN IF NOT EXISTS first_interaction_at TIMESTAMPTZ DEFAULT now(),
   ADD COLUMN IF NOT EXISTS last_interaction_at TIMESTAMPTZ DEFAULT now(),
   ADD COLUMN IF NOT EXISTS last_score_decay_at TIMESTAMPTZ DEFAULT now();
-
 CREATE INDEX IF NOT EXISTS idx_user_author_affinity_score
   ON public.user_author_affinity(user_id, affinity_score DESC);
-
 CREATE INDEX IF NOT EXISTS idx_user_author_affinity_last_interaction
   ON public.user_author_affinity(user_id, last_interaction_at DESC);
-
 ALTER TABLE public.user_author_affinity ENABLE ROW LEVEL SECURITY;
-
 DO $$
 BEGIN
   BEGIN
@@ -133,9 +116,7 @@ BEGIN
   EXCEPTION WHEN duplicate_object THEN NULL;
   END;
 END $$;
-
 GRANT SELECT ON public.user_author_affinity TO authenticated;
-
 -- ============================================================================
 -- 3) user_session_context: создаём если отсутствует
 -- ============================================================================
@@ -162,16 +143,12 @@ CREATE TABLE IF NOT EXISTS public.user_session_context (
   created_at TIMESTAMPTZ DEFAULT now(),
   updated_at TIMESTAMPTZ DEFAULT now()
 );
-
 CREATE INDEX IF NOT EXISTS idx_session_context_user
   ON public.user_session_context(user_id, session_started_at DESC);
-
 CREATE INDEX IF NOT EXISTS idx_session_context_active
   ON public.user_session_context(user_id)
   WHERE session_ended_at IS NULL;
-
 ALTER TABLE public.user_session_context ENABLE ROW LEVEL SECURITY;
-
 DO $$
 BEGIN
   BEGIN
@@ -191,9 +168,7 @@ BEGIN
   EXCEPTION WHEN duplicate_object THEN NULL;
   END;
 END $$;
-
 GRANT SELECT, INSERT, UPDATE ON public.user_session_context TO authenticated;
-
 -- ============================================================================
 -- 4) Ensure record_reel_interaction exists with full signals
 -- ============================================================================
@@ -301,7 +276,6 @@ BEGIN
     last_interaction_at = now();
 END;
 $$;
-
 REVOKE ALL ON FUNCTION public.record_reel_interaction(
   uuid,
   uuid,
@@ -317,7 +291,6 @@ REVOKE ALL ON FUNCTION public.record_reel_interaction(
   text,
   text
 ) FROM PUBLIC;
-
 GRANT EXECUTE ON FUNCTION public.record_reel_interaction(
   uuid,
   uuid,

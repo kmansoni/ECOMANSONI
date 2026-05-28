@@ -32,10 +32,8 @@ begin
   return v_email;
 end;
 $$;
-
 -- Allow anonymous callers (user may not have a session when adding an account)
 grant execute on function get_email_by_phone_v1(text) to anon, authenticated;
-
 -- ─────────────────────────────────────────────────────────────────────────────
 -- 2. check_recovery_phone_email_v1
 --    Returns TRUE only when p_phone and p_email belong to the same non-banned
@@ -66,5 +64,4 @@ begin
   return coalesce(v_found, false);
 end;
 $$;
-
 grant execute on function check_recovery_phone_email_v1(text, text) to anon, authenticated;

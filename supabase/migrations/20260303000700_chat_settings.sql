@@ -1,4 +1,3 @@
--- ALLOW_NON_IDEMPOTENT_POLICY_DDL: legacy migration already applied to production; non-idempotent policies are intentional here.
 -- Настройки чата для каждого пользователя
 CREATE TABLE IF NOT EXISTS user_chat_settings (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -21,7 +20,6 @@ CREATE TABLE IF NOT EXISTS user_chat_settings (
   updated_at TIMESTAMPTZ DEFAULT now(),
   UNIQUE(user_id, conversation_id)
 );
-
 -- Глобальные настройки чатов
 CREATE TABLE IF NOT EXISTS user_global_chat_settings (
   user_id UUID PRIMARY KEY,
@@ -51,7 +49,6 @@ CREATE TABLE IF NOT EXISTS user_global_chat_settings (
   link_preview_enabled BOOLEAN DEFAULT true,
   updated_at TIMESTAMPTZ DEFAULT now()
 );
-
 -- RLS
 ALTER TABLE user_chat_settings ENABLE ROW LEVEL SECURITY;
 ALTER TABLE user_global_chat_settings ENABLE ROW LEVEL SECURITY;

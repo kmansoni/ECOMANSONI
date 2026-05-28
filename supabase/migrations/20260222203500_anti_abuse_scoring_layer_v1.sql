@@ -43,11 +43,9 @@ CREATE TABLE IF NOT EXISTS anti_abuse_policies (
   CONSTRAINT policy_bot_threshold_range CHECK (bot_threshold >= 0 AND bot_threshold <= 1),
   CONSTRAINT policy_coordinated_threshold_range CHECK (coordinated_threshold >= 0 AND coordinated_threshold <= 1)
 );
-
 CREATE INDEX idx_anti_abuse_policies_name ON anti_abuse_policies(policy_name);
 CREATE INDEX idx_anti_abuse_policies_enabled ON anti_abuse_policies(enabled) WHERE enabled = TRUE;
 CREATE INDEX idx_anti_abuse_policies_segment ON anti_abuse_policies(segment_id, version DESC);
-
 -- ============================================================================
 -- 2. SPAM INDICATOR LOG (immutable, append-only)
 -- ============================================================================
@@ -88,11 +86,9 @@ CREATE TABLE IF NOT EXISTS spam_indicators (
   
   CONSTRAINT spam_indicator_evidence_notnull CHECK (evidence IS NOT NULL)
 );
-
 CREATE INDEX idx_spam_indicators_user ON spam_indicators(user_id, created_at DESC);
 CREATE INDEX idx_spam_indicators_type ON spam_indicators(indicator_type, severity);
 CREATE INDEX idx_spam_indicators_confidence ON spam_indicators(confidence DESC) WHERE confidence > 0.5;
-
 -- ============================================================================
 -- 3. COORDINATED BEHAVIOR DETECTION (explicit linking of accounts)
 -- ============================================================================
@@ -128,11 +124,9 @@ CREATE TABLE IF NOT EXISTS coordinated_behavior_clusters (
   -- Audit
   created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
-
 CREATE INDEX idx_coordinated_clusters_member ON coordinated_behavior_clusters USING GIN (member_user_ids);
 CREATE INDEX idx_coordinated_clusters_confidence ON coordinated_behavior_clusters(confidence DESC);
 CREATE INDEX idx_coordinated_clusters_pattern ON coordinated_behavior_clusters(behavior_pattern, status);
-
 -- ============================================================================
 -- 4. TRUST WEIGHT OVERRIDE (admin can manually adjust for appeals)
 -- ============================================================================
@@ -165,10 +159,8 @@ CREATE TABLE IF NOT EXISTS trust_weight_overrides (
   
   CONSTRAINT override_validity_window CHECK (valid_from <= valid_until OR valid_until IS NULL)
 );
-
 CREATE INDEX idx_trust_weight_overrides_user ON trust_weight_overrides(user_id, valid_until DESC);
 CREATE INDEX idx_trust_weight_overrides_valid ON trust_weight_overrides(valid_from, valid_until);
-
 -- ============================================================================
 -- 5. COMPUTE AGGREGATE SPAM SCORE (RPC)
 -- ============================================================================
@@ -275,7 +267,6 @@ BEGIN
     COALESCE(v_policy_name, 'default');
 END;
 $$ LANGUAGE plpgsql STABLE;
-
 -- ============================================================================
 -- 6. RECORD SPAM INDICATOR (with confidence scoring)
 -- ============================================================================
@@ -327,7 +318,6 @@ BEGIN
   RETURN QUERY SELECT v_indicator_id, v_spam_score, v_trust_weight, v_action;
 END;
 $$ LANGUAGE plpgsql;
-
 -- ============================================================================
 -- 7. GRANT PERMISSIONS
 -- ============================================================================
@@ -338,7 +328,6 @@ GRANT SELECT ON coordinated_behavior_clusters TO service_role;
 GRANT SELECT ON trust_weight_overrides TO service_role;
 GRANT EXECUTE ON FUNCTION compute_user_spam_score_v1 TO authenticated, service_role;
 GRANT EXECUTE ON FUNCTION record_spam_indicator_v1 TO service_role;
-
 COMMENT ON TABLE anti_abuse_policies IS 'Version-able, audit-able anti-abuse policies for different segments and rollouts';
 COMMENT ON TABLE spam_indicators IS 'Immutable log of indicators detected for users (automated or manual)';
 COMMENT ON TABLE coordinated_behavior_clusters IS 'Explicit linking of coordinated accounts for enforcement';

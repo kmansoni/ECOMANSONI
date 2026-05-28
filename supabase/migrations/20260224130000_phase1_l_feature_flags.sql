@@ -9,15 +9,12 @@ create table if not exists public.feature_flags (
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
-
 create index if not exists idx_feature_flags_enabled
   on public.feature_flags(enabled, rollout_percentage) where enabled = true;
-
 -- Seed rate_limit_enforcement flag at 0% (disabled by default)
 insert into public.feature_flags (flag_name, enabled, rollout_percentage, config)
 values ('rate_limit_enforcement', false, 0, '{"actions": ["send_message", "media_upload", "create_post", "follow", "search", "api_call"]}'::jsonb)
 on conflict (flag_name) do nothing;
-
 -- Helper function: check if feature is enabled for a given user
 create or replace function public.is_feature_enabled_for_user_v1(
   p_flag_name text,
@@ -62,6 +59,5 @@ begin
   return v_mod < v_flag.rollout_percentage;
 end;
 $$;
-
 comment on function public.is_feature_enabled_for_user_v1 is
   'Phase 1 EPIC L: Check if a feature flag is enabled for a given user (deterministic hash-based rollout)';

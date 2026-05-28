@@ -6,7 +6,6 @@
 
 -- Enable pgvector extension (idempotent)
 CREATE EXTENSION IF NOT EXISTS vector;
-
 -- ─────────────────────────────────────────────────────────────
 -- Table: aria_memories
 -- Stores semantic memories about each user, extracted from
@@ -24,29 +23,23 @@ CREATE TABLE IF NOT EXISTS aria_memories (
   created_at      TIMESTAMPTZ DEFAULT NOW(),
   metadata        JSONB       DEFAULT '{}'     -- reserved for future tags/source info
 );
-
 ALTER TABLE aria_memories ENABLE ROW LEVEL SECURITY;
-
 -- ALLOW_NON_IDEMPOTENT_POLICY_DDL: new table, policy cannot exist before this migration
 DROP POLICY IF EXISTS "aria_memories_own" ON aria_memories;
 CREATE POLICY "aria_memories_own"
   ON aria_memories FOR ALL TO authenticated
   USING (user_id = auth.uid());
-
 -- User lookup index
 CREATE INDEX IF NOT EXISTS aria_memories_user_idx
   ON aria_memories(user_id);
-
 -- Timestamp index for recency queries
 CREATE INDEX IF NOT EXISTS aria_memories_created_idx
   ON aria_memories(user_id, created_at DESC);
-
 -- IVFFlat vector index for fast approximate nearest-neighbour search.
 -- lists=100 is suitable for up to ~1M rows; raise to 200 for larger sets.
 CREATE INDEX IF NOT EXISTS aria_memories_embedding_idx
   ON aria_memories USING ivfflat (embedding vector_cosine_ops)
   WITH (lists = 100);
-
 -- ─────────────────────────────────────────────────────────────
 -- Table: ai_feedback
 -- Stores thumbs-up / thumbs-down ratings on ARIA responses.
@@ -62,21 +55,16 @@ CREATE TABLE IF NOT EXISTS ai_feedback (
   model_used       TEXT,                          -- which model generated the response
   created_at       TIMESTAMPTZ DEFAULT NOW()
 );
-
 ALTER TABLE ai_feedback ENABLE ROW LEVEL SECURITY;
-
 -- ALLOW_NON_IDEMPOTENT_POLICY_DDL: new table, policy cannot exist before this migration
 DROP POLICY IF EXISTS "ai_feedback_own" ON ai_feedback;
 CREATE POLICY "ai_feedback_own"
   ON ai_feedback FOR ALL TO authenticated
   USING (user_id = auth.uid());
-
 CREATE INDEX IF NOT EXISTS ai_feedback_user_idx
   ON ai_feedback(user_id, created_at DESC);
-
 CREATE INDEX IF NOT EXISTS ai_feedback_conversation_idx
   ON ai_feedback(conversation_id) WHERE conversation_id IS NOT NULL;
-
 -- ─────────────────────────────────────────────────────────────
 -- RPC: search_aria_memories
 -- Similarity search for memories using cosine distance.
@@ -115,7 +103,6 @@ AS $$
     (m.importance * (1 - (m.embedding <=> p_embedding))) DESC
   LIMIT p_limit;
 $$;
-
 -- ─────────────────────────────────────────────────────────────
 -- RPC: boost_memory_importance
 -- Called when user gives thumbs-up on a response that used
@@ -139,7 +126,6 @@ AS $$
     id = ANY(p_memory_ids)
     AND user_id = auth.uid();
 $$;
-
 -- ─────────────────────────────────────────────────────────────
 -- Extend ai_chat_messages with orchestrator metadata
 -- (idempotent — safe to run multiple times)
@@ -147,7 +133,8 @@ $$;
 ALTER TABLE ai_chat_messages
   ADD COLUMN IF NOT EXISTS intent           TEXT,        -- 'code'|'security'|'data_analysis'|'writing'|'general'
   ADD COLUMN IF NOT EXISTS backend_used     TEXT,        -- 'external'|'python'|'builtin'
-  ADD COLUMN IF NOT EXISTS conversation_id_v2 TEXT;      -- client-side UUID grouping messages
+  ADD COLUMN IF NOT EXISTS conversation_id_v2 TEXT;
+-- client-side UUID grouping messages
 
 CREATE INDEX IF NOT EXISTS ai_chat_messages_conv_v2_idx
   ON ai_chat_messages(conversation_id_v2) WHERE conversation_id_v2 IS NOT NULL;

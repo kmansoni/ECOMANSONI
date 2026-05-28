@@ -1,4 +1,3 @@
--- ALLOW_NON_IDEMPOTENT_POLICY_DDL: legacy migration already applied to production; non-idempotent policies are intentional here.
 -- 20260224154000_req_0140_call_signaling_state_machine.sql
 -- REQ-0140: Call Signaling State Machine and Race Safety (P0)
 
@@ -15,7 +14,6 @@ BEGIN
     ALTER TABLE public.calls RENAME COLUMN status TO state;
   END IF;
 END $$;
-
 -- Add missing columns for REQ-0140
 ALTER TABLE public.calls
   ADD COLUMN IF NOT EXISTS expires_at TIMESTAMPTZ,
@@ -23,17 +21,14 @@ ALTER TABLE public.calls
   ADD COLUMN IF NOT EXISTS signaling_data JSONB,
   ADD COLUMN IF NOT EXISTS end_reason TEXT,
   ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT now();
-
 -- Set default expires_at for existing calls
 UPDATE public.calls
 SET expires_at = created_at + interval '1 minute'
 WHERE expires_at IS NULL;
-
 -- Make expires_at NOT NULL after backfill
 ALTER TABLE public.calls
   ALTER COLUMN expires_at SET DEFAULT (now() + interval '1 minute'),
   ALTER COLUMN expires_at SET NOT NULL;
-
 -- Update state constraint to include all valid states
 DO $$
 BEGIN
@@ -45,30 +40,23 @@ BEGIN
 EXCEPTION
   WHEN duplicate_object THEN NULL;
 END $$;
-
 -- Index for active calls
 CREATE INDEX IF NOT EXISTS calls_state_idx
   ON public.calls(state, created_at DESC);
-
 -- Index for user call history
 create index if not exists calls_caller_idx
   on public.calls(caller_id, created_at desc);
-
 create index if not exists calls_callee_idx
   on public.calls(callee_id, created_at desc);
-
 -- Index for timeout processing
 create index if not exists calls_expires_at_idx
   on public.calls(state, expires_at) where state = 'ringing';
-
 alter table public.calls enable row level security;
-
 -- RLS: users can see calls they're involved in
 create policy calls_select on public.calls
   for select using (
     caller_id = auth.uid() or callee_id = auth.uid()
   );
-
 -- Trigger: updated_at
 create or replace function public.set_calls_updated_at()
 returns trigger
@@ -79,13 +67,11 @@ begin
   return new;
 end;
 $$;
-
 drop trigger if exists trg_calls_updated_at on public.calls;
 create trigger trg_calls_updated_at
 before update on public.calls
 for each row
 execute function public.set_calls_updated_at();
-
 -- Helper: publish call event to outbox
 create or replace function public.publish_call_event(
   p_call_id uuid,
@@ -100,7 +86,6 @@ as $$
   insert into public.delivery_outbox (topic, aggregate_id, event_type, payload)
   values ('call', p_call_id, p_event_type, p_payload);
 $$;
-
 -- RPC: call_create_v1
 -- Initiates call, checks busy state, returns call_id
 create or replace function public.call_create_v1(
@@ -157,7 +142,6 @@ begin
   return v_call_id;
 end;
 $$;
-
 -- RPC: call_accept_v1
 -- Accepts ringing call, transitions to active
 create or replace function public.call_accept_v1(
@@ -211,7 +195,6 @@ begin
   return jsonb_build_object('state', 'active', 'accepted_at', now());
 end;
 $$;
-
 -- RPC: call_decline_v1
 -- Declines ringing call
 create or replace function public.call_decline_v1(
@@ -254,7 +237,6 @@ begin
   return jsonb_build_object('state', 'declined', 'declined_at', now());
 end;
 $$;
-
 -- RPC: call_cancel_v1
 -- Cancels ringing call (caller only)
 create or replace function public.call_cancel_v1(
@@ -297,7 +279,6 @@ begin
   return jsonb_build_object('state', 'cancelled', 'cancelled_at', now());
 end;
 $$;
-
 -- RPC: call_end_v1
 -- Ends active call (either party)
 create or replace function public.call_end_v1(
@@ -346,7 +327,6 @@ begin
   return jsonb_build_object('state', 'ended', 'ended_at', now());
 end;
 $$;
-
 -- RPC: call_process_timeouts_v1
 -- Background job: marks expired ringing calls as missed
 create or replace function public.call_process_timeouts_v1()
@@ -359,10 +339,10 @@ declare
   v_count integer;
 begin
   with expired as (
-    select c.id
-    from public.calls c
-    where c.state = 'ringing'
-      and c.expires_at < now()
+    select id
+    from public.calls
+    where state = 'ringing'
+      and expires_at < now()
     for update skip locked
   )
   update public.calls c
@@ -376,21 +356,19 @@ begin
 
   -- Publish events for missed calls
   insert into public.delivery_outbox (topic, aggregate_id, event_type, payload)
-  select 'call', c.id, 'call.missed', jsonb_build_object('call_id', c.id, 'missed_at', now())
-  from public.calls c
-  where c.state = 'missed' and c.ended_at >= now() - interval '5 seconds';
+  select 'call', id, 'call.missed', jsonb_build_object('call_id', id, 'missed_at', now())
+  from public.calls
+  where state = 'missed' and ended_at >= now() - interval '5 seconds';
 
   return v_count;
 end;
 $$;
-
 -- Grant execute to authenticated users
 grant execute on function public.call_create_v1(uuid, text, jsonb) to authenticated;
 grant execute on function public.call_accept_v1(uuid, jsonb) to authenticated;
 grant execute on function public.call_decline_v1(uuid) to authenticated;
 grant execute on function public.call_cancel_v1(uuid) to authenticated;
 grant execute on function public.call_end_v1(uuid, text) to authenticated;
-
 -- Grant timeout processor to service_role only
 revoke all on function public.call_process_timeouts_v1() from public;
 grant execute on function public.call_process_timeouts_v1() to service_role;

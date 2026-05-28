@@ -10,7 +10,6 @@ create table if not exists public.user_channel_group_settings (
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
-
 create table if not exists public.channel_invite_links (
   id uuid primary key default gen_random_uuid(),
   channel_id uuid not null references public.channels(id) on delete cascade,
@@ -25,7 +24,6 @@ create table if not exists public.channel_invite_links (
   check (max_uses is null or max_uses > 0),
   check (used_count >= 0)
 );
-
 create table if not exists public.group_invite_links (
   id uuid primary key default gen_random_uuid(),
   group_id uuid not null references public.group_chats(id) on delete cascade,
@@ -40,29 +38,24 @@ create table if not exists public.group_invite_links (
   check (max_uses is null or max_uses > 0),
   check (used_count >= 0)
 );
-
 create index if not exists idx_channel_invite_links_channel on public.channel_invite_links(channel_id, is_active);
 create index if not exists idx_group_invite_links_group on public.group_invite_links(group_id, is_active);
 create index if not exists idx_user_channel_group_settings_updated on public.user_channel_group_settings(updated_at desc);
-
 alter table public.user_channel_group_settings enable row level security;
 alter table public.channel_invite_links enable row level security;
 alter table public.group_invite_links enable row level security;
-
 drop policy if exists "user_community_settings_owner_select" on public.user_channel_group_settings;
 create policy "user_community_settings_owner_select"
 on public.user_channel_group_settings
 for select
 to authenticated
 using (auth.uid() = user_id);
-
 drop policy if exists "user_community_settings_owner_insert" on public.user_channel_group_settings;
 create policy "user_community_settings_owner_insert"
 on public.user_channel_group_settings
 for insert
 to authenticated
 with check (auth.uid() = user_id);
-
 drop policy if exists "user_community_settings_owner_update" on public.user_channel_group_settings;
 create policy "user_community_settings_owner_update"
 on public.user_channel_group_settings
@@ -70,21 +63,18 @@ for update
 to authenticated
 using (auth.uid() = user_id)
 with check (auth.uid() = user_id);
-
 drop policy if exists "channel_invites_members_select" on public.channel_invite_links;
 create policy "channel_invites_members_select"
 on public.channel_invite_links
 for select
 to authenticated
 using (public.is_channel_member(channel_id, auth.uid()));
-
 drop policy if exists "channel_invites_admin_insert" on public.channel_invite_links;
 create policy "channel_invites_admin_insert"
 on public.channel_invite_links
 for insert
 to authenticated
 with check (public.is_channel_admin(channel_id, auth.uid()) and created_by = auth.uid());
-
 drop policy if exists "channel_invites_admin_update" on public.channel_invite_links;
 create policy "channel_invites_admin_update"
 on public.channel_invite_links
@@ -92,14 +82,12 @@ for update
 to authenticated
 using (public.is_channel_admin(channel_id, auth.uid()))
 with check (public.is_channel_admin(channel_id, auth.uid()));
-
 drop policy if exists "group_invites_members_select" on public.group_invite_links;
 create policy "group_invites_members_select"
 on public.group_invite_links
 for select
 to authenticated
 using (public.is_group_member(group_id, auth.uid()));
-
 drop policy if exists "group_invites_admin_insert" on public.group_invite_links;
 create policy "group_invites_admin_insert"
 on public.group_invite_links
@@ -114,7 +102,6 @@ with check (
       and gcm.role in ('owner', 'admin')
   ) and created_by = auth.uid()
 );
-
 drop policy if exists "group_invites_admin_update" on public.group_invite_links;
 create policy "group_invites_admin_update"
 on public.group_invite_links
@@ -138,7 +125,6 @@ with check (
       and gcm.role in ('owner', 'admin')
   )
 );
-
 create or replace function public.set_community_updated_at()
 returns trigger
 language plpgsql
@@ -148,22 +134,18 @@ begin
   return new;
 end;
 $$;
-
 drop trigger if exists trg_user_channel_group_settings_updated_at on public.user_channel_group_settings;
 create trigger trg_user_channel_group_settings_updated_at
 before update on public.user_channel_group_settings
 for each row execute function public.set_community_updated_at();
-
 drop trigger if exists trg_channel_invite_links_updated_at on public.channel_invite_links;
 create trigger trg_channel_invite_links_updated_at
 before update on public.channel_invite_links
 for each row execute function public.set_community_updated_at();
-
 drop trigger if exists trg_group_invite_links_updated_at on public.group_invite_links;
 create trigger trg_group_invite_links_updated_at
 before update on public.group_invite_links
 for each row execute function public.set_community_updated_at();
-
 create or replace function public.create_channel_invite(
   _channel_id uuid,
   _max_uses integer default null,
@@ -191,7 +173,6 @@ begin
   return _token;
 end;
 $$;
-
 create or replace function public.join_channel_by_invite(_token text)
 returns uuid
 language plpgsql
@@ -232,7 +213,6 @@ begin
   return _row.channel_id;
 end;
 $$;
-
 create or replace function public.create_group_invite(
   _group_id uuid,
   _max_uses integer default null,
@@ -266,7 +246,6 @@ begin
   return _token;
 end;
 $$;
-
 create or replace function public.join_group_by_invite(_token text)
 returns uuid
 language plpgsql
@@ -307,9 +286,7 @@ begin
   return _row.group_id;
 end;
 $$;
-
 grant execute on function public.create_channel_invite(uuid, integer, integer) to authenticated;
 grant execute on function public.join_channel_by_invite(text) to authenticated;
 grant execute on function public.create_group_invite(uuid, integer, integer) to authenticated;
 grant execute on function public.join_group_by_invite(text) to authenticated;
-

@@ -32,27 +32,22 @@ CREATE TABLE IF NOT EXISTS public.user_consumption_diversity (
   last_analyzed_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
-
 CREATE INDEX IF NOT EXISTS user_diversity_echo_chamber_idx
   ON public.user_consumption_diversity(is_echo_chamber, last_analyzed_at DESC)
   WHERE is_echo_chamber = TRUE;
-
 ALTER TABLE public.user_consumption_diversity ENABLE ROW LEVEL SECURITY;
-
 DROP POLICY IF EXISTS "user_diversity_service_role_all" ON public.user_consumption_diversity;
 CREATE POLICY "user_diversity_service_role_all"
   ON public.user_consumption_diversity
   FOR ALL TO service_role
   USING (TRUE)
   WITH CHECK (TRUE);
-
 -- Users can read their own diversity stats
 DROP POLICY IF EXISTS "user_diversity_select_own" ON public.user_consumption_diversity;
 CREATE POLICY "user_diversity_select_own"
   ON public.user_consumption_diversity
   FOR SELECT TO authenticated
   USING (auth.uid() = user_id);
-
 -- 2) RPC: Analyze User Consumption Diversity
 CREATE OR REPLACE FUNCTION public.analyze_user_diversity_v1(
   p_user_id UUID,
@@ -168,10 +163,8 @@ BEGIN
   RETURN v_is_echo_chamber;
 END;
 $$;
-
 COMMENT ON FUNCTION analyze_user_diversity_v1 IS
   'Phase 1 EPIC I: Analyze user consumption diversity and detect echo chamber patterns';
-
 -- 3) RPC: Get Diversity Config for Feed
 CREATE OR REPLACE FUNCTION public.get_diversity_config_v1(p_user_id UUID)
 RETURNS TABLE (
@@ -201,10 +194,8 @@ BEGIN
   END IF;
 END;
 $$;
-
 COMMENT ON FUNCTION get_diversity_config_v1 IS
   'Phase 1 EPIC I: Get recommended diversity parameters for feed ranking';
-
 -- 4) RPC: Batch Analyze Diversity (Worker)
 CREATE OR REPLACE FUNCTION public.batch_analyze_diversity_v1(
   p_limit INTEGER DEFAULT 100
@@ -231,18 +222,12 @@ BEGIN
   SELECT 
     au.user_id,
     analyze_user_diversity_v1(au.user_id) AS is_echo_chamber,
-    (
-      SELECT ucd.author_diversity_score
-      FROM public.user_consumption_diversity ucd
-      WHERE ucd.user_id = au.user_id
-    )
+    (SELECT author_diversity_score FROM public.user_consumption_diversity WHERE user_id = au.user_id)
   FROM active_users au;
 END;
 $$;
-
 COMMENT ON FUNCTION batch_analyze_diversity_v1 IS
   'Phase 1 EPIC I: Batch analyze user diversity for background worker';
-
 -- 5) RPC: Get Author Fatigue Penalty
 -- Penalize showing same author too frequently (even if not echo chamber yet)
 CREATE OR REPLACE FUNCTION public.get_author_fatigue_penalty_v1(
@@ -290,20 +275,19 @@ BEGIN
   RETURN v_penalty;
 END;
 $$;
-
 COMMENT ON FUNCTION get_author_fatigue_penalty_v1 IS
   'Phase 1 EPIC I: Calculate author fatigue penalty to prevent over-showing same author';
-
 -- Grant permissions
 REVOKE ALL ON FUNCTION analyze_user_diversity_v1(UUID, INTEGER, NUMERIC) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON FUNCTION get_diversity_config_v1(UUID) FROM PUBLIC, anon;
 REVOKE ALL ON FUNCTION batch_analyze_diversity_v1(INTEGER) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON FUNCTION get_author_fatigue_penalty_v1(UUID, UUID, INTEGER) FROM PUBLIC, anon;
-
 GRANT EXECUTE ON FUNCTION analyze_user_diversity_v1(UUID, INTEGER, NUMERIC) TO service_role;
-GRANT EXECUTE ON FUNCTION get_diversity_config_v1(UUID) TO service_role, authenticated; -- Needed for feed
+GRANT EXECUTE ON FUNCTION get_diversity_config_v1(UUID) TO service_role, authenticated;
+-- Needed for feed
 GRANT EXECUTE ON FUNCTION batch_analyze_diversity_v1(INTEGER) TO service_role;
-GRANT EXECUTE ON FUNCTION get_author_fatigue_penalty_v1(UUID, UUID, INTEGER) TO service_role, authenticated; -- Needed for feed
+GRANT EXECUTE ON FUNCTION get_author_fatigue_penalty_v1(UUID, UUID, INTEGER) TO service_role, authenticated;
+-- Needed for feed
 
 -- 6) Trigger: Auto-analyze diversity on impression (async via pg_cron or Edge Function)
 -- (Placeholder - actual implementation via background worker)

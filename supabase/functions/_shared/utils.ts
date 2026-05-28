@@ -57,6 +57,10 @@ function getAllowedOrigins(): string[] {
 function isOriginAllowed(origin: string | null): boolean {
   if (!origin) return true; // Non-browser clients
   const normalized = origin.replace(/\/$/, "");
+  // Capacitor/Ionic WebView origin used by mobile apps.
+  if (/^(capacitor|ionic):\/\/localhost$/i.test(normalized)) return true;
+  // Local web dev should be allowed outside production.
+  if (!isProductionEnv() && /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(normalized)) return true;
   // Production first-party domains are always allowed.
   if (/^https?:\/\/([a-z0-9-]+\.)?mansoni\.ru(:\d+)?$/i.test(normalized)) return true;
   const allowed = getAllowedOrigins();

@@ -46,6 +46,5 @@ BEGIN
   RETURN new_conv;
 END;
 $$;
-
 -- Create index on display_name for faster profile lookups
 CREATE INDEX IF NOT EXISTS idx_profiles_display_name ON profiles(display_name);

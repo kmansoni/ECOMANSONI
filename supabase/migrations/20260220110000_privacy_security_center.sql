@@ -1,4 +1,3 @@
--- ALLOW_NON_IDEMPOTENT_POLICY_DDL: legacy migration already applied to production; non-idempotent policies are intentional here.
 -- Telegram-like privacy/security center:
 -- rules, exceptions, authorized websites, security settings.
 
@@ -9,7 +8,6 @@
 ALTER TABLE public.user_settings
   ADD COLUMN IF NOT EXISTS messages_auto_delete_seconds INTEGER NOT NULL DEFAULT 0,
   ADD COLUMN IF NOT EXISTS account_self_destruct_days INTEGER NOT NULL DEFAULT 180;
-
 -- =====================================================
 -- 2) Privacy rules (one row per rule key)
 -- =====================================================
@@ -57,9 +55,7 @@ CREATE TABLE IF NOT EXISTS public.privacy_rules (
     p2p_mode IN ('always', 'contacts', 'never')
   )
 );
-
 ALTER TABLE public.privacy_rules ENABLE ROW LEVEL SECURITY;
-
 DO $$
 BEGIN
   IF NOT EXISTS (
@@ -103,15 +99,12 @@ BEGIN
       USING (auth.uid() = user_id);
   END IF;
 END $$;
-
 DROP TRIGGER IF EXISTS update_privacy_rules_updated_at ON public.privacy_rules;
 CREATE TRIGGER update_privacy_rules_updated_at
 BEFORE UPDATE ON public.privacy_rules
 FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
-
 CREATE INDEX IF NOT EXISTS privacy_rules_user_updated_idx
   ON public.privacy_rules(user_id, updated_at DESC);
-
 -- =====================================================
 -- 3) Privacy rule exceptions
 -- =====================================================
@@ -144,9 +137,7 @@ CREATE TABLE IF NOT EXISTS public.privacy_rule_exceptions (
     mode IN ('always_allow', 'never_allow')
   )
 );
-
 ALTER TABLE public.privacy_rule_exceptions ENABLE ROW LEVEL SECURITY;
-
 DO $$
 BEGIN
   IF NOT EXISTS (
@@ -179,10 +170,8 @@ BEGIN
       USING (auth.uid() = user_id);
   END IF;
 END $$;
-
 CREATE INDEX IF NOT EXISTS privacy_rule_exceptions_user_rule_idx
   ON public.privacy_rule_exceptions(user_id, rule_key, mode);
-
 -- =====================================================
 -- 4) Authorized websites
 -- =====================================================
@@ -199,9 +188,7 @@ CREATE TABLE IF NOT EXISTS public.authorized_sites (
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   revoked_at TIMESTAMPTZ
 );
-
 ALTER TABLE public.authorized_sites ENABLE ROW LEVEL SECURITY;
-
 DO $$
 BEGIN
   IF NOT EXISTS (
@@ -235,10 +222,8 @@ BEGIN
       WITH CHECK (auth.uid() = user_id);
   END IF;
 END $$;
-
 CREATE INDEX IF NOT EXISTS authorized_sites_user_active_idx
   ON public.authorized_sites(user_id, revoked_at, last_active_at DESC);
-
 -- =====================================================
 -- 5) Security settings (local passcode / cloud password / passkey flag)
 -- =====================================================
@@ -251,9 +236,7 @@ CREATE TABLE IF NOT EXISTS public.user_security_settings (
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
-
 ALTER TABLE public.user_security_settings ENABLE ROW LEVEL SECURITY;
-
 DO $$
 BEGIN
   IF NOT EXISTS (
@@ -287,12 +270,10 @@ BEGIN
       WITH CHECK (auth.uid() = user_id);
   END IF;
 END $$;
-
 DROP TRIGGER IF EXISTS update_user_security_settings_updated_at ON public.user_security_settings;
 CREATE TRIGGER update_user_security_settings_updated_at
 BEFORE UPDATE ON public.user_security_settings
 FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
-
 -- =====================================================
 -- 6) Realtime
 -- =====================================================
@@ -319,4 +300,3 @@ BEGIN
   EXCEPTION WHEN duplicate_object THEN NULL;
   END;
 END $$;
-

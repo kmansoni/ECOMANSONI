@@ -115,6 +115,5 @@ BEGIN
   RETURN v_row;
 END;
 $$;
-
 REVOKE ALL ON FUNCTION public.create_reel_v1(UUID, TEXT, TEXT, TEXT, TEXT) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.create_reel_v1(UUID, TEXT, TEXT, TEXT, TEXT) TO authenticated;

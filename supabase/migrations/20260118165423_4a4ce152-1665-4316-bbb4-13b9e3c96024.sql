@@ -1,4 +1,3 @@
--- ALLOW_NON_IDEMPOTENT_POLICY_DDL: legacy migration already applied to production; non-idempotent policies are intentional here.
 -- Fix function search_path for update_updated_at_column
 CREATE OR REPLACE FUNCTION public.update_updated_at_column()
 RETURNS TRIGGER
@@ -10,12 +9,10 @@ BEGIN
   RETURN NEW;
 END;
 $$;
-
 -- Fix permissive RLS policy for property_views (require authentication for inserts)
 DROP POLICY IF EXISTS "Anyone can record views" ON public.property_views;
 CREATE POLICY "Authenticated users can record views" ON public.property_views
   FOR INSERT WITH CHECK (auth.uid() IS NOT NULL OR auth.uid() IS NULL);
-
 -- Actually, for property views we want to allow anonymous tracking too
 -- So let's allow it but in a controlled way - require property_id to exist
 DROP POLICY IF EXISTS "Authenticated users can record views" ON public.property_views;

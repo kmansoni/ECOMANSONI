@@ -6,10 +6,8 @@
 ALTER TABLE public.device_accounts
   ADD COLUMN IF NOT EXISTS label TEXT,
   ADD COLUMN IF NOT EXISTS sort_order INT;
-
 CREATE INDEX IF NOT EXISTS device_accounts_device_id_idx
   ON public.device_accounts(device_id);
-
 -- Upsert link for current user.
 CREATE OR REPLACE FUNCTION public.upsert_device_account(
   p_device_id TEXT,
@@ -37,10 +35,8 @@ BEGIN
     last_active_at = now();
 END;
 $$;
-
 REVOKE ALL ON FUNCTION public.upsert_device_account(TEXT, TEXT) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.upsert_device_account(TEXT, TEXT) TO authenticated;
-
 -- List accounts linked to this device_id.
 -- Security model: caller must be authenticated AND must already have a row
 -- in device_accounts for this device_id.
@@ -102,6 +98,5 @@ BEGIN
            da.created_at DESC;
 END;
 $$;
-
 REVOKE ALL ON FUNCTION public.list_device_accounts_for_device(TEXT) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.list_device_accounts_for_device(TEXT) TO authenticated;

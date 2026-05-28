@@ -4,7 +4,6 @@
 
 -- Drop old function first
 drop function if exists public.check_guardrails_v1();
-
 create or replace function public.check_guardrails_v1()
 returns table (
   guardrail_name text,
@@ -107,10 +106,8 @@ begin
   return query select v_name, v_current, v_threshold, v_violated, v_severity, v_alert_created;
 end;
 $$ language plpgsql security definer;
-
 -- Now re-run to create actual alerts
 select * from check_guardrails_v1();
-
 -- Log results
 do $$
 declare

@@ -19,20 +19,16 @@ BEGIN
 EXCEPTION
   WHEN duplicate_object THEN NULL;
 END $$;
-
 DO $$
 BEGIN
   CREATE TYPE public.distribution_class AS ENUM ('green', 'borderline', 'red');
 EXCEPTION
   WHEN duplicate_object THEN NULL;
 END $$;
-
 COMMENT ON TYPE public.moderation_decision IS
   'Phase 1 EPIC K: Moderation decision (allow/restrict/needs_review/block)';
-
 COMMENT ON TYPE public.distribution_class IS
   'Phase 1 EPIC K: Content distribution class (green/borderline/red)';
-
 -- 1) Content moderation status (current state)
 
 CREATE TABLE IF NOT EXISTS public.content_moderation_status (
@@ -54,13 +50,10 @@ CREATE TABLE IF NOT EXISTS public.content_moderation_status (
 
   PRIMARY KEY (content_type, content_id)
 );
-
 CREATE INDEX IF NOT EXISTS idx_content_moderation_status_class
   ON public.content_moderation_status(content_type, distribution_class, updated_at DESC);
-
 COMMENT ON TABLE public.content_moderation_status IS
   'Phase 1 EPIC K: Current moderation decision + distribution class for content items';
-
 -- 2) Content moderation actions (audit trail)
 
 CREATE TABLE IF NOT EXISTS public.content_moderation_actions (
@@ -82,13 +75,10 @@ CREATE TABLE IF NOT EXISTS public.content_moderation_actions (
 
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
-
 CREATE INDEX IF NOT EXISTS idx_content_moderation_actions_content
   ON public.content_moderation_actions(content_type, content_id, created_at DESC);
-
 COMMENT ON TABLE public.content_moderation_actions IS
   'Phase 1 EPIC K: Audit trail of moderation decisions (immutable append)';
-
 -- 3) Moderation queue
 
 CREATE TABLE IF NOT EXISTS public.moderation_queue_items (
@@ -122,16 +112,12 @@ CREATE TABLE IF NOT EXISTS public.moderation_queue_items (
 
   UNIQUE (content_type, content_id)
 );
-
 CREATE INDEX IF NOT EXISTS idx_moderation_queue_status_priority
   ON public.moderation_queue_items(status, priority DESC, last_reported_at DESC);
-
 CREATE INDEX IF NOT EXISTS idx_moderation_queue_content
   ON public.moderation_queue_items(content_type, content_id);
-
 COMMENT ON TABLE public.moderation_queue_items IS
   'Phase 1 EPIC K: Moderation review queue with priority + burst flags';
-
 -- 4) Trust-weighted reports (creator-facing + queue input)
 
 CREATE TABLE IF NOT EXISTS public.content_reports_v1 (
@@ -153,16 +139,12 @@ CREATE TABLE IF NOT EXISTS public.content_reports_v1 (
 
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
-
 CREATE INDEX IF NOT EXISTS idx_content_reports_item_time
   ON public.content_reports_v1(content_type, content_id, created_at DESC);
-
 CREATE INDEX IF NOT EXISTS idx_content_reports_reporter
   ON public.content_reports_v1(reporter_id, created_at DESC);
-
 COMMENT ON TABLE public.content_reports_v1 IS
   'Phase 1 EPIC K: Trust-weighted user reports on content (input for moderation queues)';
-
 -- 5) Reporter quality score
 
 CREATE TABLE IF NOT EXISTS public.moderation_reporter_quality (
@@ -173,10 +155,8 @@ CREATE TABLE IF NOT EXISTS public.moderation_reporter_quality (
   quality_score NUMERIC NOT NULL DEFAULT 0.50 CHECK (quality_score >= 0 AND quality_score <= 1),
   last_updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
-
 COMMENT ON TABLE public.moderation_reporter_quality IS
   'Phase 1 EPIC K: Reporter quality score used to down-weight abusive reporters';
-
 -- 6) Helpers: decision → distribution mapping
 
 CREATE OR REPLACE FUNCTION public.map_decision_to_distribution_class_v1(
@@ -198,13 +178,10 @@ BEGIN
   END IF;
 END;
 $$;
-
 REVOKE ALL ON FUNCTION public.map_decision_to_distribution_class_v1(public.moderation_decision) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.map_decision_to_distribution_class_v1(public.moderation_decision) TO service_role;
-
 COMMENT ON FUNCTION public.map_decision_to_distribution_class_v1(public.moderation_decision) IS
   'Phase 1 EPIC K: Map moderation decision to distribution class';
-
 -- 7) Helpers: compute report weight (trust + reporter quality)
 
 CREATE OR REPLACE FUNCTION public.get_reporter_quality_multiplier_v1(
@@ -241,13 +218,10 @@ BEGIN
   END IF;
 END;
 $$;
-
 REVOKE ALL ON FUNCTION public.get_reporter_quality_multiplier_v1(UUID) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.get_reporter_quality_multiplier_v1(UUID) TO service_role;
-
 COMMENT ON FUNCTION public.get_reporter_quality_multiplier_v1(UUID) IS
   'Phase 1 EPIC K: Reporter quality multiplier (down-weights abusive reporters)';
-
 CREATE OR REPLACE FUNCTION public.calculate_report_weight_v1(
   p_reporter_id UUID
 )
@@ -298,13 +272,10 @@ BEGIN
   RETURN QUERY SELECT v_trust_score, v_base, v_mult, (v_base * v_mult);
 END;
 $$;
-
 REVOKE ALL ON FUNCTION public.calculate_report_weight_v1(UUID) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.calculate_report_weight_v1(UUID) TO service_role;
-
 COMMENT ON FUNCTION public.calculate_report_weight_v1(UUID) IS
   'Phase 1 EPIC K: Trust-weighted reports (Tier A/B heavier; Tier D minimal) + reporter quality multiplier';
-
 -- 8) Submit report → queue upsert + burst detection + auto needs_review (never auto-block)
 
 CREATE OR REPLACE FUNCTION public.submit_content_report_v1(
@@ -511,13 +482,10 @@ BEGIN
   );
 END;
 $$;
-
 REVOKE ALL ON FUNCTION public.submit_content_report_v1(TEXT, UUID, TEXT, TEXT) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.submit_content_report_v1(TEXT, UUID, TEXT, TEXT) TO authenticated;
-
 COMMENT ON FUNCTION public.submit_content_report_v1(TEXT, UUID, TEXT, TEXT) IS
   'Phase 1 EPIC K: Submit trust-weighted report; upsert moderation queue; burst-aware auto needs_review (never auto-block)';
-
 -- 9) Set moderation decision (records action + updates status + resolves queue optionally)
 
 CREATE OR REPLACE FUNCTION public.set_content_moderation_decision_v1(
@@ -629,13 +597,10 @@ BEGIN
   RETURN v_action_id;
 END;
 $$;
-
 REVOKE ALL ON FUNCTION public.set_content_moderation_decision_v1(TEXT, UUID, public.moderation_decision, TEXT, TEXT, UUID, TEXT) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.set_content_moderation_decision_v1(TEXT, UUID, public.moderation_decision, TEXT, TEXT, UUID, TEXT) TO service_role;
-
 COMMENT ON FUNCTION public.set_content_moderation_decision_v1(TEXT, UUID, public.moderation_decision, TEXT, TEXT, UUID, TEXT) IS
   'Phase 1 EPIC K: Set moderation decision; write action audit; update current status; resolve queue';
-
 -- 10) Read helper: get distribution class (default green)
 
 CREATE OR REPLACE FUNCTION public.get_content_distribution_class_v1(
@@ -663,13 +628,10 @@ BEGIN
   RETURN v_class;
 END;
 $$;
-
 REVOKE ALL ON FUNCTION public.get_content_distribution_class_v1(TEXT, UUID) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.get_content_distribution_class_v1(TEXT, UUID) TO anon, authenticated, service_role;
-
 COMMENT ON FUNCTION public.get_content_distribution_class_v1(TEXT, UUID) IS
   'Phase 1 EPIC K: Get distribution class for content (default green if not set)';
-
 -- 11) Enforcement patch: get_reels_feed_v2 must exclude borderline/red on recommendation surfaces
 -- NOTE: We keep EPIC I ranking v2 logic but re-add server-side moderation/visibility gates
 -- and apply EPIC K borderline exclusion.
@@ -1152,13 +1114,10 @@ BEGIN
 
 END;
 $$;
-
 REVOKE ALL ON FUNCTION public.get_reels_feed_v2(INTEGER, INTEGER, TEXT, NUMERIC, INTEGER, INTEGER, TEXT) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.get_reels_feed_v2(INTEGER, INTEGER, TEXT, NUMERIC, INTEGER, INTEGER, TEXT) TO anon, authenticated;
-
 COMMENT ON FUNCTION public.get_reels_feed_v2(INTEGER, INTEGER, TEXT, NUMERIC, INTEGER, INTEGER, TEXT) IS
   'Phase 1 EPIC I + K: Personalized reels feed (ranking v2) with moderation + borderline enforcement';
-
 -- 12) Enforcement patch: Hashtag feed must exclude borderline/red
 
 CREATE OR REPLACE FUNCTION public.is_reel_discoverable_v1(
@@ -1210,13 +1169,10 @@ BEGIN
   RETURN true;
 END;
 $$;
-
 REVOKE ALL ON FUNCTION public.is_reel_discoverable_v1(UUID) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.is_reel_discoverable_v1(UUID) TO anon, authenticated, service_role;
-
 COMMENT ON FUNCTION public.is_reel_discoverable_v1(UUID) IS
   'Phase 1 EPIC K: Helper - reel is eligible for recommendation surfaces (green, non-sensitive, public)';
-
 -- Patch EPIC H hashtag surface: enforce discoverability (green only)
 
 CREATE OR REPLACE FUNCTION public.get_hashtag_feed_v1(
@@ -1352,10 +1308,8 @@ BEGIN
   END IF;
 END;
 $$;
-
 REVOKE ALL ON FUNCTION public.get_hashtag_feed_v1(TEXT, TEXT, INTEGER, INTEGER, UUID) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.get_hashtag_feed_v1(TEXT, TEXT, INTEGER, INTEGER, UUID) TO authenticated, anon;
-
 -- Patch EPIC G Explore helpers: enforce discoverability (green only)
 
 CREATE OR REPLACE FUNCTION public.get_explore_fresh_creators_v1(
@@ -1403,10 +1357,8 @@ AS $$
   ORDER BY p.created_at DESC
   LIMIT GREATEST(1, LEAST(p_limit, 50));
 $$;
-
 REVOKE ALL ON FUNCTION public.get_explore_fresh_creators_v1(INTEGER, INTEGER, INTEGER, INTEGER) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.get_explore_fresh_creators_v1(INTEGER, INTEGER, INTEGER, INTEGER) TO anon, authenticated;
-
 CREATE OR REPLACE FUNCTION public.get_explore_categories_v1(
   p_limit_categories INTEGER DEFAULT 6,
   p_limit_reels_per_category INTEGER DEFAULT 5
@@ -1476,13 +1428,11 @@ BEGIN
   END LOOP;
 END;
 $$;
-
 REVOKE ALL ON FUNCTION public.get_explore_categories_v1(INTEGER, INTEGER) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.get_explore_categories_v1(INTEGER, INTEGER) TO anon, authenticated;
-
 -- ============================================================================
 -- Notes:
 -- - Appeals lifecycle is implemented in Part 2 migration (20260224201000...)
 -- - Explore enforcement: explore functions already exclude blocked; they should also use is_reel_discoverable_v1
 --   (patched in their own migrations; we keep feed + hashtag enforced here to stop leakage).
--- ============================================================================
+-- ============================================================================;

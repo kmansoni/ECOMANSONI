@@ -1,4 +1,3 @@
--- ALLOW_NON_IDEMPOTENT_POLICY_DDL: legacy migration already applied to production; non-idempotent policies are intentional here.
 -- Таблица каналов (публичные чаты как в Telegram)
 CREATE TABLE public.channels (
   id UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
@@ -11,7 +10,6 @@ CREATE TABLE public.channels (
   created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
   updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now()
 );
-
 -- Участники канала
 CREATE TABLE public.channel_members (
   id UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
@@ -21,7 +19,6 @@ CREATE TABLE public.channel_members (
   joined_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
   UNIQUE(channel_id, user_id)
 );
-
 -- Сообщения в каналах
 CREATE TABLE public.channel_messages (
   id UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
@@ -32,17 +29,14 @@ CREATE TABLE public.channel_messages (
   media_type TEXT,
   created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now()
 );
-
 -- Включаем RLS
 ALTER TABLE public.channels ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.channel_members ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.channel_messages ENABLE ROW LEVEL SECURITY;
-
 -- Политики для каналов
 CREATE POLICY "Public channels are viewable by everyone"
 ON public.channels FOR SELECT
 USING (is_public = true);
-
 CREATE POLICY "Channel members can view their channels"
 ON public.channels FOR SELECT
 USING (
@@ -51,20 +45,16 @@ USING (
     WHERE channel_id = channels.id AND user_id = auth.uid()
   )
 );
-
 CREATE POLICY "Authenticated users can create channels"
 ON public.channels FOR INSERT
 TO authenticated
 WITH CHECK (owner_id = auth.uid());
-
 CREATE POLICY "Channel owner can update their channel"
 ON public.channels FOR UPDATE
 USING (owner_id = auth.uid());
-
 CREATE POLICY "Channel owner can delete their channel"
 ON public.channels FOR DELETE
 USING (owner_id = auth.uid());
-
 -- Политики для участников каналов
 CREATE POLICY "Anyone can view channel members of public channels"
 ON public.channel_members FOR SELECT
@@ -74,7 +64,6 @@ USING (
     WHERE id = channel_members.channel_id AND is_public = true
   )
 );
-
 CREATE POLICY "Members can view their channel's members"
 ON public.channel_members FOR SELECT
 USING (
@@ -83,7 +72,6 @@ USING (
     WHERE cm.channel_id = channel_members.channel_id AND cm.user_id = auth.uid()
   )
 );
-
 CREATE POLICY "Users can join public channels"
 ON public.channel_members FOR INSERT
 TO authenticated
@@ -94,11 +82,9 @@ WITH CHECK (
     WHERE id = channel_members.channel_id AND is_public = true
   )
 );
-
 CREATE POLICY "Users can leave channels"
 ON public.channel_members FOR DELETE
 USING (user_id = auth.uid());
-
 CREATE POLICY "Channel owner/admin can manage members"
 ON public.channel_members FOR ALL
 USING (
@@ -109,7 +95,6 @@ USING (
     AND role IN ('owner', 'admin')
   )
 );
-
 -- Политики для сообщений каналов
 CREATE POLICY "Anyone can view messages in public channels"
 ON public.channel_messages FOR SELECT
@@ -119,7 +104,6 @@ USING (
     WHERE id = channel_messages.channel_id AND is_public = true
   )
 );
-
 CREATE POLICY "Members can view messages in their channels"
 ON public.channel_messages FOR SELECT
 USING (
@@ -128,7 +112,6 @@ USING (
     WHERE channel_id = channel_messages.channel_id AND user_id = auth.uid()
   )
 );
-
 CREATE POLICY "Members can send messages to channels"
 ON public.channel_messages FOR INSERT
 TO authenticated
@@ -139,13 +122,11 @@ WITH CHECK (
     WHERE channel_id = channel_messages.channel_id AND user_id = auth.uid()
   )
 );
-
 -- Индексы для производительности
 CREATE INDEX idx_channel_members_channel ON public.channel_members(channel_id);
 CREATE INDEX idx_channel_members_user ON public.channel_members(user_id);
 CREATE INDEX idx_channel_messages_channel ON public.channel_messages(channel_id);
 CREATE INDEX idx_channel_messages_created ON public.channel_messages(created_at DESC);
-
 -- Триггер для обновления member_count
 CREATE OR REPLACE FUNCTION public.update_channel_member_count()
 RETURNS TRIGGER AS $$
@@ -160,14 +141,11 @@ BEGIN
   RETURN NULL;
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
-
 CREATE TRIGGER trigger_update_channel_member_count
 AFTER INSERT OR DELETE ON public.channel_members
 FOR EACH ROW EXECUTE FUNCTION public.update_channel_member_count();
-
 -- Включаем realtime для сообщений каналов
 ALTER PUBLICATION supabase_realtime ADD TABLE public.channel_messages;
-
 -- Функция создания канала с автоматическим добавлением владельца
 CREATE OR REPLACE FUNCTION public.create_channel(
   p_name TEXT,

@@ -6,6 +6,8 @@ import { CallMediaEncryption } from "@/calls-v2/callMediaEncryption";
 import { RekeyStateMachine } from "@/calls-v2/rekeyStateMachine";
 import { EpochGuard } from "@/calls-v2/epochGuard";
 import { CallsWsClient } from "@/calls-v2/wsClient";
+import type { SfuMediaManager } from "@/calls-v2/sfuMediaManager";
+import type { RtpCapabilities } from "@/calls-v2/types";
 import type { PipeBreakInfo } from "@/lib/e2ee/insertableStreams";
 import { useCallsV2E2eeSignals } from "./useCallsV2E2eeSignals";
 
@@ -23,6 +25,8 @@ interface UseCallsV2E2eeBootstrapParams {
   epochGuardRef: MutableRefObject<EpochGuard | null>;
   producerPeerKeyRef: MutableRefObject<Map<string, string>>;
   peerUserIdByDeviceIdRef: MutableRefObject<Map<string, string>>;
+  sfuManagerRef: MutableRefObject<SfuMediaManager | null>;
+  sfuRouterRtpCapabilitiesRef: MutableRefObject<RtpCapabilities | null>;
   pendingProducersToConsumeRef: MutableRefObject<Map<string, { roomId: string; peerDeviceId?: string; peerUserId?: string }>>;
   consumePendingProducersRef: MutableRefObject<(() => void) | null>;
   handleE2eePipeBreakRef: MutableRefObject<((info: PipeBreakInfo) => void) | null>;
@@ -44,6 +48,8 @@ export function useCallsV2E2eeBootstrap({
   epochGuardRef,
   producerPeerKeyRef,
   peerUserIdByDeviceIdRef,
+  sfuManagerRef,
+  sfuRouterRtpCapabilitiesRef,
   pendingProducersToConsumeRef,
   consumePendingProducersRef,
   handleE2eePipeBreakRef,
@@ -64,6 +70,8 @@ export function useCallsV2E2eeBootstrap({
     epochGuardRef,
     producerPeerKeyRef,
     peerUserIdByDeviceIdRef,
+    sfuManagerRef,
+    sfuRouterRtpCapabilitiesRef,
     pendingProducersToConsumeRef,
     consumePendingProducersRef,
     onDecryptionKeyReady,

@@ -5,11 +5,9 @@
 -- 1) Owners: mark one active primary owner
 ALTER TABLE public.owners
   ADD COLUMN IF NOT EXISTS is_primary BOOLEAN NOT NULL DEFAULT false;
-
 CREATE UNIQUE INDEX IF NOT EXISTS uq_owners_single_primary_active
   ON public.owners (is_primary)
   WHERE is_primary = true AND transferred_at IS NULL;
-
 DO $$
 BEGIN
   IF NOT EXISTS (
@@ -30,7 +28,6 @@ BEGIN
   END IF;
 END
 $$;
-
 -- 2) Staff profile card for moderation/admin/owner operations
 CREATE TABLE IF NOT EXISTS public.admin_staff_profiles (
   admin_user_id UUID PRIMARY KEY REFERENCES public.admin_users(id) ON DELETE CASCADE,
@@ -46,13 +43,10 @@ CREATE TABLE IF NOT EXISTS public.admin_staff_profiles (
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
-
 CREATE INDEX IF NOT EXISTS idx_admin_staff_profiles_kind
   ON public.admin_staff_profiles(staff_kind);
-
 CREATE INDEX IF NOT EXISTS idx_admin_staff_profiles_messenger
   ON public.admin_staff_profiles(messenger_panel_access);
-
 -- Backfill one profile row per admin user
 INSERT INTO public.admin_staff_profiles (
   admin_user_id,
@@ -124,7 +118,6 @@ SELECT
   now()
 FROM public.admin_users au
 ON CONFLICT (admin_user_id) DO NOTHING;
-
 -- 3) Admin permissions for staff profiles and primary owner controls
 INSERT INTO public.admin_permissions (scope, resource, action, description, risk_level, is_system)
 VALUES
@@ -133,7 +126,6 @@ VALUES
   ('owner.primary.read', 'owner', 'read_primary', 'Read current primary owner', 'medium', true),
   ('owner.primary.set', 'owner', 'set_primary', 'Set current primary owner', 'critical', true)
 ON CONFLICT (scope) DO NOTHING;
-
 WITH roles AS (
   SELECT id, name
   FROM public.admin_roles
@@ -154,4 +146,3 @@ JOIN perms p ON (
   (p.scope = 'owner.primary.set' AND r.name = 'owner')
 )
 ON CONFLICT (role_id, permission_id) DO NOTHING;
-

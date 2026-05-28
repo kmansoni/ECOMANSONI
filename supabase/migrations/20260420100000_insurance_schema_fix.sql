@@ -1,8 +1,6 @@
 -- =============================================================
 -- Миграция: исправление рассинхронизации схемы БД и Edge Functions
 -- Дата: 2026-04-20
--- ALLOW_DESTRUCTIVE_MIGRATION: DROP COLUMN plate_normalized — это пересоздание GENERATED
--- колонки в обычную + триггер. Данные вычислялись из plate и восстанавливаются UPDATE ниже.
 -- =============================================================
 
 -- ─────────────────────────────────────────────────────────────
@@ -16,26 +14,20 @@ ALTER TABLE public.insurance_provider_logs
   ADD COLUMN IF NOT EXISTS offers_count int,
   ADD COLUMN IF NOT EXISTS user_id uuid REFERENCES auth.users(id) ON DELETE SET NULL,
   ADD COLUMN IF NOT EXISTS request_id text;
-
 -- operation и is_success оставляем для обратной совместимости, делаем nullable
 DO $$ BEGIN
   ALTER TABLE public.insurance_provider_logs ALTER COLUMN operation DROP NOT NULL;
 EXCEPTION WHEN others THEN NULL; END $$;
-
 DO $$ BEGIN
   ALTER TABLE public.insurance_provider_logs ALTER COLUMN is_success DROP NOT NULL;
 EXCEPTION WHEN others THEN NULL; END $$;
-
 DO $$ BEGIN
   ALTER TABLE public.insurance_provider_logs ALTER COLUMN response_time_ms DROP NOT NULL;
 EXCEPTION WHEN others THEN NULL; END $$;
-
 CREATE INDEX IF NOT EXISTS idx_provider_logs_user
   ON public.insurance_provider_logs (user_id) WHERE user_id IS NOT NULL;
-
 CREATE INDEX IF NOT EXISTS idx_provider_logs_request
   ON public.insurance_provider_logs (request_id) WHERE request_id IS NOT NULL;
-
 -- ─────────────────────────────────────────────────────────────
 -- 2. insurance_vehicle_cache — plate_normalized GENERATED → обычная + триггер
 --    Код делает upsert с явной записью plate_normalized, GENERATED не позволяет
@@ -43,21 +35,17 @@ CREATE INDEX IF NOT EXISTS idx_provider_logs_request
 
 -- Удаляем зависимый unique index
 DROP INDEX IF EXISTS idx_vehicle_cache_plate;
-
 -- Пересоздаём колонку: убираем GENERATED, делаем обычную
 ALTER TABLE public.insurance_vehicle_cache DROP COLUMN IF EXISTS plate_normalized;
 ALTER TABLE public.insurance_vehicle_cache
   ADD COLUMN plate_normalized text;
-
 -- Заполняем из существующих plate
 UPDATE public.insurance_vehicle_cache
   SET plate_normalized = upper(regexp_replace(plate, '[^А-ЯA-Z0-9]', '', 'gi'))
   WHERE plate IS NOT NULL AND plate_normalized IS NULL;
-
 -- Уникальный индекс
 CREATE UNIQUE INDEX IF NOT EXISTS idx_vehicle_cache_plate
   ON public.insurance_vehicle_cache (plate_normalized) WHERE plate_normalized IS NOT NULL;
-
 -- Триггер для автозаполнения plate_normalized при INSERT/UPDATE если не указано явно
 CREATE OR REPLACE FUNCTION public.trg_vehicle_cache_normalize_plate()
 RETURNS trigger LANGUAGE plpgsql AS $$
@@ -68,12 +56,10 @@ BEGIN
   RETURN NEW;
 END;
 $$;
-
 DROP TRIGGER IF EXISTS vehicle_cache_normalize_plate ON public.insurance_vehicle_cache;
 CREATE TRIGGER vehicle_cache_normalize_plate
   BEFORE INSERT OR UPDATE ON public.insurance_vehicle_cache
   FOR EACH ROW EXECUTE FUNCTION public.trg_vehicle_cache_normalize_plate();
-
 -- ─────────────────────────────────────────────────────────────
 -- 3. insurance_commissions — уже существует (20260123...), но enum commission_status
 --    Код agent-balance использует текстовые значения 'confirmed', 'pending'
@@ -83,7 +69,6 @@ CREATE TRIGGER vehicle_cache_normalize_plate
 -- ─────────────────────────────────────────────────────────────
 ALTER TABLE public.insurance_commissions
   ADD COLUMN IF NOT EXISTS updated_at timestamptz DEFAULT now();
-
 -- ─────────────────────────────────────────────────────────────
 -- 4. insurance_payouts — уже существует (20260123...), использует enum payout_status
 --    Код пишет текстовые значения напрямую — enum совпадает: pending, processing, completed, failed
@@ -92,10 +77,8 @@ ALTER TABLE public.insurance_commissions
 DO $$ BEGIN
   ALTER TABLE public.insurance_payouts ALTER COLUMN payment_method DROP NOT NULL;
 EXCEPTION WHEN others THEN NULL; END $$;
-
 ALTER TABLE public.insurance_payouts
   ADD COLUMN IF NOT EXISTS updated_at timestamptz DEFAULT now();
-
 -- RLS для payouts — агент видит только свои
 DO $$ BEGIN
   CREATE POLICY "payouts_own_select" ON public.insurance_payouts
@@ -103,16 +86,13 @@ DO $$ BEGIN
       agent_id IN (SELECT id FROM public.agent_profiles WHERE user_id = auth.uid())
     );
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
-
 DO $$ BEGIN
   CREATE POLICY "payouts_own_insert" ON public.insurance_payouts
     FOR INSERT WITH CHECK (
       agent_id IN (SELECT id FROM public.agent_profiles WHERE user_id = auth.uid())
     );
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
-
 ALTER TABLE public.insurance_payouts ENABLE ROW LEVEL SECURITY;
-
 -- ─────────────────────────────────────────────────────────────
 -- 5. insurance_clients — уже существует, проверяем недостающее
 -- ─────────────────────────────────────────────────────────────
@@ -130,20 +110,16 @@ ALTER TABLE public.insurance_policies
   ADD COLUMN IF NOT EXISTS premium_amount numeric(12,2),
   ADD COLUMN IF NOT EXISTS premium numeric(12,2),
   ADD COLUMN IF NOT EXISTS company_name text;
-
 -- Расширяем status check чтобы включить 'pending_payment'
 DO $$ BEGIN
   ALTER TABLE public.insurance_policies DROP CONSTRAINT IF EXISTS insurance_policies_status_check;
   ALTER TABLE public.insurance_policies ADD CONSTRAINT insurance_policies_status_check
     CHECK (status::text IN ('draft','pending','pending_payment','active','expired','cancelled'));
 EXCEPTION WHEN others THEN NULL; END $$;
-
 CREATE INDEX IF NOT EXISTS idx_insurance_policies_external
   ON public.insurance_policies (external_id) WHERE external_id IS NOT NULL;
-
 CREATE INDEX IF NOT EXISTS idx_insurance_policies_agent
   ON public.insurance_policies (agent_id) WHERE agent_id IS NOT NULL;
-
 -- ─────────────────────────────────────────────────────────────
 -- 7. agent_profiles — total_earned и available_balance уже есть
 --    Ничего добавлять не нужно
@@ -154,7 +130,6 @@ CREATE INDEX IF NOT EXISTS idx_insurance_policies_agent
 -- ─────────────────────────────────────────────────────────────
 ALTER TABLE public.insurance_companies
   ADD COLUMN IF NOT EXISTS premium_start numeric(10,2);
-
 -- ─────────────────────────────────────────────────────────────
 -- 9. insurance_quote_sessions — params и offers_count
 --    Код пишет params (а схема request_params), и offers_count
@@ -162,7 +137,6 @@ ALTER TABLE public.insurance_companies
 ALTER TABLE public.insurance_quote_sessions
   ADD COLUMN IF NOT EXISTS params jsonb,
   ADD COLUMN IF NOT EXISTS offers_count int DEFAULT 0;
-
 -- Синхронизируем: если params записывается, копируем в request_params через триггер
 CREATE OR REPLACE FUNCTION public.trg_quote_session_sync_params()
 RETURNS trigger LANGUAGE plpgsql AS $$
@@ -178,24 +152,20 @@ BEGIN
   RETURN NEW;
 END;
 $$;
-
 DROP TRIGGER IF EXISTS quote_session_sync_params ON public.insurance_quote_sessions;
 CREATE TRIGGER quote_session_sync_params
   BEFORE INSERT OR UPDATE ON public.insurance_quote_sessions
   FOR EACH ROW EXECUTE FUNCTION public.trg_quote_session_sync_params();
-
 -- ─────────────────────────────────────────────────────────────
 -- 10. insurance_kbm_cache — claims как алиас для previous_claims_count
 --     Код пишет и читает поле "claims", схема имеет "previous_claims_count"
 -- ─────────────────────────────────────────────────────────────
 ALTER TABLE public.insurance_kbm_cache
   ADD COLUMN IF NOT EXISTS claims int;
-
 -- Синхронизируем существующие данные
 UPDATE public.insurance_kbm_cache
   SET claims = previous_claims_count
   WHERE claims IS NULL AND previous_claims_count IS NOT NULL;
-
 -- Триггер для двусторонней синхронизации
 CREATE OR REPLACE FUNCTION public.trg_kbm_cache_sync_claims()
 RETURNS trigger LANGUAGE plpgsql AS $$
@@ -216,17 +186,14 @@ BEGIN
   RETURN NEW;
 END;
 $$;
-
 DROP TRIGGER IF EXISTS kbm_cache_sync_claims ON public.insurance_kbm_cache;
 CREATE TRIGGER kbm_cache_sync_claims
   BEFORE INSERT OR UPDATE ON public.insurance_kbm_cache
   FOR EACH ROW EXECUTE FUNCTION public.trg_kbm_cache_sync_claims();
-
 -- Делаем previous_claims_count nullable для совместимости
 DO $$ BEGIN
   ALTER TABLE public.insurance_kbm_cache ALTER COLUMN previous_claims_count DROP NOT NULL;
 EXCEPTION WHEN others THEN NULL; END $$;
-
 -- ─────────────────────────────────────────────────────────────
 -- 11. CRM ↔ Insurance cross-references
 -- ─────────────────────────────────────────────────────────────
@@ -239,11 +206,9 @@ EXCEPTION
   WHEN duplicate_column THEN NULL;
   WHEN undefined_table THEN NULL;
 END $$;
-
 -- insurance_clients → crm_client_id
 ALTER TABLE public.insurance_clients
   ADD COLUMN IF NOT EXISTS crm_client_id uuid;
-
 -- crm.deals → insurance_policy_id
 DO $$ BEGIN
   ALTER TABLE crm.deals ADD COLUMN insurance_policy_id uuid
@@ -252,17 +217,13 @@ EXCEPTION
   WHEN duplicate_column THEN NULL;
   WHEN undefined_table THEN NULL;
 END $$;
-
 -- agent_profiles → crm_profile_id
 ALTER TABLE public.agent_profiles
   ADD COLUMN IF NOT EXISTS crm_profile_id uuid;
-
 CREATE INDEX IF NOT EXISTS idx_insurance_clients_crm
   ON public.insurance_clients (crm_client_id) WHERE crm_client_id IS NOT NULL;
-
 CREATE INDEX IF NOT EXISTS idx_agent_profiles_crm
   ON public.agent_profiles (crm_profile_id) WHERE crm_profile_id IS NOT NULL;
-
 -- ─────────────────────────────────────────────────────────────
 -- 12. Триггер: INSERT в insurance_policies → auto-create insurance_commissions
 --     Только если agent_id указан
@@ -306,32 +267,27 @@ BEGIN
   RETURN NEW;
 END;
 $$;
-
 DROP TRIGGER IF EXISTS policy_auto_commission ON public.insurance_policies;
 CREATE TRIGGER policy_auto_commission
   AFTER INSERT ON public.insurance_policies
   FOR EACH ROW EXECUTE FUNCTION public.trg_policy_auto_commission();
-
 -- ─────────────────────────────────────────────────────────────
 -- 13. RLS-политики для insurance_commissions
 --     (таблица уже существует, но RLS мог быть не настроен)
 -- ─────────────────────────────────────────────────────────────
 ALTER TABLE public.insurance_commissions ENABLE ROW LEVEL SECURITY;
-
 DO $$ BEGIN
   CREATE POLICY "commissions_own_select" ON public.insurance_commissions
     FOR SELECT USING (
       agent_id IN (SELECT id FROM public.agent_profiles WHERE user_id = auth.uid())
     );
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
-
 DO $$ BEGIN
   CREATE POLICY "commissions_own_insert" ON public.insurance_commissions
     FOR INSERT WITH CHECK (
       agent_id IN (SELECT id FROM public.agent_profiles WHERE user_id = auth.uid())
     );
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
-
 -- ─────────────────────────────────────────────────────────────
 -- Готово. Все расхождения между Edge Functions и схемой БД исправлены.
--- ─────────────────────────────────────────────────────────────
+-- ─────────────────────────────────────────────────────────────;

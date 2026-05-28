@@ -192,13 +192,10 @@ BEGIN
   RETURN true;
 END;
 $$;
-
 REVOKE ALL ON FUNCTION public.calculate_reel_metrics_v1(UUID) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.calculate_reel_metrics_v1(UUID) TO service_role;
-
 COMMENT ON FUNCTION public.calculate_reel_metrics_v1(UUID) IS
   'Phase 1 EPIC J: Calculate and update per-reel metrics from validated events';
-
 -- 2) Background worker: Batch calculate reel metrics
 
 CREATE OR REPLACE FUNCTION public.batch_calculate_reel_metrics_v1(
@@ -245,13 +242,10 @@ BEGIN
   END LOOP;
 END;
 $$;
-
 REVOKE ALL ON FUNCTION public.batch_calculate_reel_metrics_v1(INTEGER, INTEGER) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.batch_calculate_reel_metrics_v1(INTEGER, INTEGER) TO service_role;
-
 COMMENT ON FUNCTION public.batch_calculate_reel_metrics_v1(INTEGER, INTEGER) IS
   'Phase 1 EPIC J: Background worker to batch calculate reel metrics (run every 15-30 min)';
-
 -- 3) Create daily snapshot for reel metrics
 
 CREATE OR REPLACE FUNCTION public.create_reel_metrics_snapshot_v1(
@@ -341,13 +335,10 @@ BEGIN
   RETURN true;
 END;
 $$;
-
 REVOKE ALL ON FUNCTION public.create_reel_metrics_snapshot_v1(UUID, DATE) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.create_reel_metrics_snapshot_v1(UUID, DATE) TO service_role;
-
 COMMENT ON FUNCTION public.create_reel_metrics_snapshot_v1(UUID, DATE) IS
   'Phase 1 EPIC J: Create daily snapshot of reel metrics for time-series analytics';
-
 -- 4) Background worker: Batch create daily snapshots
 
 CREATE OR REPLACE FUNCTION public.batch_create_reel_snapshots_v1(
@@ -391,13 +382,10 @@ BEGIN
   END LOOP;
 END;
 $$;
-
 REVOKE ALL ON FUNCTION public.batch_create_reel_snapshots_v1(DATE, INTEGER) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.batch_create_reel_snapshots_v1(DATE, INTEGER) TO service_role;
-
 COMMENT ON FUNCTION public.batch_create_reel_snapshots_v1(DATE, INTEGER) IS
   'Phase 1 EPIC J: Background worker to create daily snapshots for all reels (run daily)';
-
 -- 5) Calculate creator dashboard metrics
 
 CREATE OR REPLACE FUNCTION public.calculate_creator_metrics_v1(
@@ -549,13 +537,10 @@ BEGIN
   RETURN true;
 END;
 $$;
-
 REVOKE ALL ON FUNCTION public.calculate_creator_metrics_v1(UUID) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.calculate_creator_metrics_v1(UUID) TO service_role;
-
 COMMENT ON FUNCTION public.calculate_creator_metrics_v1(UUID) IS
   'Phase 1 EPIC J: Calculate and update creator dashboard metrics';
-
 -- 6) Background worker: Batch calculate creator metrics
 
 CREATE OR REPLACE FUNCTION public.batch_calculate_creator_metrics_v1(
@@ -593,13 +578,10 @@ BEGIN
   END LOOP;
 END;
 $$;
-
 REVOKE ALL ON FUNCTION public.batch_calculate_creator_metrics_v1(INTEGER) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.batch_calculate_creator_metrics_v1(INTEGER) TO service_role;
-
 COMMENT ON FUNCTION public.batch_calculate_creator_metrics_v1(INTEGER) IS
   'Phase 1 EPIC J: Background worker to batch calculate creator dashboard metrics (run hourly)';
-
 -- ============================================================================
 -- Summary:
 -- - ✅ calculate_reel_metrics_v1(reel_id): Calculate per-reel metrics from events
@@ -608,4 +590,4 @@ COMMENT ON FUNCTION public.batch_calculate_creator_metrics_v1(INTEGER) IS
 -- - ✅ batch_create_reel_snapshots_v1(date, limit): Background worker (run daily)
 -- - ✅ calculate_creator_metrics_v1(creator_id): Calculate creator dashboard
 -- - ✅ batch_calculate_creator_metrics_v1(limit): Background worker (run hourly)
--- ============================================================================
+-- ============================================================================;

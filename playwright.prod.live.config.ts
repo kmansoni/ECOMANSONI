@@ -6,6 +6,7 @@ export default defineConfig({
   retries: 0,
   reporter: "line",
   use: {
+    baseURL: "https://mansoni.ru",
     trace: "retain-on-failure",
     screenshot: "only-on-failure",
     video: "retain-on-failure",

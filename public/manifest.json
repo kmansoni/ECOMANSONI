@@ -1,5 +1,5 @@
 {
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$schema": "https://json-schema.org/draft-2020-12/schema",
   "name": "Mansoni",
   "short_name": "Mansoni",
   "description": "Mansoni — мини-приложения и боты",
@@ -14,13 +14,24 @@
     {
       "src": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxOTIiIGhlaWdodD0iMTkyIiBmaWxsPSJub25lIj48cmVjdCB3aWR0aD0iMTkyIiBoZWlnaHQ9IjE5MiIgdHJhbnNmb3JtPSJyb3RhdGUoLTQ1KSIgZmlsbD0iIzZjNjNmZiIvPjx0ZXh0IHg9IjkwIiB5PSIxMDciIGZvbnQtZmFtaWx5PSJBcmlhbCIgZm9udC1zaXplPSI4MCIgZmlsbD0iIjMzMyIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZG9taW5hbnQtYmFzZWxpbmU9Im1pZGRsZSIgIHN0eWxlPSJiZWhlaWdodDogYWxzZTtmaWxsOiBuc3RhbmNlOyI+TjwvdGV4dD48L3N2Zz4=",
       "sizes": "192x192",
-      "type": "image/png"
+      "type": "image/svg+xml"
     },
     {
       "src": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI1MTIiIGhlaWdodD0iNTEyIiBmaWxsPSJub25lIj48cmVjdCB3aWR0aD0iNTEyIiBoZWlnaHQ9IjUxMiIgdHJhbnNmb3JtPSJyb3RhdGUoLTQ1KSIgZmlsbD0iIzZjNjNmZiIvPjx0ZXh0IHg9IjI1NiIgeT0iMjc2IiBmb250LWZhbWlseT0iQXJpYWwiIGZvbnQtc2l6ZT0iMTQwIiBmaWxsPSIjMzMzIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBkb21pbmFudC1iYXNlbGluZT0ibWlkZGxlIiBzdHlsZT0iYmVla2hlaWdodDogYWxzZTtmaWxsOiBuc3RhbmNlOyI+TTwvdGV4dD48L3N2Zz4=",
       "sizes": "512x512",
-      "type": "image/png"
+      "type": "image/svg+xml"
     }
+  ],
+  "screenshots": [],
+  "share_target": {
+    "action": "/mini-apps/share",
+    "method": "GET",
+    "enctype": "application/x-www-form-urlencoded",
+    "params": {
+      "target_url": "url"
+    }
+  }
+}
   ],
   "screenshots": [],
   "share_target": {

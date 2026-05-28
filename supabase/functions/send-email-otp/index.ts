@@ -110,7 +110,7 @@ function buildPremiumOtpHtml(codeSpaced: string, ttlMinutes: number): string {
       <div style="height: 1px; background: rgba(255, 255, 255, 0.1); margin: 16px 0;"></div>
       <div style="color: rgba(255, 255, 255, 0.7); font-size: 14px; line-height: 1.7; margin-bottom: 12px;">Использование чужого кода без согласия владельца - <strong style="color: rgba(255, 255, 255, 0.9);">нарушение закона</strong> (ст. 272 УК РФ).</div>
       <div style="height: 1px; background: rgba(255, 255, 255, 0.1); margin: 16px 0;"></div>
-      <div style="color: rgba(255, 255, 255, 0.7); font-size: 14px; line-height: 1.7;">Получили код случайно? <strong style="color: rgba(255, 255, 255, 0.9);">Проигнорируйте</strong> это письмо и сообщите нам: <a href="mailto:support@masnoni.ru" style="color: rgba(255, 183, 77, 0.9); text-decoration: none;">support@masnoni.ru</a></div>
+      <div style="color: rgba(255, 255, 255, 0.7); font-size: 14px; line-height: 1.7;">Получили код случайно? <strong style="color: rgba(255, 255, 255, 0.9);">Проигнорируйте</strong> это письмо и сообщите нам: <a href="mailto:support@mansoni.ru" style="color: rgba(255, 183, 77, 0.9); text-decoration: none;">support@mansoni.ru</a></div>
     </div>
 
     <div style="text-align: center; padding-top: 24px; border-top: 1px solid rgba(255, 255, 255, 0.06);">
@@ -137,7 +137,7 @@ function buildPremiumOtpText(codeSpaced: string, ttlMinutes: number): string {
     "Этот код - конфиденциальная информация.",
     "Не сообщайте его третьим лицам.",
     "Использование чужого кода без согласия владельца - нарушение закона (ст. 272 УК РФ).",
-    "Если получили код случайно - проигнорируйте письмо и напишите нам: support@masnoni.ru",
+    "Если получили код случайно - проигнорируйте письмо и напишите нам: support@mansoni.ru",
   ].join("\n");
 }
 
@@ -190,7 +190,7 @@ Deno.serve(async (req: Request) => {
   const legacyEmailRouterKey = Deno.env.get("EMAIL_ROUTER_API_KEY");
   const emailRouterIngestKey = preferredEmailRouterKey ?? legacyEmailRouterKey;
   const otpFromEmail = Deno.env.get("EMAIL_OTP_FROM_EMAIL") ?? "auth@mansoni.ru";
-  const otpReplyTo = Deno.env.get("EMAIL_OTP_REPLY_TO") ?? "support@masnoni.ru";
+  const otpReplyTo = Deno.env.get("EMAIL_OTP_REPLY_TO") ?? "support@mansoni.ru";
   const emailRouterKeySource = preferredEmailRouterKey
     ? "EMAIL_ROUTER_INGEST_KEY"
     : legacyEmailRouterKey
@@ -345,7 +345,6 @@ Deno.serve(async (req: Request) => {
         "X-Transactional-Email": "true",
         "X-Priority": "1 (Highest)",
         "Importance": "high",
-        "Precedence": "bulk",
         "X-MSMail-Priority": "High",
         "X-Mailer": "Masnoni-OTP/1.0",
         "Reply-To": otpReplyTo,

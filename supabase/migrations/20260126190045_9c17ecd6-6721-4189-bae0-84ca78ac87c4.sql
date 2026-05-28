@@ -14,12 +14,10 @@ BEGIN
   RETURN NEW;
 END;
 $$;
-
 DROP TRIGGER IF EXISTS trg_bump_conversation_updated_at_from_message ON public.messages;
 CREATE TRIGGER trg_bump_conversation_updated_at_from_message
 AFTER INSERT ON public.messages
 FOR EACH ROW
 EXECUTE FUNCTION public.bump_conversation_updated_at_from_message();
-
 -- 2) Realtime: make sure updates on conversations are broadcast
 ALTER PUBLICATION supabase_realtime ADD TABLE public.conversations;

@@ -9,7 +9,6 @@
 CREATE INDEX IF NOT EXISTS idx_post_reminders_pending
   ON public.post_reminders (remind_at)
   WHERE notified = false;
-
 -- ---------------------------------------------------------------------------
 -- Функция-обёртка для pg_cron (вызывает Edge Function через X-Internal-Call)
 -- Edge Function post-reminder-notify использует service_role и X-Internal-Call header
@@ -58,30 +57,39 @@ EXCEPTION WHEN OTHERS THEN
   RAISE WARNING 'trigger_post_reminder_notifications failed: %', SQLERRM;
 END;
 $$;
-
 -- Безопасность: только service_role может вызывать
 REVOKE ALL ON FUNCTION public.trigger_post_reminder_notifications() FROM PUBLIC;
 REVOKE ALL ON FUNCTION public.trigger_post_reminder_notifications() FROM anon;
 REVOKE ALL ON FUNCTION public.trigger_post_reminder_notifications() FROM authenticated;
 GRANT EXECUTE ON FUNCTION public.trigger_post_reminder_notifications() TO service_role;
-
 COMMENT ON FUNCTION public.trigger_post_reminder_notifications() IS
   'Calls post-reminder-notify Edge Function. Scheduled by pg_cron every minute.';
-
 -- ---------------------------------------------------------------------------
 -- pg_cron schedule — каждую минуту
 -- ---------------------------------------------------------------------------
-SELECT cron.schedule(
-  'post-reminder-notify',
-  '* * * * *',
-  'SELECT public.trigger_post_reminder_notifications()'
-);
+DO $$
+DECLARE
+  v_existing_job_id BIGINT;
+BEGIN
+  SELECT jobid
+  INTO v_existing_job_id
+  FROM cron.job
+  WHERE jobname = 'post-reminder-notify'
+  LIMIT 1;
 
-COMMENT ON SCHEDULE cron.job IS
-  'Post reminder notifications: вызывается каждую минуту для отправки pending напоминаний';
+  IF v_existing_job_id IS NOT NULL THEN
+    PERFORM cron.unschedule(v_existing_job_id);
+  END IF;
 
+  PERFORM cron.schedule(
+    'post-reminder-notify',
+    '* * * * *',
+    'SELECT public.trigger_post_reminder_notifications()'
+  );
+END;
+$$;
 -- ---------------------------------------------------------------------------
 -- Настройка project_ref (выполнить после деплоя)
 -- ---------------------------------------------------------------------------
 -- ALTER DATABASE CURRENT SET app.supabase_project_ref = 'your-project-ref';
--- или через Supabase Dashboard → Settings → Database → Extensions → plv8 → Configuration
+-- или через Supabase Dashboard → Settings → Database → Extensions → plv8 → Configuration;

@@ -14,7 +14,6 @@ SELECT
 FROM public.chat_client_metrics
 WHERE created_at >= now() - interval '15 minutes'
 GROUP BY metric_name, COALESCE(labels->>'kind', 'unknown');
-
 CREATE OR REPLACE VIEW public.chat_v11_health_last_15m AS
 WITH base AS (
   SELECT metric_name, metric_value
@@ -36,7 +35,5 @@ SELECT
   write_receipt_latency_p95_ms,
   write_receipt_samples
 FROM agg;
-
 GRANT SELECT ON public.chat_v11_metrics_last_15m TO authenticated;
 GRANT SELECT ON public.chat_v11_health_last_15m TO authenticated;
-

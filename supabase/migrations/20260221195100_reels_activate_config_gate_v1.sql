@@ -58,15 +58,12 @@ BEGIN
   );
 END;
 $$;
-
 ALTER FUNCTION public.reels_engine_activate_config_v1(UUID, UUID)
   SET search_path = public, pg_catalog;
-
 REVOKE EXECUTE ON FUNCTION public.reels_engine_activate_config_v1(UUID, UUID)
   FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.reels_engine_activate_config_v1(UUID, UUID)
   TO service_role;
-
 -- Keep old signature for backward compatibility as read-only.
 CREATE OR REPLACE FUNCTION public.reels_engine_activate_config(
   p_version_id UUID,
@@ -78,10 +75,8 @@ VOLATILE
 AS $$
   SELECT public.reels_engine_activate_config_v1(p_version_id, p_segment_id);
 $$;
-
 ALTER FUNCTION public.reels_engine_activate_config(UUID, UUID)
   SET search_path = public, pg_catalog;
-
 REVOKE EXECUTE ON FUNCTION public.reels_engine_activate_config(UUID, UUID)
   FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.reels_engine_activate_config(UUID, UUID)

@@ -1,11 +1,13 @@
--- ALLOW_NON_IDEMPOTENT_POLICY_DDL: legacy migration already applied to production; non-idempotent policies are intentional here.
 -- Phase 1 L1.1: Tenant Model + Auto-Creation (Telegram-grade)
 CREATE TABLE tenants(tenant_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),name TEXT NOT NULL,status TEXT NOT NULL DEFAULT 'active' CHECK(status IN('active','suspended','deleted')),created_at TIMESTAMPTZ NOT NULL DEFAULT now(),updated_at TIMESTAMPTZ NOT NULL DEFAULT now());
 CREATE TABLE tenant_members(tenant_id UUID NOT NULL REFERENCES tenants(tenant_id)ON DELETE CASCADE,user_id UUID NOT NULL REFERENCES auth.users(id)ON DELETE CASCADE,role TEXT NOT NULL DEFAULT'member'CHECK(role IN('owner','admin','member','guest')),created_at TIMESTAMPTZ NOT NULL DEFAULT now(),updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),PRIMARY KEY(tenant_id,user_id));
 CREATE INDEX tenant_members_user_id_idx ON tenant_members(user_id);
-ALTER TABLE tenants ENABLE ROW LEVEL SECURITY;ALTER TABLE tenant_members ENABLE ROW LEVEL SECURITY;
-REVOKE INSERT,UPDATE,DELETE ON tenants FROM anon,authenticated;REVOKE INSERT,UPDATE,DELETE ON tenant_members FROM anon,authenticated;
-GRANT SELECT ON tenants TO authenticated;GRANT SELECT ON tenant_members TO authenticated;
+ALTER TABLE tenants ENABLE ROW LEVEL SECURITY;
+ALTER TABLE tenant_members ENABLE ROW LEVEL SECURITY;
+REVOKE INSERT,UPDATE,DELETE ON tenants FROM anon,authenticated;
+REVOKE INSERT,UPDATE,DELETE ON tenant_members FROM anon,authenticated;
+GRANT SELECT ON tenants TO authenticated;
+GRANT SELECT ON tenant_members TO authenticated;
 CREATE POLICY tenants_read ON tenants FOR SELECT TO authenticated USING(tenant_id IN(SELECT tm.tenant_id FROM tenant_members tm WHERE tm.user_id=auth.uid()));
 CREATE POLICY tenant_members_read ON tenant_members FOR SELECT TO authenticated USING(user_id=auth.uid());
 CREATE OR REPLACE FUNCTION assert_actor_context_v1(p_auth_context JSONB)RETURNS VOID LANGUAGE plpgsql STABLE SECURITY DEFINER AS $$ BEGIN IF p_auth_context IS NULL OR p_auth_context='{}'::JSONB THEN RAISE EXCEPTION'auth_context_required'USING ERRCODE='P0019';END IF;IF(p_auth_context->>'user_id')IS NULL THEN RAISE EXCEPTION'auth_context_missing_user_id'USING ERRCODE='P0019';END IF;END;$$;

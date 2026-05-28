@@ -1,0 +1,971 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>Mansoni — Презентация проекта</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif;background:#0a0a0a;color:#fff;scroll-behavior:smooth}
+.slide{min-height:100vh;display:flex;flex-direction:column;justify-content:center;padding:60px 80px;position:relative;border-bottom:1px solid #1a1a1a}
+h1{font-size:56px;font-weight:800;line-height:1.1;margin-bottom:16px}
+h2{font-size:36px;font-weight:700;margin-bottom:24px}
+h3{font-size:20px;font-weight:600;margin-bottom:10px}
+.grad{background:linear-gradient(135deg,#7c3aed,#2563eb);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.sub{font-size:20px;color:#a1a1aa;margin-bottom:40px;line-height:1.6}
+.card{background:#1a1a1a;border:1px solid #2a2a2a;border-radius:16px;padding:20px}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:20px}
+.grid3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px}
+.phone{width:300px;background:#111;border-radius:40px;border:2px solid #333;padding:10px;box-shadow:0 40px 80px rgba(0,0,0,0.8);flex-shrink:0}
+.phone-screen{background:#000;border-radius:28px;overflow:hidden;min-height:560px}
+.status-bar{background:#000;padding:10px 20px 6px;display:flex;justify-content:space-between;font-size:11px;color:#fff}
+.btn-primary{background:linear-gradient(135deg,#7c3aed,#2563eb);color:#fff;border:none;border-radius:14px;padding:14px 24px;font-size:15px;font-weight:600;cursor:pointer;width:100%;margin-top:8px;text-align:center;display:block}
+.star{color:#f59e0b}.green{color:#22c55e}.blue{color:#3b82f6}.purple{color:#a78bfa}.red{color:#ef4444}
+.badge{display:inline-block;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:600}
+.badge-green{background:#22c55e22;color:#22c55e;border:1px solid #22c55e44}
+.badge-blue{background:#3b82f622;color:#3b82f6;border:1px solid #3b82f644}
+.badge-yellow{background:#f59e0b22;color:#f59e0b;border:1px solid #f59e0b44}
+.badge-purple{background:#7c3aed22;color:#a78bfa;border:1px solid #7c3aed44}
+.divider{height:1px;background:#2a2a2a;margin:10px 0}
+.row{display:flex;align-items:center;gap:12px}
+.avatar{width:40px;height:40px;border-radius:50%;background:linear-gradient(135deg,#7c3aed,#2563eb);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:16px;flex-shrink:0;color:#fff}
+.progress-bar{height:6px;background:#2a2a2a;border-radius:3px;overflow:hidden;margin:8px 0}
+.progress-fill{height:100%;background:linear-gradient(90deg,#7c3aed,#2563eb);border-radius:3px}
+.map-area{height:180px;background:linear-gradient(180deg,#0f1923 0%,#162032 100%);position:relative;overflow:hidden}
+.map-grid{position:absolute;inset:0;opacity:0.12;background-image:linear-gradient(#3b82f6 1px,transparent 1px),linear-gradient(90deg,#3b82f6 1px,transparent 1px);background-size:28px 28px}
+.pin-a{position:absolute;top:24px;left:50%;transform:translateX(-50%);width:10px;height:10px;background:#22c55e;border-radius:50%;box-shadow:0 0 0 4px #22c55e33}
+.pin-b{position:absolute;bottom:24px;left:50%;transform:translateX(-50%);width:10px;height:10px;background:#ef4444;border-radius:50%;box-shadow:0 0 0 4px #ef444433}
+.car-dot{position:absolute;top:50%;left:48%;transform:translate(-50%,-50%);width:14px;height:14px;background:#fff;border-radius:50%;box-shadow:0 0 0 3px #7c3aed}
+.input-field{background:#1a1a1a;border:1px solid #2a2a2a;border-radius:12px;padding:10px 14px;font-size:13px;color:#fff;margin-bottom:6px;display:flex;align-items:center;gap:10px}
+.input-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+.tariff-row{display:flex;gap:6px;overflow-x:auto;padding:4px 0;margin-bottom:8px}
+.tariff-card{background:#1a1a1a;border:1px solid #2a2a2a;border-radius:10px;padding:8px 12px;text-align:center;min-width:72px;cursor:pointer;flex-shrink:0}
+.tariff-card.active{border-color:#7c3aed;background:#7c3aed22}
+.tariff-name{font-size:10px;color:#888;margin-bottom:3px}
+.tariff-price{font-size:14px;font-weight:700;color:#fff}
+.feature-list{list-style:none;display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.feature-list li{display:flex;align-items:center;gap:8px;font-size:14px;color:#d4d4d8;padding:4px 0}
+.product-card{background:#1a1a1a;border:1px solid #2a2a2a;border-radius:14px;overflow:hidden}
+.product-img{height:100px;display:flex;align-items:center;justify-content:center;font-size:40px;background:#111}
+.product-info{padding:10px}
+.product-name{font-size:12px;font-weight:600;margin-bottom:3px;line-height:1.3}
+.product-price{font-size:15px;font-weight:700;color:#fff}
+.product-rating{font-size:11px;color:#888;margin-top:3px}
+.order-step{display:flex;align-items:flex-start;gap:12px;padding:10px 0}
+.step-icon{width:30px;height:30px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:13px;flex-shrink:0}
+.step-done{background:#22c55e22;border:2px solid #22c55e;color:#22c55e}
+.step-active{background:#3b82f622;border:2px solid #3b82f6;color:#3b82f6}
+.step-pending{background:#2a2a2a;border:2px solid #333;color:#555}
+.step-line{width:2px;height:20px;background:#2a2a2a;margin-left:14px}
+.ins-card{background:#1a1a1a;border:1px solid #2a2a2a;border-radius:14px;padding:16px}
+.ins-icon{font-size:28px;margin-bottom:6px}
+.ins-name{font-size:14px;font-weight:700;margin-bottom:4px}
+.ins-price{font-size:13px;color:#a78bfa;font-weight:600;margin-bottom:4px}
+.ins-desc{font-size:11px;color:#666;line-height:1.4}
+.bank-card{background:linear-gradient(135deg,#1a1a2e,#16213e);border:1px solid #2a2a4a;border-radius:16px;padding:20px;position:relative;overflow:hidden}
+.nav-dots{position:fixed;right:20px;top:50%;transform:translateY(-50%);display:flex;flex-direction:column;gap:8px;z-index:100}
+.nav-dot{width:8px;height:8px;border-radius:50%;background:#333;cursor:pointer;transition:all 0.3s}
+.nav-dot.active{background:#7c3aed;transform:scale(1.4)}
+.print-btn{position:fixed;top:20px;right:20px;z-index:200;background:linear-gradient(135deg,#7c3aed,#2563eb);color:#fff;border:none;border-radius:12px;padding:10px 20px;font-size:14px;font-weight:600;cursor:pointer;box-shadow:0 4px 20px rgba(124,58,237,0.4)}
+.two-col{display:flex;gap:40px;align-items:flex-start}
+.flex-1{flex:1}
+.trip-item{display:flex;align-items:center;gap:12px;padding:12px;background:#1a1a1a;border-radius:12px;margin-bottom:8px;border:1px solid #2a2a2a}
+.calc-row{display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid #2a2a2a;font-size:13px}
+.calc-row:last-child{border-bottom:none}
+.calc-label{color:#888}.calc-value{color:#fff;font-weight:500}
+.result-box{background:linear-gradient(135deg,#7c3aed22,#2563eb22);border:1px solid #7c3aed44;border-radius:12px;padding:16px;text-align:center;margin-top:12px}
+@media print{.print-btn,.nav-dots{display:none!important}.slide{page-break-after:always;min-height:100vh;padding:40px 60px}body{background:#fff;color:#000}.card,.product-card,.ins-card,.bank-card,.trip-item{border:1px solid #ddd;background:#f9f9f9}.phone{box-shadow:none;border:2px solid #ccc}.phone-screen{background:#f0f0f0}.map-area{background:#e0e8f0}h1,h2,h3{color:#000}.sub{color:#555}.grad{-webkit-text-fill-color:#7c3aed;background:none}.btn-primary{background:#7c3aed}}
+</style></head><body>
+<button class="print-btn" onclick="window.print()">&#8595; Скачать PDF</button>
+<div class="nav-dots" id="navDots"></div>
+<section class="slide" id="s1" style="background:radial-gradient(ellipse at 20% 50%,#1a0a3a 0%,#0a0a0a 60%)">
+<div style="position:absolute;top:0;left:0;right:0;bottom:0;background:radial-gradient(ellipse at 80% 20%,#0a1a3a 0%,transparent 60%);pointer-events:none"></div>
+<div style="position:relative;z-index:1">
+<div style="display:flex;align-items:center;gap:16px;margin-bottom:32px">
+<div style="width:56px;height:56px;background:linear-gradient(135deg,#7c3aed,#2563eb);border-radius:16px;display:flex;align-items:center;justify-content:center;font-size:28px">&#128663;</div>
+<span style="font-size:14px;color:#a78bfa;letter-spacing:3px;text-transform:uppercase;font-weight:600">Super Platform</span>
+</div>
+<h1><span class="grad">Mansoni</span></h1>
+<p class="sub">Единая экосистема: Такси &middot; Маркетплейс &middot; Страхование &middot; Банкинг &middot; Мессенджер &middot; Соцсеть</p>
+<div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:48px">
+<span class="badge badge-purple">&#128663; Такси</span>
+<span class="badge badge-blue">&#128722; Маркетплейс</span>
+<span class="badge badge-green">&#128737; Страхование</span>
+<span class="badge badge-yellow">&#128179; Банкинг</span>
+<span class="badge" style="background:#ec489922;color:#ec4899;border:1px solid #ec489944">&#128172; Мессенджер</span>
+<span class="badge" style="background:#06b6d422;color:#06b6d4;border:1px solid #06b6d444">&#127909; Reels</span>
+</div>
+<div style="display:flex;gap:32px">
+<div><div style="font-size:36px;font-weight:800;color:#7c3aed">1,476</div><div style="font-size:13px;color:#666">TypeScript файлов</div></div>
+<div><div style="font-size:36px;font-weight:800;color:#2563eb">100+</div><div style="font-size:13px;color:#666">экранов</div></div>
+<div><div style="font-size:36px;font-weight:800;color:#22c55e">45+</div><div style="font-size:13px;color:#666">компонентов</div></div>
+<div><div style="font-size:36px;font-weight:800;color:#f59e0b">50+</div><div style="font-size:13px;color:#666">таблиц БД</div></div>
+</div>
+</div>
+</section>
+<section class="slide" id="s2">
+<div style="font-size:12px;color:#444;letter-spacing:2px;text-transform:uppercase;margin-bottom:16px">01 / Обзор платформы</div>
+<h2>Всё в одном <span class="grad">приложении</span></h2>
+<p class="sub">Mansoni объединяет 9 ключевых модулей в единую экосистему с общей авторизацией, кошельком и профилем</p>
+<div class="grid3" style="gap:16px">
+<div class="card" style="border-color:#7c3aed22">
+<div style="font-size:28px;margin-bottom:8px">&#128663;</div>
+<div style="font-size:15px;font-weight:700;margin-bottom:6px;color:#fff">Такси и навигация</div>
+<div style="font-size:12px;color:#666;line-height:1.5">7 классов авто, реальное время, офлайн-карты</div>
+</div>
+<div class="card" style="border-color:#2563eb22">
+<div style="font-size:28px;margin-bottom:8px">&#128722;</div>
+<div style="font-size:15px;font-weight:700;margin-bottom:6px;color:#fff">Маркетплейс</div>
+<div style="font-size:12px;color:#666;line-height:1.5">Тысячи товаров, отслеживание заказов, отзывы</div>
+</div>
+<div class="card" style="border-color:#22c55e22">
+<div style="font-size:28px;margin-bottom:8px">&#128737;</div>
+<div style="font-size:15px;font-weight:700;margin-bottom:6px;color:#fff">Страхование</div>
+<div style="font-size:12px;color:#666;line-height:1.5">ОСАГО, КАСКО, ДМС, Путешествия, Ипотека, Жизнь</div>
+</div>
+<div class="card" style="border-color:#f59e0b22">
+<div style="font-size:28px;margin-bottom:8px">&#128179;</div>
+<div style="font-size:15px;font-weight:700;margin-bottom:6px;color:#fff">Банковские продукты</div>
+<div style="font-size:12px;color:#666;line-height:1.5">Карты, кредиты, вклады, инвестиции</div>
+</div>
+<div class="card" style="border-color:#ec489922">
+<div style="font-size:28px;margin-bottom:8px">&#128172;</div>
+<div style="font-size:15px;font-weight:700;margin-bottom:6px;color:#fff">Мессенджер E2EE</div>
+<div style="font-size:12px;color:#666;line-height:1.5">Чаты, звонки, группы, каналы, боты</div>
+</div>
+<div class="card" style="border-color:#06b6d422">
+<div style="font-size:28px;margin-bottom:8px">&#127909;</div>
+<div style="font-size:15px;font-weight:700;margin-bottom:6px;color:#fff">Reels и Stories</div>
+<div style="font-size:12px;color:#666;line-height:1.5">Короткие видео, истории, прямые эфиры</div>
+</div>
+<div class="card" style="border-color:#8b5cf622">
+<div style="font-size:28px;margin-bottom:8px">&#127908;</div>
+<div style="font-size:15px;font-weight:700;margin-bottom:6px;color:#fff">Аудио-комнаты</div>
+<div style="font-size:12px;color:#666;line-height:1.5">Clubhouse-формат, подкасты, дискуссии</div>
+</div>
+<div class="card" style="border-color:#f9731622">
+<div style="font-size:28px;margin-bottom:8px">&#128200;</div>
+<div style="font-size:15px;font-weight:700;margin-bottom:6px;color:#fff">CRM для бизнеса</div>
+<div style="font-size:12px;color:#666;line-height:1.5">Дашборды, аналитика, HR, автоматизация</div>
+</div>
+<div class="card" style="border-color:#a855f722">
+<div style="font-size:28px;margin-bottom:8px">&#127775;</div>
+<div style="font-size:15px;font-weight:700;margin-bottom:6px;color:#fff">Монетизация</div>
+<div style="font-size:12px;color:#666;line-height:1.5">Подписки, донаты, Creator Fund, реклама</div>
+</div>
+</div>
+</section>
+<section class="slide" id="s3">
+<div style="font-size:12px;color:#444;letter-spacing:2px;text-transform:uppercase;margin-bottom:16px">02 / Такси</div>
+<h2>Экран <span class="grad">заказа такси</span></h2>
+<div class="two-col">
+<div class="flex-1">
+<p style="color:#a1a1aa;margin-bottom:24px;line-height:1.7">Интуитивный интерфейс заказа с выбором тарифа, отображением водителей на карте и мгновенным расчётом стоимости поездки</p>
+<ul class="feature-list" style="margin-bottom:24px">
+<li>&#10003; Выбор точки А и Б на карте</li>
+<li>&#10003; Сравнение тарифов в реальном времени</li>
+<li>&#10003; Отображение ближайших водителей</li>
+<li>&#10003; Расчёт времени и стоимости</li>
+<li>&#10003; Выбор способа оплаты</li>
+<li>&#10003; Промокоды и скидки</li>
+<li>&#10003; Запланированная поездка</li>
+<li>&#10003; Корпоративный аккаунт</li>
+</ul>
+</div>
+<div class="phone">
+<div class="phone-screen">
+<div class="status-bar"><span>9:41</span><span>&#128246; &#128267; &#128267;</span></div>
+<div style="padding:12px">
+<div style="font-size:16px;font-weight:700;margin-bottom:12px">&#128663; Куда едем?</div>
+<div class="input-field"><div class="input-dot" style="background:#22c55e"></div><div><div style="font-size:10px;color:#555">Откуда</div><div style="font-size:12px">ул. Тверская, 15, Москва</div></div></div>
+<div class="input-field"><div class="input-dot" style="background:#ef4444"></div><div><div style="font-size:10px;color:#555">Куда</div><div style="font-size:12px">Аэропорт Шереметьево, Терм. D</div></div></div>
+<div class="map-area" style="border-radius:12px;margin-bottom:10px">
+<div class="map-grid"></div>
+<svg style="position:absolute;inset:0;width:100%;height:100%" viewBox="0 0 280 180">
+<path d="M140 20 Q160 60 150 90 Q140 120 140 160" stroke="#7c3aed" stroke-width="3" fill="none" stroke-dasharray="6,3"/>
+</svg>
+<div class="pin-a"></div>
+<div class="pin-b"></div>
+<div class="car-dot"></div>
+</div>
+<div style="font-size:10px;color:#555;margin-bottom:6px;text-transform:uppercase;letter-spacing:1px">Выберите тариф</div>
+<div class="tariff-row">
+<div class="tariff-card"><div class="tariff-name">Эконом</div><div class="tariff-price">320&#8381;</div></div>
+<div class="tariff-card active"><div class="tariff-name">Комфорт</div><div class="tariff-price">480&#8381;</div></div>
+<div class="tariff-card"><div class="tariff-name">Бизнес</div><div class="tariff-price">890&#8381;</div></div>
+<div class="tariff-card"><div class="tariff-name">Минивэн</div><div class="tariff-price">650&#8381;</div></div>
+<div class="tariff-card"><div class="tariff-name">Премиум</div><div class="tariff-price">1200&#8381;</div></div>
+</div>
+<div class="card" style="padding:10px;margin-bottom:8px">
+<div class="row"><div class="avatar" style="width:32px;height:32px;font-size:13px">А</div><div><div style="font-size:12px;font-weight:600">Алексей К. <span class="star">&#9733;</span>4.9</div><div style="font-size:10px;color:#666">Toyota Camry &middot; А123БВ77</div></div><div style="margin-left:auto;font-size:11px;color:#22c55e">4 мин</div></div>
+</div>
+<div style="font-size:11px;color:#666;margin-bottom:8px;text-align:center">28 км &middot; ~35 мин &middot; Карта &#8226;&#8226;&#8226;&#8226; 4242</div>
+<div class="btn-primary">Заказать поездку — 480&#8381;</div>
+</div>
+</div>
+</div>
+</div>
+</section>
+<section class="slide" id="s4">
+<div style="font-size:12px;color:#444;letter-spacing:2px;text-transform:uppercase;margin-bottom:16px">02 / Такси</div>
+<h2>Экран <span class="grad">активной поездки</span></h2>
+<div class="two-col">
+<div class="flex-1">
+<p style="color:#a1a1aa;margin-bottom:24px;line-height:1.7">Во время поездки пассажир видит маршрут в реальном времени, может связаться с водителем и отслеживает прогресс</p>
+<div class="card" style="margin-bottom:16px">
+<div style="font-size:12px;color:#555;margin-bottom:8px">&#128663; Едем в Шереметьево</div>
+<div class="row" style="margin-bottom:12px">
+<div class="avatar">А</div>
+<div><div style="font-size:14px;font-weight:600">Алексей К.</div><div style="font-size:12px;color:#666">Toyota Camry белая &middot; А123БВ77</div></div>
+<div style="margin-left:auto"><span class="star">&#9733;</span><span style="font-size:13px;font-weight:600"> 4.9</span><div style="font-size:10px;color:#666">127 поездок</div></div>
+</div>
+<div style="font-size:12px;color:#666;margin-bottom:6px">Прогресс маршрута</div>
+<div class="progress-bar"><div class="progress-fill" style="width:40%"></div></div>
+<div style="display:flex;justify-content:space-between;font-size:11px;color:#666;margin-bottom:12px">
+<span>&#128205; Тверская</span><span>40%</span><span>&#9992; Шереметьево</span>
+</div>
+<div style="display:flex;gap:8px;margin-bottom:12px">
+<div class="card" style="flex:1;text-align:center;padding:10px"><div style="font-size:18px;font-weight:700;color:#3b82f6">18</div><div style="font-size:10px;color:#666">км осталось</div></div>
+<div class="card" style="flex:1;text-align:center;padding:10px"><div style="font-size:18px;font-weight:700;color:#22c55e">22</div><div style="font-size:10px;color:#666">мин осталось</div></div>
+<div class="card" style="flex:1;text-align:center;padding:10px"><div style="font-size:18px;font-weight:700;color:#f59e0b">14:35</div><div style="font-size:10px;color:#666">прибытие</div></div>
+</div>
+<div style="display:flex;gap:8px">
+<button style="flex:1;background:#1a1a1a;border:1px solid #2a2a2a;color:#fff;border-radius:10px;padding:10px;font-size:12px;cursor:pointer">&#128222; Позвонить</button>
+<button style="flex:1;background:#1a1a1a;border:1px solid #2a2a2a;color:#fff;border-radius:10px;padding:10px;font-size:12px;cursor:pointer">&#128172; Написать</button>
+<button style="flex:1;background:#ef444422;border:1px solid #ef444444;color:#ef4444;border-radius:10px;padding:10px;font-size:12px;cursor:pointer">&#128680; SOS</button>
+</div>
+</div>
+<div class="card" style="background:#22c55e11;border-color:#22c55e33">
+<div style="font-size:12px;color:#22c55e;font-weight:600">&#128204; Безопасность поездки</div>
+<div style="font-size:11px;color:#666;margin-top:4px">Маршрут передан доверенному контакту. GPS отслеживание активно.</div>
+</div>
+</div>
+<div class="phone">
+<div class="phone-screen">
+<div class="status-bar"><span>14:13</span><span>&#128246; &#128267; &#128267;</span></div>
+<div class="map-area" style="height:220px">
+<div class="map-grid"></div>
+<svg style="position:absolute;inset:0;width:100%;height:100%" viewBox="0 0 280 220">
+<path d="M80 200 Q100 160 120 130 Q140 100 150 70 Q160 40 180 20" stroke="#2a2a2a" stroke-width="8" fill="none" stroke-linecap="round"/>
+<path d="M80 200 Q100 160 120 130 Q140 100 150 70 Q160 40 180 20" stroke="#7c3aed" stroke-width="3" fill="none" stroke-dasharray="6,3"/>
+<circle cx="150" cy="90" r="8" fill="#fff" stroke="#7c3aed" stroke-width="2"/>
+<text x="158" y="94" fill="#fff" font-size="10">&#128663;</text>
+</svg>
+<div style="position:absolute;bottom:8px;left:8px;background:#000000cc;border-radius:8px;padding:6px 10px;font-size:11px">
+<span style="color:#22c55e">&#9679;</span> В пути &middot; 22 мин
+</div>
+</div>
+<div style="padding:12px">
+<div style="font-size:14px;font-weight:700;margin-bottom:8px">&#128663; Едем в Шереметьево</div>
+<div class="row" style="margin-bottom:10px">
+<div class="avatar" style="width:36px;height:36px;font-size:14px">А</div>
+<div><div style="font-size:12px;font-weight:600">Алексей К. <span class="star">&#9733;</span>4.9</div><div style="font-size:10px;color:#666">Toyota Camry &middot; А123БВ77</div></div>
+</div>
+<div class="progress-bar"><div class="progress-fill" style="width:40%"></div></div>
+<div style="display:flex;justify-content:space-between;font-size:11px;color:#666;margin:6px 0 10px">
+<span>18 км осталось</span><span>Прибытие 14:35</span>
+</div>
+<div style="display:flex;gap:6px">
+<button style="flex:1;background:#1a1a1a;border:1px solid #2a2a2a;color:#fff;border-radius:8px;padding:8px;font-size:11px">&#128222;</button>
+<button style="flex:1;background:#1a1a1a;border:1px solid #2a2a2a;color:#fff;border-radius:8px;padding:8px;font-size:11px">&#128172;</button>
+<button style="flex:2;background:#ef444422;border:1px solid #ef444444;color:#ef4444;border-radius:8px;padding:8px;font-size:11px">&#128680; SOS</button>
+</div>
+</div>
+</div>
+</div>
+</div>
+</section>
+<section class="slide" id="s5">
+<div style="font-size:12px;color:#444;letter-spacing:2px;text-transform:uppercase;margin-bottom:16px">02 / Такси</div>
+<h2>История <span class="grad">поездок</span></h2>
+<div class="two-col">
+<div class="flex-1">
+<p style="color:#a1a1aa;margin-bottom:24px;line-height:1.7">Полная история поездок с деталями маршрута, стоимостью и оценками. Возможность повторить маршрут одним нажатием.</p>
+<div style="margin-bottom:16px">
+<div class="trip-item">
+<div style="width:36px;height:36px;background:#1e1e1e;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0">&#9992;</div>
+<div style="flex:1"><div style="font-size:13px;font-weight:600">Шереметьево → Тверская</div><div style="font-size:11px;color:#666">15 мая 2025 &middot; 28 км</div></div>
+<div style="text-align:right"><div style="font-size:14px;font-weight:700">480&#8381;</div><div style="font-size:11px;color:#f59e0b">&#9733;&#9733;&#9733;&#9733;&#9733;</div></div>
+</div>
+<div class="trip-item">
+<div style="width:36px;height:36px;background:#1e1e1e;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0">&#128663;</div>
+<div style="flex:1"><div style="font-size:13px;font-weight:600">Тверская → Красная площадь</div><div style="font-size:11px;color:#666">14 мая 2025 &middot; 3.2 км</div></div>
+<div style="text-align:right"><div style="font-size:14px;font-weight:700">180&#8381;</div><div style="font-size:11px;color:#f59e0b">&#9733;&#9733;&#9733;&#9733;&#9733;</div></div>
+</div>
+<div class="trip-item">
+<div style="width:36px;height:36px;background:#1e1e1e;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0">&#9992;</div>
+<div style="flex:1"><div style="font-size:13px;font-weight:600">Домодедово → Арбат</div><div style="font-size:11px;color:#666">10 мая 2025 &middot; 42 км</div></div>
+<div style="text-align:right"><div style="font-size:14px;font-weight:700">720&#8381;</div><div style="font-size:11px;color:#f59e0b">&#9733;&#9733;&#9733;&#9733;</div></div>
+</div>
+<div class="trip-item">
+<div style="width:36px;height:36px;background:#1e1e1e;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0">&#128663;</div>
+<div style="flex:1"><div style="font-size:13px;font-weight:600">Арбат → Москва-Сити</div><div style="font-size:11px;color:#666">8 мая 2025 &middot; 8 км</div></div>
+<div style="text-align:right"><div style="font-size:14px;font-weight:700">290&#8381;</div><div style="font-size:11px;color:#f59e0b">&#9733;&#9733;&#9733;&#9733;&#9733;</div></div>
+</div>
+<div class="trip-item">
+<div style="width:36px;height:36px;background:#1e1e1e;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0">&#128663;</div>
+<div style="flex:1"><div style="font-size:13px;font-weight:600">Сити → Парк Горького</div><div style="font-size:11px;color:#666">5 мая 2025 &middot; 6.5 км</div></div>
+<div style="text-align:right"><div style="font-size:14px;font-weight:700">240&#8381;</div><div style="font-size:11px;color:#f59e0b">&#9733;&#9733;&#9733;&#9733;&#9733;</div></div>
+</div>
+</div>
+<div style="display:flex;gap:16px">
+<div class="card" style="flex:1;text-align:center"><div style="font-size:24px;font-weight:800;color:#7c3aed">87.7</div><div style="font-size:12px;color:#666">км за месяц</div></div>
+<div class="card" style="flex:1;text-align:center"><div style="font-size:24px;font-weight:800;color:#2563eb">1,910&#8381;</div><div style="font-size:12px;color:#666">потрачено</div></div>
+<div class="card" style="flex:1;text-align:center"><div style="font-size:24px;font-weight:800;color:#22c55e">4.9</div><div style="font-size:12px;color:#666">средняя оценка</div></div>
+</div>
+</div>
+<div class="phone">
+<div class="phone-screen">
+<div class="status-bar"><span>9:41</span><span>&#128246; &#128267; &#128267;</span></div>
+<div style="padding:12px">
+<div style="font-size:16px;font-weight:700;margin-bottom:12px">&#128203; История поездок</div>
+<div style="display:flex;align-items:center;gap:8px;padding:8px;background:#1a1a1a;border-radius:10px;margin-bottom:6px;border:1px solid #2a2a2a">
+<div style="font-size:20px">&#9992;</div>
+<div style="flex:1"><div style="font-size:11px;font-weight:600">Шереметьево → Тверская</div><div style="font-size:10px;color:#666">15 мая 2025</div></div>
+<div style="text-align:right"><div style="font-size:12px;font-weight:700">480&#8381;</div><div style="font-size:10px;color:#f59e0b">&#9733;5</div></div>
+</div>
+<div style="display:flex;align-items:center;gap:8px;padding:8px;background:#1a1a1a;border-radius:10px;margin-bottom:6px;border:1px solid #2a2a2a">
+<div style="font-size:20px">&#128663;</div>
+<div style="flex:1"><div style="font-size:11px;font-weight:600">Тверская → Красная площадь</div><div style="font-size:10px;color:#666">14 мая 2025</div></div>
+<div style="text-align:right"><div style="font-size:12px;font-weight:700">180&#8381;</div><div style="font-size:10px;color:#f59e0b">&#9733;5</div></div>
+</div>
+<div style="display:flex;align-items:center;gap:8px;padding:8px;background:#1a1a1a;border-radius:10px;margin-bottom:6px;border:1px solid #2a2a2a">
+<div style="font-size:20px">&#9992;</div>
+<div style="flex:1"><div style="font-size:11px;font-weight:600">Домодедово → Арбат</div><div style="font-size:10px;color:#666">10 мая 2025</div></div>
+<div style="text-align:right"><div style="font-size:12px;font-weight:700">720&#8381;</div><div style="font-size:10px;color:#f59e0b">&#9733;4</div></div>
+</div>
+<div style="display:flex;align-items:center;gap:8px;padding:8px;background:#1a1a1a;border-radius:10px;margin-bottom:6px;border:1px solid #2a2a2a">
+<div style="font-size:20px">&#128663;</div>
+<div style="flex:1"><div style="font-size:11px;font-weight:600">Арбат → Москва-Сити</div><div style="font-size:10px;color:#666">8 мая 2025</div></div>
+<div style="text-align:right"><div style="font-size:12px;font-weight:700">290&#8381;</div><div style="font-size:10px;color:#f59e0b">&#9733;5</div></div>
+</div>
+<div style="display:flex;gap:6px;margin-top:10px">
+<div style="flex:1;background:#1a1a1a;border-radius:8px;padding:8px;text-align:center;border:1px solid #2a2a2a"><div style="font-size:14px;font-weight:700;color:#7c3aed">87.7</div><div style="font-size:9px;color:#666">км</div></div>
+<div style="flex:1;background:#1a1a1a;border-radius:8px;padding:8px;text-align:center;border:1px solid #2a2a2a"><div style="font-size:14px;font-weight:700;color:#2563eb">1910&#8381;</div><div style="font-size:9px;color:#666">расходы</div></div>
+</div>
+</div>
+</div>
+</div>
+</div>
+</section>
+<section class="slide" id="s6">
+<div style="font-size:12px;color:#444;letter-spacing:2px;text-transform:uppercase;margin-bottom:16px">02 / Такси</div>
+<h2>Возможности <span class="grad">модуля такси</span></h2>
+<div class="grid2" style="gap:24px">
+<div class="card">
+<div style="font-size:15px;font-weight:700;margin-bottom:6px">&#128663; 7 классов автомобилей</div>
+<div style="font-size:13px;color:#666;line-height:1.5">Эконом, Комфорт, Бизнес, Минивэн, Премиум, Детский, Электро — для любой задачи</div>
+</div>
+<div class="card">
+<div style="font-size:15px;font-weight:700;margin-bottom:6px">&#128205; Навигация в реальном времени</div>
+<div style="font-size:13px;color:#666;line-height:1.5">MapLibre GL + Leaflet, пробки, камеры, офлайн-карты, голосовые подсказки</div>
+</div>
+<div class="card">
+<div style="font-size:15px;font-weight:700;margin-bottom:6px">&#128178; Динамическое ценообразование</div>
+<div style="font-size:13px;color:#666;line-height:1.5">Surge pricing в часы пик, прозрачный расчёт тарифа, промокоды</div>
+</div>
+<div class="card">
+<div style="font-size:15px;font-weight:700;margin-bottom:6px">&#128222; Связь с водителем</div>
+<div style="font-size:13px;color:#666;line-height:1.5">Звонок, чат, отслеживание на карте, уведомления о прибытии</div>
+</div>
+<div class="card">
+<div style="font-size:15px;font-weight:700;margin-bottom:6px">&#128737; Безопасность</div>
+<div style="font-size:13px;color:#666;line-height:1.5">SOS-кнопка, передача маршрута, запись поездки, верификация водителей</div>
+</div>
+<div class="card">
+<div style="font-size:15px;font-weight:700;margin-bottom:6px">&#128179; Гибкая оплата</div>
+<div style="font-size:13px;color:#666;line-height:1.5">Карта, наличные, Apple Pay, Google Pay, корпоративный счёт</div>
+</div>
+<div class="card">
+<div style="font-size:15px;font-weight:700;margin-bottom:6px">&#128197; Планирование</div>
+<div style="font-size:13px;color:#666;line-height:1.5">Запланированные поездки, избранные адреса, повтор маршрута</div>
+</div>
+<div class="card">
+<div style="font-size:15px;font-weight:700;margin-bottom:6px">&#127775; Рейтинги</div>
+<div style="font-size:13px;color:#666;line-height:1.5">Взаимная оценка водителя и пассажира, история отзывов</div>
+</div>
+</div>
+</section>
+<section class="slide" id="s7">
+<div style="font-size:12px;color:#444;letter-spacing:2px;text-transform:uppercase;margin-bottom:16px">03 / Маркетплейс</div>
+<h2>Каталог <span class="grad">товаров</span></h2>
+<div class="two-col">
+<div class="flex-1">
+<p style="color:#a1a1aa;margin-bottom:20px;line-height:1.7">Тысячи товаров с полнотекстовым поиском, умными фильтрами и рейтингами. Покупки прямо внутри приложения.</p>
+<div class="grid3" style="gap:12px;margin-bottom:20px">
+<div class="product-card">
+<div class="product-img">&#128241;</div>
+<div class="product-info">
+<div class="product-name">iPhone 15 Pro</div>
+<div class="product-price">89,990&#8381;</div>
+<div class="product-rating"><span class="star">&#9733;</span>4.8 (234)</div>
+<div style="font-size:10px;color:#3b82f6;margin-top:3px">В наличии</div>
+</div>
+</div>
+<div class="product-card">
+<div class="product-img">&#128247;</div>
+<div class="product-info">
+<div class="product-name">Nike Air Max 270</div>
+<div class="product-price">8,490&#8381;</div>
+<div class="product-rating"><span class="star">&#9733;</span>4.6 (89)</div>
+<div style="font-size:10px;color:#22c55e;margin-top:3px">В наличии</div>
+</div>
+</div>
+<div class="product-card">
+<div class="product-img">&#129529;</div>
+<div class="product-info">
+<div class="product-name">Dyson V15 Detect</div>
+<div class="product-price">54,990&#8381;</div>
+<div class="product-rating"><span class="star">&#9733;</span>4.9 (156)</div>
+<div style="font-size:10px;color:#f59e0b;margin-top:3px">Осталось 3</div>
+</div>
+</div>
+<div class="product-card">
+<div class="product-img">&#128250;</div>
+<div class="product-info">
+<div class="product-name">Samsung 65" QLED</div>
+<div class="product-price">79,990&#8381;</div>
+<div class="product-rating"><span class="star">&#9733;</span>4.7 (67)</div>
+<div style="font-size:10px;color:#3b82f6;margin-top:3px">В наличии</div>
+</div>
+</div>
+<div class="product-card">
+<div class="product-img">&#127911;</div>
+<div class="product-info">
+<div class="product-name">AirPods Pro 2</div>
+<div class="product-price">19,990&#8381;</div>
+<div class="product-rating"><span class="star">&#9733;</span>4.8 (312)</div>
+<div style="font-size:10px;color:#22c55e;margin-top:3px">В наличии</div>
+</div>
+</div>
+<div class="product-card">
+<div class="product-img">&#128094;</div>
+<div class="product-info">
+<div class="product-name">Adidas Ultraboost</div>
+<div class="product-price">6,990&#8381;</div>
+<div class="product-rating"><span class="star">&#9733;</span>4.5 (45)</div>
+<div style="font-size:10px;color:#ef4444;margin-top:3px">Скидка 20%</div>
+</div>
+</div>
+</div>
+<div style="display:flex;gap:8px;flex-wrap:wrap">
+<span class="badge badge-purple">Электроника</span>
+<span class="badge badge-purple">Одежда</span>
+<span class="badge badge-purple">Спорт</span>
+<span class="badge badge-purple">Дом</span>
+<span class="badge badge-purple">Красота</span>
+<span class="badge badge-purple">Авто</span>
+<span class="badge badge-purple">Детям</span>
+<span class="badge badge-purple">Книги</span>
+</div>
+</div>
+<div class="phone">
+<div class="phone-screen">
+<div class="status-bar"><span>9:41</span><span>&#128246; &#128267; &#128267;</span></div>
+<div style="padding:10px">
+<div style="background:#1a1a1a;border:1px solid #2a2a2a;border-radius:10px;padding:8px 12px;display:flex;align-items:center;gap:8px;margin-bottom:10px">
+<span style="font-size:14px">&#128269;</span><span style="font-size:12px;color:#555">Поиск товаров...</span>
+</div>
+<div style="display:flex;gap:6px;margin-bottom:10px;overflow-x:auto">
+<span style="background:#7c3aed;color:#fff;border-radius:20px;padding:4px 10px;font-size:10px;white-space:nowrap;border:1px solid #7c3aed">Все</span>
+<span style="background:#1a1a1a;color:#fff;border-radius:20px;padding:4px 10px;font-size:10px;white-space:nowrap;border:1px solid #2a2a2a">Электро</span>
+<span style="background:#1a1a1a;color:#fff;border-radius:20px;padding:4px 10px;font-size:10px;white-space:nowrap;border:1px solid #2a2a2a">Одежда</span>
+<span style="background:#1a1a1a;color:#fff;border-radius:20px;padding:4px 10px;font-size:10px;white-space:nowrap;border:1px solid #2a2a2a">Спорт</span>
+<span style="background:#1a1a1a;color:#fff;border-radius:20px;padding:4px 10px;font-size:10px;white-space:nowrap;border:1px solid #2a2a2a">Дом</span>
+</div>
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+<div style="background:#1a1a1a;border:1px solid #2a2a2a;border-radius:10px;overflow:hidden">
+<div style="height:70px;background:#111;display:flex;align-items:center;justify-content:center;font-size:28px">&#128241;</div>
+<div style="padding:6px"><div style="font-size:10px;font-weight:600;line-height:1.3">iPhone 15 Pro</div><div style="font-size:11px;font-weight:700;margin-top:2px">89,990&#8381;</div><div style="font-size:9px;color:#f59e0b">&#9733;4.8</div></div>
+</div>
+<div style="background:#1a1a1a;border:1px solid #2a2a2a;border-radius:10px;overflow:hidden">
+<div style="height:70px;background:#111;display:flex;align-items:center;justify-content:center;font-size:28px">&#128247;</div>
+<div style="padding:6px"><div style="font-size:10px;font-weight:600;line-height:1.3">Nike Air Max 270</div><div style="font-size:11px;font-weight:700;margin-top:2px">8,490&#8381;</div><div style="font-size:9px;color:#f59e0b">&#9733;4.6</div></div>
+</div>
+<div style="background:#1a1a1a;border:1px solid #2a2a2a;border-radius:10px;overflow:hidden">
+<div style="height:70px;background:#111;display:flex;align-items:center;justify-content:center;font-size:28px">&#129529;</div>
+<div style="padding:6px"><div style="font-size:10px;font-weight:600;line-height:1.3">Dyson V15 Detect</div><div style="font-size:11px;font-weight:700;margin-top:2px">54,990&#8381;</div><div style="font-size:9px;color:#f59e0b">&#9733;4.9</div></div>
+</div>
+<div style="background:#1a1a1a;border:1px solid #2a2a2a;border-radius:10px;overflow:hidden">
+<div style="height:70px;background:#111;display:flex;align-items:center;justify-content:center;font-size:28px">&#128250;</div>
+<div style="padding:6px"><div style="font-size:10px;font-weight:600;line-height:1.3">Samsung 65" QLED</div><div style="font-size:11px;font-weight:700;margin-top:2px">79,990&#8381;</div><div style="font-size:9px;color:#f59e0b">&#9733;4.7</div></div>
+</div>
+</div>
+</div>
+</div>
+</div>
+</div>
+</section>
+<section class="slide" id="s8">
+<div style="font-size:12px;color:#444;letter-spacing:2px;text-transform:uppercase;margin-bottom:16px">03 / Маркетплейс</div>
+<h2>Отслеживание <span class="grad">заказа</span></h2>
+<div class="two-col">
+<div class="flex-1">
+<p style="color:#a1a1aa;margin-bottom:20px;line-height:1.7">Полный цикл заказа с уведомлениями на каждом этапе. Интеграция с СДЭК, Почтой России и другими службами доставки.</p>
+<div class="card" style="margin-bottom:16px">
+<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+<div><div style="font-size:14px;font-weight:700">Заказ #MNS-2025-04821</div><div style="font-size:12px;color:#666">iPhone 15 Pro 256GB Titanium</div></div>
+<span class="badge badge-blue">В пути</span>
+</div>
+<div class="order-step">
+<div style="display:flex;flex-direction:column;align-items:center">
+<div class="step-icon step-done">&#10003;</div>
+<div class="step-line"></div>
+</div>
+<div><div style="font-size:13px;font-weight:600">Заказ оформлен</div><div style="font-size:11px;color:#666">15 мая, 10:23</div></div>
+</div>
+<div class="order-step">
+<div style="display:flex;flex-direction:column;align-items:center">
+<div class="step-icon step-done">&#10003;</div>
+<div class="step-line"></div>
+</div>
+<div><div style="font-size:13px;font-weight:600">Подтверждён продавцом</div><div style="font-size:11px;color:#666">15 мая, 10:45</div></div>
+</div>
+<div class="order-step">
+<div style="display:flex;flex-direction:column;align-items:center">
+<div class="step-icon step-done">&#10003;</div>
+<div class="step-line"></div>
+</div>
+<div><div style="font-size:13px;font-weight:600">Передан в доставку</div><div style="font-size:11px;color:#666">15 мая, 14:00</div></div>
+</div>
+<div class="order-step">
+<div style="display:flex;flex-direction:column;align-items:center">
+<div class="step-icon step-active">&#128666;</div>
+<div class="step-line"></div>
+</div>
+<div><div style="font-size:13px;font-weight:600">В пути — СДЭК</div><div style="font-size:11px;color:#666">16 мая, 09:15 (сейчас)</div></div>
+</div>
+<div class="order-step">
+<div style="display:flex;flex-direction:column;align-items:center">
+<div class="step-icon step-pending">&#9711;</div>
+</div>
+<div><div style="font-size:13px;font-weight:600">Доставлен</div><div style="font-size:11px;color:#666">Ожидается 17 мая</div></div>
+</div>
+</div>
+<div class="card">
+<div style="font-size:12px;color:#555;margin-bottom:8px;text-transform:uppercase;letter-spacing:1px">Детали доставки</div>
+<div class="calc-row"><span class="calc-label">Служба</span><span class="calc-value">СДЭК Экспресс</span></div>
+<div class="calc-row"><span class="calc-label">Трек-номер</span><span class="calc-value" style="color:#3b82f6">TK123456789</span></div>
+<div class="calc-row"><span class="calc-label">Адрес</span><span class="calc-value">Москва, Тверская, 15, кв. 42</span></div>
+<div class="calc-row"><span class="calc-label">Итого</span><span class="calc-value" style="font-size:16px;color:#fff">89,990 &#8381;</span></div>
+</div>
+</div>
+<div class="phone">
+<div class="phone-screen">
+<div class="status-bar"><span>9:41</span><span>&#128246; &#128267; &#128267;</span></div>
+<div style="padding:12px">
+<div style="font-size:14px;font-weight:700;margin-bottom:4px">Заказ #MNS-2025-04821</div>
+<div style="font-size:11px;color:#666;margin-bottom:12px">iPhone 15 Pro 256GB Titanium</div>
+<div style="display:flex;gap:8px;margin-bottom:0px">
+<div style="display:flex;flex-direction:column;align-items:center">
+<div style="width:24px;height:24px;border-radius:50%;background:#22c55e22;border:2px solid #22c55e;display:flex;align-items:center;justify-content:center;font-size:10px;color:#22c55e;flex-shrink:0">&#10003;</div>
+<div style="width:2px;height:16px;background:#2a2a2a;margin:2px 0"></div>
+</div>
+<div style="padding-top:2px"><div style="font-size:11px;font-weight:600">Заказ оформлен</div><div style="font-size:9px;color:#666">15 мая, 10:23</div></div>
+</div>
+<div style="display:flex;gap:8px;margin-bottom:0px">
+<div style="display:flex;flex-direction:column;align-items:center">
+<div style="width:24px;height:24px;border-radius:50%;background:#22c55e22;border:2px solid #22c55e;display:flex;align-items:center;justify-content:center;font-size:10px;color:#22c55e;flex-shrink:0">&#10003;</div>
+<div style="width:2px;height:16px;background:#2a2a2a;margin:2px 0"></div>
+</div>
+<div style="padding-top:2px"><div style="font-size:11px;font-weight:600">Подтверждён продавцом</div><div style="font-size:9px;color:#666">15 мая, 10:45</div></div>
+</div>
+<div style="display:flex;gap:8px;margin-bottom:0px">
+<div style="display:flex;flex-direction:column;align-items:center">
+<div style="width:24px;height:24px;border-radius:50%;background:#22c55e22;border:2px solid #22c55e;display:flex;align-items:center;justify-content:center;font-size:10px;color:#22c55e;flex-shrink:0">&#10003;</div>
+<div style="width:2px;height:16px;background:#2a2a2a;margin:2px 0"></div>
+</div>
+<div style="padding-top:2px"><div style="font-size:11px;font-weight:600">Передан в доставку</div><div style="font-size:9px;color:#666">15 мая, 14:00</div></div>
+</div>
+<div style="display:flex;gap:8px;margin-bottom:0px">
+<div style="display:flex;flex-direction:column;align-items:center">
+<div style="width:24px;height:24px;border-radius:50%;background:#3b82f622;border:2px solid #3b82f6;display:flex;align-items:center;justify-content:center;font-size:10px;color:#3b82f6;flex-shrink:0">&#128666;</div>
+<div style="width:2px;height:16px;background:#2a2a2a;margin:2px 0"></div>
+</div>
+<div style="padding-top:2px"><div style="font-size:11px;font-weight:600">В пути — СДЭК</div><div style="font-size:9px;color:#666">16 мая, 09:15 (сейчас)</div></div>
+</div>
+<div style="display:flex;gap:8px;margin-bottom:0px">
+<div style="display:flex;flex-direction:column;align-items:center">
+<div style="width:24px;height:24px;border-radius:50%;background:#2a2a2a;border:2px solid #333;display:flex;align-items:center;justify-content:center;font-size:10px;color:#555;flex-shrink:0">&#9711;</div>
+</div>
+<div style="padding-top:2px"><div style="font-size:11px;font-weight:600">Доставлен</div><div style="font-size:9px;color:#666">Ожидается 17 мая</div></div>
+</div>
+<div style="margin-top:12px;background:#1a1a1a;border-radius:10px;padding:10px;border:1px solid #2a2a2a">
+<div style="font-size:11px;color:#666">Итого к оплате</div>
+<div style="font-size:18px;font-weight:700">89,990 &#8381;</div>
+</div>
+</div>
+</div>
+</div>
+</div>
+</section>
+<section class="slide" id="s9">
+<div style="font-size:12px;color:#444;letter-spacing:2px;text-transform:uppercase;margin-bottom:16px">03 / Маркетплейс</div>
+<h2>Возможности <span class="grad">маркетплейса</span></h2>
+<div class="grid2" style="gap:24px">
+<div class="card">
+<div style="font-size:15px;font-weight:700;margin-bottom:6px">&#128269; Умный поиск</div>
+<div style="font-size:13px;color:#666;line-height:1.5">PostgreSQL Full-Text Search с автодополнением, поиск по фото, голосовой поиск</div>
+</div>
+<div class="card">
+<div style="font-size:15px;font-weight:700;margin-bottom:6px">&#127775; Фильтры и сортировка</div>
+<div style="font-size:13px;color:#666;line-height:1.5">По категории, цене, рейтингу, бренду, наличию, продавцу — мгновенная фильтрация</div>
+</div>
+<div class="card">
+<div style="font-size:15px;font-weight:700;margin-bottom:6px">&#128666; Отслеживание заказов</div>
+<div style="font-size:13px;color:#666;line-height:1.5">Реальное время, интеграция с СДЭК, Почтой России, уведомления на каждом шаге</div>
+</div>
+<div class="card">
+<div style="font-size:15px;font-weight:700;margin-bottom:6px">&#128172; Отзывы и рейтинги</div>
+<div style="font-size:13px;color:#666;line-height:1.5">Верифицированные покупатели, фото-отзывы, ответы продавцов</div>
+</div>
+<div class="card">
+<div style="font-size:15px;font-weight:700;margin-bottom:6px">&#128101; Несколько продавцов</div>
+<div style="font-size:13px;color:#666;line-height:1.5">Маркетплейс-модель: сравнение цен, рейтинг продавцов, гарантии</div>
+</div>
+<div class="card">
+<div style="font-size:15px;font-weight:700;margin-bottom:6px">&#128179; Безопасная оплата</div>
+<div style="font-size:13px;color:#666;line-height:1.5">Эскроу, защита покупателя, возврат средств, рассрочка</div>
+</div>
+<div class="card">
+<div style="font-size:15px;font-weight:700;margin-bottom:6px">&#128204; Уведомления</div>
+<div style="font-size:13px;color:#666;line-height:1.5">Push, SMS, email — о статусе заказа, скидках, поступлении товара</div>
+</div>
+<div class="card">
+<div style="font-size:15px;font-weight:700;margin-bottom:6px">&#128260; Возврат и обмен</div>
+<div style="font-size:13px;color:#666;line-height:1.5">Простой процесс возврата, онлайн-заявка, отслеживание возврата</div>
+</div>
+</div>
+</section>
+<section class="slide" id="s10">
+<div style="font-size:12px;color:#444;letter-spacing:2px;text-transform:uppercase;margin-bottom:16px">04 / Страхование</div>
+<h2>Страховые <span class="grad">продукты</span></h2>
+<p class="sub">Полный спектр страховых услуг с онлайн-оформлением, сравнением предложений и мгновенным расчётом</p>
+<div class="grid3" style="gap:16px">
+<div class="ins-card" style="border-color:#ef444433">
+<div class="ins-icon">&#128663;</div>
+<div class="ins-name">ОСАГО</div>
+<div class="ins-price">от 3,200&#8381;/год</div>
+<div class="ins-desc">Обязательное страхование авто. Онлайн-оформление за 5 минут, интеграция с РСА</div>
+<div style="margin-top:10px"><button style="background:#ef444422;color:#ef4444;border:1px solid #ef444444;border-radius:8px;padding:6px 12px;font-size:11px;cursor:pointer;width:100%">Рассчитать</button></div>
+</div>
+<div class="ins-card" style="border-color:#f59e0b33">
+<div class="ins-icon">&#128737;</div>
+<div class="ins-name">КАСКО</div>
+<div class="ins-price">от 28,000&#8381;/год</div>
+<div class="ins-desc">Полная защита автомобиля: угон, ДТП, стихия. Франшиза от 0%</div>
+<div style="margin-top:10px"><button style="background:#f59e0b22;color:#f59e0b;border:1px solid #f59e0b44;border-radius:8px;padding:6px 12px;font-size:11px;cursor:pointer;width:100%">Рассчитать</button></div>
+</div>
+<div class="ins-card" style="border-color:#22c55e33">
+<div class="ins-icon">&#128138;</div>
+<div class="ins-name">ДМС</div>
+<div class="ins-price">от 12,000&#8381;/год</div>
+<div class="ins-desc">Добровольное медицинское страхование. Клиники по всей России</div>
+<div style="margin-top:10px"><button style="background:#22c55e22;color:#22c55e;border:1px solid #22c55e44;border-radius:8px;padding:6px 12px;font-size:11px;cursor:pointer;width:100%">Рассчитать</button></div>
+</div>
+<div class="ins-card" style="border-color:#3b82f633">
+<div class="ins-icon">&#9992;</div>
+<div class="ins-name">Путешествия</div>
+<div class="ins-price">от 890&#8381;/поездка</div>
+<div class="ins-desc">Страховка туриста: медицина, отмена, багаж. Весь мир</div>
+<div style="margin-top:10px"><button style="background:#3b82f622;color:#3b82f6;border:1px solid #3b82f644;border-radius:8px;padding:6px 12px;font-size:11px;cursor:pointer;width:100%">Рассчитать</button></div>
+</div>
+<div class="ins-card" style="border-color:#7c3aed33">
+<div class="ins-icon">&#127968;</div>
+<div class="ins-name">Ипотека</div>
+<div class="ins-price">от 0.15%/год</div>
+<div class="ins-desc">Страхование недвижимости и жизни заёмщика для банков</div>
+<div style="margin-top:10px"><button style="background:#7c3aed22;color:#7c3aed;border:1px solid #7c3aed44;border-radius:8px;padding:6px 12px;font-size:11px;cursor:pointer;width:100%">Рассчитать</button></div>
+</div>
+<div class="ins-card" style="border-color:#ec489933">
+<div class="ins-icon">&#10084;</div>
+<div class="ins-name">Жизнь</div>
+<div class="ins-price">от 5,000&#8381;/год</div>
+<div class="ins-desc">Накопительное и рисковое страхование жизни и здоровья</div>
+<div style="margin-top:10px"><button style="background:#ec489922;color:#ec4899;border:1px solid #ec489944;border-radius:8px;padding:6px 12px;font-size:11px;cursor:pointer;width:100%">Рассчитать</button></div>
+</div>
+</div>
+</section>
+<section class="slide" id="s11">
+<div style="font-size:12px;color:#444;letter-spacing:2px;text-transform:uppercase;margin-bottom:16px">04 / Страхование</div>
+<h2>Калькулятор <span class="grad">ОСАГО</span></h2>
+<div class="two-col">
+<div class="flex-1">
+<p style="color:#a1a1aa;margin-bottom:20px;line-height:1.7">Мгновенный расчёт стоимости ОСАГО с учётом всех коэффициентов. Сравнение предложений от ведущих страховщиков.</p>
+<div class="card" style="margin-bottom:16px">
+<div style="font-size:13px;font-weight:600;margin-bottom:12px;color:#a78bfa">&#128663; Данные автомобиля</div>
+<div class="calc-row"><span class="calc-label">Марка и модель</span><span class="calc-value">Toyota Camry 2021</span></div>
+<div class="calc-row"><span class="calc-label">Мощность двигателя</span><span class="calc-value">181 л.с. (КМ = 1.6)</span></div>
+<div class="calc-row"><span class="calc-label">Регион регистрации</span><span class="calc-value">Москва (КТ = 2.0)</span></div>
+<div class="calc-row"><span class="calc-label">Стаж водителя</span><span class="calc-value">8 лет</span></div>
+<div class="calc-row"><span class="calc-label">Возраст водителя</span><span class="calc-value">32 года</span></div>
+<div class="calc-row"><span class="calc-label">КБМ (бонус-малус)</span><span class="calc-value">0.85 (класс 7)</span></div>
+<div class="calc-row"><span class="calc-label">Период страхования</span><span class="calc-value">12 месяцев</span></div>
+</div>
+<div class="result-box">
+<div style="font-size:12px;color:#a78bfa;margin-bottom:8px">Рассчитанная стоимость</div>
+<div style="font-size:36px;font-weight:800;color:#fff">8,420 &#8381;</div>
+<div style="font-size:12px;color:#666;margin-top:4px">в год &middot; экономия 15% с КБМ</div>
+</div>
+</div>
+<div class="flex-1">
+<div style="font-size:14px;font-weight:600;margin-bottom:12px">Лучшие предложения</div>
+<div class="card" style="margin-bottom:10px;border-color:#22c55e44;background:#22c55e08">
+<div style="display:flex;align-items:center;justify-content:space-between">
+<div><div style="font-size:14px;font-weight:600">Согласие <span style="font-size:10px;color:#22c55e">&#10003; Лучшая цена</span></div><div style="font-size:11px;color:#666">&#9733;4.8 &middot; Онлайн</div></div>
+<div style="text-align:right"><div style="font-size:16px;font-weight:700;color:#22c55e">8,420&#8381;</div><button style="background:#22c55e22;color:#22c55e;border:1px solid #22c55e44;border-radius:6px;padding:4px 10px;font-size:10px;cursor:pointer;margin-top:4px">Оформить</button></div>
+</div>
+</div>
+<div class="card" style="margin-bottom:10px;">
+<div style="display:flex;align-items:center;justify-content:space-between">
+<div><div style="font-size:14px;font-weight:600">Ингосстрах</div><div style="font-size:11px;color:#666">&#9733;4.9 &middot; Онлайн</div></div>
+<div style="text-align:right"><div style="font-size:16px;font-weight:700;color:#3b82f6">8,650&#8381;</div><button style="background:#3b82f622;color:#3b82f6;border:1px solid #3b82f644;border-radius:6px;padding:4px 10px;font-size:10px;cursor:pointer;margin-top:4px">Оформить</button></div>
+</div>
+</div>
+<div class="card" style="margin-bottom:10px;">
+<div style="display:flex;align-items:center;justify-content:space-between">
+<div><div style="font-size:14px;font-weight:600">РЕСО-Гарантия</div><div style="font-size:11px;color:#666">&#9733;4.7 &middot; Онлайн</div></div>
+<div style="text-align:right"><div style="font-size:16px;font-weight:700;color:#7c3aed">8,890&#8381;</div><button style="background:#7c3aed22;color:#7c3aed;border:1px solid #7c3aed44;border-radius:6px;padding:4px 10px;font-size:10px;cursor:pointer;margin-top:4px">Оформить</button></div>
+</div>
+</div>
+<div class="card" style="margin-bottom:10px;">
+<div style="display:flex;align-items:center;justify-content:space-between">
+<div><div style="font-size:14px;font-weight:600">Альфастрахование</div><div style="font-size:11px;color:#666">&#9733;4.6 &middot; Онлайн</div></div>
+<div style="text-align:right"><div style="font-size:16px;font-weight:700;color:#f59e0b">9,120&#8381;</div><button style="background:#f59e0b22;color:#f59e0b;border:1px solid #f59e0b44;border-radius:6px;padding:4px 10px;font-size:10px;cursor:pointer;margin-top:4px">Оформить</button></div>
+</div>
+</div>
+<div class="card" style="margin-bottom:10px;">
+<div style="display:flex;align-items:center;justify-content:space-between">
+<div><div style="font-size:14px;font-weight:600">Тинькофф</div><div style="font-size:11px;color:#666">&#9733;4.8 &middot; Онлайн</div></div>
+<div style="text-align:right"><div style="font-size:16px;font-weight:700;color:#ec4899">9,340&#8381;</div><button style="background:#ec489922;color:#ec4899;border:1px solid #ec489944;border-radius:6px;padding:4px 10px;font-size:10px;cursor:pointer;margin-top:4px">Оформить</button></div>
+</div>
+</div>
+<div class="card" style="background:#7c3aed11;border-color:#7c3aed33;margin-top:12px">
+<div style="font-size:12px;color:#a78bfa;font-weight:600">&#128204; Интеграция с РСА</div>
+<div style="font-size:11px;color:#666;margin-top:4px">Автоматическая проверка данных, электронный полис на email, регистрация в базе РСА</div>
+</div>
+</div>
+</div>
+</section>
+<section class="slide" id="s12">
+<div style="font-size:12px;color:#444;letter-spacing:2px;text-transform:uppercase;margin-bottom:16px">04 / Страхование</div>
+<h2>Возможности <span class="grad">страхования</span></h2>
+<div class="grid2" style="gap:24px">
+<div class="card">
+<div style="font-size:15px;font-weight:700;margin-bottom:6px">&#128203; Онлайн-оформление</div>
+<div style="font-size:13px;color:#666;line-height:1.5">Полис за 5 минут без визита в офис. Электронный документ на email и в приложении</div>
+</div>
+<div class="card">
+<div style="font-size:15px;font-weight:700;margin-bottom:6px">&#128200; Сравнение предложений</div>
+<div style="font-size:13px;color:#666;line-height:1.5">Одновременный расчёт у 20+ страховщиков. Прозрачное сравнение условий</div>
+</div>
+<div class="card">
+<div style="font-size:15px;font-weight:700;margin-bottom:6px">&#128196; Управление полисами</div>
+<div style="font-size:13px;color:#666;line-height:1.5">Все полисы в одном месте: просмотр, продление, уведомления об истечении</div>
+</div>
+<div class="card">
+<div style="font-size:15px;font-weight:700;margin-bottom:6px">&#128680; Урегулирование убытков</div>
+<div style="font-size:13px;color:#666;line-height:1.5">Онлайн-заявка на выплату, загрузка документов, отслеживание статуса</div>
+</div>
+<div class="card">
+<div style="font-size:15px;font-weight:700;margin-bottom:6px">&#128101; Агентская сеть</div>
+<div style="font-size:13px;color:#666;line-height:1.5">Профессиональные агенты с рейтингами, реферальные программы, комиссии</div>
+</div>
+<div class="card">
+<div style="font-size:15px;font-weight:700;margin-bottom:6px">&#127775; Программы лояльности</div>
+<div style="font-size:13px;color:#666;line-height:1.5">Кэшбэк за страховки, бонусные баллы, скидки за безаварийную езду</div>
+</div>
+<div class="card">
+<div style="font-size:15px;font-weight:700;margin-bottom:6px">&#128222; Поддержка 24/7</div>
+<div style="font-size:13px;color:#666;line-height:1.5">Чат, звонок, видеоконсультация со страховым агентом в любое время</div>
+</div>
+<div class="card">
+<div style="font-size:15px;font-weight:700;margin-bottom:6px">&#128204; Уведомления</div>
+<div style="font-size:13px;color:#666;line-height:1.5">Напоминания об истечении полиса, изменениях тарифов, новых предложениях</div>
+</div>
+</div>
+</section>
+<section class="slide" id="s13">
+<div style="font-size:12px;color:#444;letter-spacing:2px;text-transform:uppercase;margin-bottom:16px">05 / Банковские продукты</div>
+<h2>Финансовые <span class="grad">продукты</span></h2>
+<p class="sub">Полный спектр банковских услуг прямо в приложении — от дебетовой карты до ипотеки и инвестиций</p>
+<div class="grid2" style="gap:20px">
+<div class="bank-card">
+<div style="font-size:12px;color:#a78bfa;margin-bottom:8px;text-transform:uppercase;letter-spacing:1px">Дебетовая карта</div>
+<div style="font-size:22px;font-weight:800;margin-bottom:4px">Mansoni Card</div>
+<div style="font-size:13px;color:#666;margin-bottom:12px">Бесплатное обслуживание навсегда</div>
+<div style="display:flex;gap:16px;margin-bottom:12px">
+<div><div style="font-size:20px;font-weight:700;color:#a78bfa">5%</div><div style="font-size:11px;color:#666">кэшбэк на такси</div></div>
+<div><div style="font-size:20px;font-weight:700;color:#3b82f6">3%</div><div style="font-size:11px;color:#666">на маркетплейс</div></div>
+<div><div style="font-size:20px;font-weight:700;color:#22c55e">1%</div><div style="font-size:11px;color:#666">на всё остальное</div></div>
+</div>
+<div style="font-size:11px;color:#555">Apple Pay &middot; Google Pay &middot; Бесконтактная оплата</div>
+</div>
+<div class="bank-card">
+<div style="font-size:12px;color:#f59e0b;margin-bottom:8px;text-transform:uppercase;letter-spacing:1px">Кредитная карта</div>
+<div style="font-size:22px;font-weight:800;margin-bottom:4px">Mansoni Credit</div>
+<div style="font-size:13px;color:#666;margin-bottom:12px">Льготный период 120 дней</div>
+<div style="display:flex;gap:16px;margin-bottom:12px">
+<div><div style="font-size:20px;font-weight:700;color:#f59e0b">19.9%</div><div style="font-size:11px;color:#666">от годовых</div></div>
+<div><div style="font-size:20px;font-weight:700;color:#22c55e">500K</div><div style="font-size:11px;color:#666">лимит &#8381;</div></div>
+<div><div style="font-size:20px;font-weight:700;color:#3b82f6">120</div><div style="font-size:11px;color:#666">дней без %</div></div>
+</div>
+<div style="font-size:11px;color:#555">Рассрочка 0% &middot; Кэшбэк 2% &middot; Страховка в подарок</div>
+</div>
+<div class="bank-card">
+<div style="font-size:12px;color:#22c55e;margin-bottom:8px;text-transform:uppercase;letter-spacing:1px">Потребительский кредит</div>
+<div style="font-size:22px;font-weight:800;margin-bottom:4px">Наличными</div>
+<div style="font-size:13px;color:#666;margin-bottom:12px">Решение за 2 минуты</div>
+<div style="display:flex;gap:16px;margin-bottom:12px">
+<div><div style="font-size:20px;font-weight:700;color:#22c55e">12.5%</div><div style="font-size:11px;color:#666">от годовых</div></div>
+<div><div style="font-size:20px;font-weight:700;color:#a78bfa">3M</div><div style="font-size:11px;color:#666">макс. сумма &#8381;</div></div>
+<div><div style="font-size:20px;font-weight:700;color:#f59e0b">7</div><div style="font-size:11px;color:#666">лет срок</div></div>
+</div>
+<div style="font-size:11px;color:#555">Без залога &middot; Без поручителей &middot; Онлайн-заявка</div>
+</div>
+<div class="bank-card">
+<div style="font-size:12px;color:#3b82f6;margin-bottom:8px;text-transform:uppercase;letter-spacing:1px">Ипотека</div>
+<div style="font-size:22px;font-weight:800;margin-bottom:4px">На жильё</div>
+<div style="font-size:13px;color:#666;margin-bottom:12px">Господдержка и семейная</div>
+<div style="display:flex;gap:16px;margin-bottom:12px">
+<div><div style="font-size:20px;font-weight:700;color:#3b82f6">8.9%</div><div style="font-size:11px;color:#666">от годовых</div></div>
+<div><div style="font-size:20px;font-weight:700;color:#22c55e">30M</div><div style="font-size:11px;color:#666">макс. сумма &#8381;</div></div>
+<div><div style="font-size:20px;font-weight:700;color:#f59e0b">30</div><div style="font-size:11px;color:#666">лет срок</div></div>
+</div>
+<div style="font-size:11px;color:#555">Первый взнос от 10% &middot; Одобрение за 1 день</div>
+</div>
+<div class="bank-card">
+<div style="font-size:12px;color:#ec4899;margin-bottom:8px;text-transform:uppercase;letter-spacing:1px">Вклад</div>
+<div style="font-size:22px;font-weight:800;margin-bottom:4px">Накопительный</div>
+<div style="font-size:13px;color:#666;margin-bottom:12px">Страхование АСВ до 1.4M &#8381;</div>
+<div style="display:flex;gap:16px;margin-bottom:12px">
+<div><div style="font-size:20px;font-weight:700;color:#ec4899">16%</div><div style="font-size:11px;color:#666">до годовых</div></div>
+<div><div style="font-size:20px;font-weight:700;color:#22c55e">10K</div><div style="font-size:11px;color:#666">от суммы &#8381;</div></div>
+<div><div style="font-size:20px;font-weight:700;color:#3b82f6">12</div><div style="font-size:11px;color:#666">мес. срок</div></div>
+</div>
+<div style="font-size:11px;color:#555">Пополнение &middot; Капитализация &middot; Онлайн-открытие</div>
+</div>
+<div class="bank-card">
+<div style="font-size:12px;color:#8b5cf6;margin-bottom:8px;text-transform:uppercase;letter-spacing:1px">Инвестиции</div>
+<div style="font-size:22px;font-weight:800;margin-bottom:4px">Брокерский счёт</div>
+<div style="font-size:13px;color:#666;margin-bottom:12px">Акции, облигации, ETF, ПИФы</div>
+<div style="display:flex;gap:16px;margin-bottom:12px">
+<div><div style="font-size:20px;font-weight:700;color:#8b5cf6">0.1%</div><div style="font-size:11px;color:#666">комиссия</div></div>
+<div><div style="font-size:20px;font-weight:700;color:#22c55e">1K</div><div style="font-size:11px;color:#666">от суммы &#8381;</div></div>
+<div><div style="font-size:20px;font-weight:700;color:#f59e0b">IIS</div><div style="font-size:11px;color:#666">налог. вычет</div></div>
+</div>
+<div style="font-size:11px;color:#555">Московская биржа &middot; Автоследование &middot; Аналитика</div>
+</div>
+</div>
+</section>
+<section class="slide" id="s14">
+<div style="font-size:12px;color:#444;letter-spacing:2px;text-transform:uppercase;margin-bottom:16px">06 / Технологии</div>
+<h2>Технический <span class="grad">стек</span></h2>
+<div class="grid3" style="gap:16px">
+<div class="card">
+<div style="font-size:15px;font-weight:700;margin-bottom:8px">&#9889; Frontend</div>
+<div style="font-size:12px;color:#666;padding:2px 0;border-bottom:1px solid #1a1a1a">React 18 + TypeScript 5</div>
+<div style="font-size:12px;color:#666;padding:2px 0;border-bottom:1px solid #1a1a1a">Vite 5 + TailwindCSS</div>
+<div style="font-size:12px;color:#666;padding:2px 0;border-bottom:1px solid #1a1a1a">Framer Motion + Radix UI</div>
+<div style="font-size:12px;color:#666;padding:2px 0;border-bottom:1px solid #1a1a1a">TanStack Query + Zustand</div>
+</div>
+<div class="card">
+<div style="font-size:15px;font-weight:700;margin-bottom:8px">&#128451; Backend</div>
+<div style="font-size:12px;color:#666;padding:2px 0;border-bottom:1px solid #1a1a1a">Supabase (PostgreSQL)</div>
+<div style="font-size:12px;color:#666;padding:2px 0;border-bottom:1px solid #1a1a1a">Row-Level Security</div>
+<div style="font-size:12px;color:#666;padding:2px 0;border-bottom:1px solid #1a1a1a">Edge Functions</div>
+<div style="font-size:12px;color:#666;padding:2px 0;border-bottom:1px solid #1a1a1a">Realtime Subscriptions</div>
+</div>
+<div class="card">
+<div style="font-size:15px;font-weight:700;margin-bottom:8px">&#128205; Карты</div>
+<div style="font-size:12px;color:#666;padding:2px 0;border-bottom:1px solid #1a1a1a">MapLibre GL 5</div>
+<div style="font-size:12px;color:#666;padding:2px 0;border-bottom:1px solid #1a1a1a">Leaflet 1.9</div>
+<div style="font-size:12px;color:#666;padding:2px 0;border-bottom:1px solid #1a1a1a">H3-JS (геоиндексация)</div>
+<div style="font-size:12px;color:#666;padding:2px 0;border-bottom:1px solid #1a1a1a">OpenStreetMap</div>
+</div>
+<div class="card">
+<div style="font-size:15px;font-weight:700;margin-bottom:8px">&#128222; Коммуникации</div>
+<div style="font-size:12px;color:#666;padding:2px 0;border-bottom:1px solid #1a1a1a">WebRTC + LiveKit</div>
+<div style="font-size:12px;color:#666;padding:2px 0;border-bottom:1px solid #1a1a1a">Mediasoup (SFU)</div>
+<div style="font-size:12px;color:#666;padding:2px 0;border-bottom:1px solid #1a1a1a">E2EE (PQXDH)</div>
+<div style="font-size:12px;color:#666;padding:2px 0;border-bottom:1px solid #1a1a1a">OpenMLS групповой чат</div>
+</div>
+<div class="card">
+<div style="font-size:15px;font-weight:700;margin-bottom:8px">&#128241; Мобильные</div>
+<div style="font-size:12px;color:#666;padding:2px 0;border-bottom:1px solid #1a1a1a">Capacitor 8 (iOS/Android)</div>
+<div style="font-size:12px;color:#666;padding:2px 0;border-bottom:1px solid #1a1a1a">Camera, Geolocation</div>
+<div style="font-size:12px;color:#666;padding:2px 0;border-bottom:1px solid #1a1a1a">Haptics, Push</div>
+<div style="font-size:12px;color:#666;padding:2px 0;border-bottom:1px solid #1a1a1a">Offline Support</div>
+</div>
+<div class="card">
+<div style="font-size:15px;font-weight:700;margin-bottom:8px">&#129302; AI Engine</div>
+<div style="font-size:12px;color:#666;padding:2px 0;border-bottom:1px solid #1a1a1a">Python AI Orchestrator</div>
+<div style="font-size:12px;color:#666;padding:2px 0;border-bottom:1px solid #1a1a1a">LLM интеграция</div>
+<div style="font-size:12px;color:#666;padding:2px 0;border-bottom:1px solid #1a1a1a">Рекомендации</div>
+<div style="font-size:12px;color:#666;padding:2px 0;border-bottom:1px solid #1a1a1a">Модерация контента</div>
+</div>
+<div class="card">
+<div style="font-size:15px;font-weight:700;margin-bottom:8px">&#128200; Мониторинг</div>
+<div style="font-size:12px;color:#666;padding:2px 0;border-bottom:1px solid #1a1a1a">Sentry (ошибки)</div>
+<div style="font-size:12px;color:#666;padding:2px 0;border-bottom:1px solid #1a1a1a">Grafana (метрики)</div>
+<div style="font-size:12px;color:#666;padding:2px 0;border-bottom:1px solid #1a1a1a">Prometheus</div>
+<div style="font-size:12px;color:#666;padding:2px 0;border-bottom:1px solid #1a1a1a">Structured Logging</div>
+</div>
+<div class="card">
+<div style="font-size:15px;font-weight:700;margin-bottom:8px">&#128737; Безопасность</div>
+<div style="font-size:12px;color:#666;padding:2px 0;border-bottom:1px solid #1a1a1a">DOMPurify (XSS)</div>
+<div style="font-size:12px;color:#666;padding:2px 0;border-bottom:1px solid #1a1a1a">Zod (валидация)</div>
+<div style="font-size:12px;color:#666;padding:2px 0;border-bottom:1px solid #1a1a1a">CSRF защита</div>
+<div style="font-size:12px;color:#666;padding:2px 0;border-bottom:1px solid #1a1a1a">Rate Limiting</div>
+</div>
+<div class="card">
+<div style="font-size:15px;font-weight:700;margin-bottom:8px">&#128736; DevOps</div>
+<div style="font-size:12px;color:#666;padding:2px 0;border-bottom:1px solid #1a1a1a">Docker + Nginx</div>
+<div style="font-size:12px;color:#666;padding:2px 0;border-bottom:1px solid #1a1a1a">CI/CD Pipeline</div>
+<div style="font-size:12px;color:#666;padding:2px 0;border-bottom:1px solid #1a1a1a">Vitest + Playwright</div>
+<div style="font-size:12px;color:#666;padding:2px 0;border-bottom:1px solid #1a1a1a">ESLint + TypeScript</div>
+</div>
+</div>
+</section>
+<section class="slide" id="s15" style="background:radial-gradient(ellipse at 50% 50%,#1a0a3a 0%,#0a0a0a 70%);text-align:center;align-items:center">
+<div style="max-width:700px">
+<div style="font-size:64px;margin-bottom:24px">&#128663;</div>
+<h1><span class="grad">Mansoni</span></h1>
+<p class="sub" style="text-align:center">Будущее уже здесь — единая экосистема для жизни, работы и бизнеса</p>
+<div style="display:flex;justify-content:center;gap:16px;flex-wrap:wrap;margin-bottom:40px">
+<span class="badge badge-purple">React + TypeScript</span>
+<span class="badge badge-purple">Supabase</span>
+<span class="badge badge-purple">MapLibre</span>
+<span class="badge badge-purple">WebRTC E2EE</span>
+<span class="badge badge-purple">Capacitor iOS/Android</span>
+<span class="badge badge-purple">Python AI</span>
+</div>
+<div style="display:flex;justify-content:center;gap:32px;margin-bottom:40px">
+<div><div style="font-size:40px;font-weight:800;color:#7c3aed">1,476</div><div style="font-size:13px;color:#666">TypeScript файлов</div></div>
+<div><div style="font-size:40px;font-weight:800;color:#2563eb">100+</div><div style="font-size:13px;color:#666">экранов</div></div>
+<div><div style="font-size:40px;font-weight:800;color:#22c55e">9</div><div style="font-size:13px;color:#666">модулей</div></div>
+<div><div style="font-size:40px;font-weight:800;color:#f59e0b">50+</div><div style="font-size:13px;color:#666">таблиц БД</div></div>
+</div>
+<div style="font-size:16px;color:#555">mansoni.app &middot; 2025</div>
+</div>
+</section>
+<script>
+const slides = document.querySelectorAll(".slide");
+const navDots = document.getElementById("navDots");
+slides.forEach((s, i) => {
+  const dot = document.createElement("div");
+  dot.className = "nav-dot" + (i===0?" active":"");
+  dot.onclick = () => s.scrollIntoView({behavior:"smooth"});
+  navDots.appendChild(dot);
+});
+const observer = new IntersectionObserver((entries) => {
+  entries.forEach(e => {
+    if (e.isIntersecting) {
+      const idx = Array.from(slides).indexOf(e.target);
+      document.querySelectorAll(".nav-dot").forEach((d,i) => d.classList.toggle("active", i===idx));
+    }
+  });
+}, {threshold: 0.5});
+slides.forEach(s => observer.observe(s));
+</script>
+</body></html>

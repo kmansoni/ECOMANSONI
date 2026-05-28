@@ -1,17 +1,13 @@
 begin;
-
 create extension if not exists pgcrypto;
-
 create or replace function public.verify_secret(secret text, secret_hash text)
 returns boolean language sql immutable as $$
   select (extensions.crypt(secret, secret_hash) = secret_hash);
 $$;
-
 create or replace function public.hash_secret(secret text)
 returns text language sql immutable as $$
   select extensions.crypt(secret, extensions.gen_salt('bf', 12));
 $$;
-
 create or replace function public.auth_register_device_v1(
   p_device_uid text,
   p_device_secret text,
@@ -51,7 +47,6 @@ begin
   device_id := v_device_id;
   return next;
 end $$;
-
 create or replace function public.auth_upsert_account_v1(
   p_phone_e164 text,
   p_email text
@@ -74,7 +69,6 @@ begin
   account_id := v_id;
   return next;
 end $$;
-
 create or replace function public.auth_create_session_v1(
   p_account_id uuid,
   p_device_uid text,
@@ -112,7 +106,6 @@ begin
   session_id := v_sid;
   return next;
 end $$;
-
 create or replace function public.auth_rotate_refresh_v1(
   p_session_id uuid,
   p_device_uid text,
@@ -167,7 +160,6 @@ begin
 
   ok := true; reason := 'OK'; return next;
 end $$;
-
 create or replace function public.auth_switch_active_account_v1(
   p_device_uid text,
   p_device_secret text,
@@ -200,7 +192,6 @@ begin
 
   ok:=true; reason:='OK'; return next;
 end $$;
-
 create or replace function public.auth_revoke_session_v1(
   p_session_id uuid,
   p_device_uid text,
@@ -228,5 +219,4 @@ begin
 
   ok:=true; reason:='OK'; return next;
 end $$;
-
 commit;

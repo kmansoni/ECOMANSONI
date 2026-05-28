@@ -3,7 +3,6 @@
 -- ============================================================
 -- Date: 2026-02-24
 -- Purpose: Live streaming infrastructure (sessions, viewers, chat, moderation)
--- ALLOW_DESTRUCTIVE_MIGRATION
 
 -- ============================================================
 -- PART 1: Core Tables
@@ -12,7 +11,6 @@
 -- Live streaming sessions
 -- If table already exists, DROP and recreate with new schema
 DROP TABLE IF EXISTS public.live_sessions CASCADE;
-
 CREATE TABLE public.live_sessions (
   id BIGSERIAL PRIMARY KEY,
   creator_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
@@ -47,16 +45,13 @@ CREATE TABLE public.live_sessions (
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
-
 CREATE INDEX idx_live_sessions_creator_id ON live_sessions(creator_id);
 CREATE INDEX idx_live_sessions_status ON live_sessions(status);
 CREATE INDEX idx_live_sessions_moderation_status ON live_sessions(moderation_status);
 CREATE INDEX idx_live_sessions_created_at ON live_sessions(created_at DESC);
 CREATE INDEX idx_live_sessions_started_at ON live_sessions(started_at DESC);
-
 -- Live stream viewers (ephemeral, auto-delete 24h after session ends)
 DROP TABLE IF EXISTS public.live_viewers CASCADE;
-
 CREATE TABLE public.live_viewers (
   id BIGSERIAL PRIMARY KEY,
   session_id BIGINT NOT NULL REFERENCES live_sessions(id) ON DELETE CASCADE,
@@ -72,14 +67,11 @@ CREATE TABLE public.live_viewers (
   
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
-
 CREATE INDEX idx_live_viewers_session_id ON live_viewers(session_id);
 CREATE INDEX idx_live_viewers_viewer_id ON live_viewers(viewer_id);
 CREATE INDEX idx_live_viewers_joined_at ON live_viewers(joined_at DESC);
-
 -- Live chat messages
 DROP TABLE IF EXISTS public.live_chat_messages CASCADE;
-
 CREATE TABLE public.live_chat_messages (
   id BIGSERIAL PRIMARY KEY,
   session_id BIGINT NOT NULL REFERENCES live_sessions(id) ON DELETE CASCADE,
@@ -98,14 +90,11 @@ CREATE TABLE public.live_chat_messages (
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
-
 CREATE INDEX idx_live_chat_messages_session_id ON live_chat_messages(session_id, created_at DESC);
 CREATE INDEX idx_live_chat_messages_sender_id ON live_chat_messages(sender_id);
 CREATE INDEX idx_live_chat_messages_created_at ON live_chat_messages(created_at DESC);
-
 -- Live stream reports (trust-weighted, same as EPIC K)
 DROP TABLE IF EXISTS public.live_stream_reports CASCADE;
-
 CREATE TABLE public.live_stream_reports (
   id BIGSERIAL PRIMARY KEY,
   session_id BIGINT NOT NULL REFERENCES live_sessions(id) ON DELETE CASCADE,
@@ -122,11 +111,9 @@ CREATE TABLE public.live_stream_reports (
   -- Metadata
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
-
 CREATE INDEX idx_live_stream_reports_session_id ON live_stream_reports(session_id);
 CREATE INDEX idx_live_stream_reports_reporter_id ON live_stream_reports(reporter_id);
 CREATE INDEX idx_live_stream_reports_created_at ON live_stream_reports(created_at DESC);
-
 -- ============================================================
 -- PART 2: RPC Functions
 -- ============================================================
@@ -198,7 +185,6 @@ BEGIN
   RETURN QUERY SELECT true, NULL::TEXT;
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-
 -- Create live broadcast session
 -- Returns: {session_id: bigint | null, error: string | null}
 CREATE OR REPLACE FUNCTION public.broadcast_create_session_v1(
@@ -260,7 +246,6 @@ BEGIN
   RETURN QUERY SELECT v_session_id, NULL::TEXT;
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-
 -- Report live stream (trust-weighted)
 -- Auto-restricts if burst detected (5+ reports in 2 min)
 CREATE OR REPLACE FUNCTION public.report_live_stream_v1(
@@ -330,7 +315,6 @@ BEGIN
   END IF;
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-
 -- End live broadcast session
 CREATE OR REPLACE FUNCTION public.broadcast_end_session_v1(p_session_id BIGINT)
 RETURNS TABLE (
@@ -355,7 +339,6 @@ BEGIN
   RETURN QUERY SELECT true, 'Live session ended'::TEXT;
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-
 -- Get active live sessions (for discovery feed)
 -- Returns limited set: id, creator_id, title, thumbnail_url, viewer_count_current
 CREATE OR REPLACE FUNCTION public.get_active_live_sessions_v1(
@@ -387,7 +370,6 @@ BEGIN
   LIMIT p_limit;
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-
 -- ============================================================
 -- PART 3: Indexes & Constraints
 -- ============================================================
@@ -405,14 +387,11 @@ GRANT SELECT ON live_sessions TO authenticated;
 GRANT SELECT ON live_viewers TO authenticated;
 GRANT SELECT ON live_chat_messages TO authenticated;
 GRANT SELECT ON live_stream_reports TO authenticated;
-
 GRANT INSERT ON live_viewers TO authenticated;
 GRANT INSERT ON live_chat_messages TO authenticated;
 GRANT INSERT ON live_stream_reports TO authenticated;
-
 GRANT UPDATE(viewer_count_current, viewer_count_peak, report_count, message_count) ON live_sessions TO authenticated;
 GRANT UPDATE(left_at, watch_duration_seconds) ON live_viewers TO authenticated;
-
 -- RPC: Available to authenticated users
 GRANT EXECUTE ON FUNCTION is_eligible_for_live_v1 TO authenticated;
 GRANT EXECUTE ON FUNCTION broadcast_create_session_v1 TO authenticated;

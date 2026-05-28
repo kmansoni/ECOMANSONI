@@ -10,7 +10,6 @@ VALUES
   ('iam.role.assign', 'iam', 'role.assign', 'Assign roles to admins', 'critical', true),
   ('iam.role.revoke', 'iam', 'role.revoke', 'Revoke roles from admins', 'critical', true)
 ON CONFLICT (scope) DO NOTHING;
-
 -- Give owner role the assignment permissions
 WITH owner_role AS (
   SELECT id FROM public.admin_roles WHERE name = 'owner'

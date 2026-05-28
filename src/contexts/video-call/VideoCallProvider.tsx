@@ -31,6 +31,7 @@
 import { ReactNode, useState, useCallback, useEffect, useRef, useMemo } from "react";
 import { getStableCallsDeviceId } from "@/lib/platform/device";
 import { useVideoCallSfu, type VideoCall, type VideoCallStatus } from "@/hooks/useVideoCallSfu";
+import { useVideoCall } from "@/hooks/useVideoCall";
 import { useIncomingCalls } from "@/hooks/useIncomingCalls";
 import { useAuth } from "@/hooks/useAuth";
 import { toast } from "sonner";
@@ -98,6 +99,7 @@ import {
 
 const DECRYPTION_KEY_WAIT_TIMEOUT_MS = 15_000;
 const DECRYPTION_KEY_WATCHDOG_INTERVAL_MS = 2_000;
+const TURN_ONLY_LEGACY_MODE = false;
 
 // ─── VideoCallProvider ─────────────────────────────────────────────────────────
 export function VideoCallProvider({ children }: { children: ReactNode }) {
@@ -311,26 +313,31 @@ const unansweredCallTimerRef = useRef<number | null>(null);
   });
 
   // ─── Legacy P2P engine ─────────────────────────────────────────────────────
-  // Legacy P2P runtime is intentionally disabled to keep a single SFU production path.
-  const legacyEngineActive = false;
+  const legacyEngineActive = TURN_ONLY_LEGACY_MODE;
   const setLegacyEngineActive = (_value: boolean): void => {};
-  const legacyStatus: VideoCallStatus = "idle";
-  const legacyCurrentCall: VideoCall | null = null;
-  const legacyLocalStream: MediaStream | null = null;
-  const legacyRemoteStream: MediaStream | null = null;
-  const legacyIsMuted = false;
-  const legacyIsVideoOff = false;
-  const legacyConnectionState = "new";
-  const legacyStartVideoCall = async (
-    _calleeId: string,
-    _conversationId: string | null,
-    _callType: "video" | "audio",
-  ): Promise<VideoCall | null> => null;
-  const legacyAnswerVideoCall = async (_call: VideoCall): Promise<void> => {};
-  const legacyEndVideoCall = async (_reason?: string): Promise<void> => {};
-  const legacyToggleMute = (): void => {};
-  const legacyToggleVideo = (): void => {};
-  const legacyRetryWithFreshCredentials = async (): Promise<void> => {};
+  const {
+    status: legacyStatus,
+    currentCall: legacyCurrentCall,
+    localStream: legacyLocalStream,
+    remoteStream: legacyRemoteStream,
+    isMuted: legacyIsMuted,
+    isVideoOff: legacyIsVideoOff,
+    connectionState: legacyConnectionState,
+    startCall: legacyStartVideoCall,
+    answerCall: legacyAnswerVideoCall,
+    endCall: legacyEndVideoCall,
+    toggleMute: legacyToggleMute,
+    toggleVideo: legacyToggleVideo,
+    retryWithFreshCredentials: legacyRetryWithFreshCredentials,
+  } = useVideoCall({
+    onCallEnded: () => {
+      setPendingIncomingCall(null);
+      setPendingCalleeProfile(null);
+      setIsCallUiActive(false);
+      dispatchFsm("CLEANUP_DONE");
+      dispatchFsm("RESET");
+    },
+  });
   // ──────────────────────────────────────────────────────────────────────────
 
   const closeCallsV2 = useCallback(() => {
@@ -622,6 +629,7 @@ const unansweredCallTimerRef = useRef<number | null>(null);
     producerPeerKeyRef,
     peerUserIdByDeviceIdRef,
     pendingProducersToConsumeRef,
+    consumePendingProducersRef,
     handleE2eePipeBreakRef,
     producerAddedUnsubRef,
     isCallStillActiveForBootstrap: (callId) => activeCallsV2BootstrapCallIdRef.current === callId,
@@ -710,11 +718,30 @@ dispatchFsm,
       const payload = frame.payload as ConsumerAddedPayload | undefined;
       if (!payload?.consumer) return;
       const c = payload.consumer;
-      if (c.consumerDeviceId !== getStableCallsDeviceId()) return;
-      const roomId = callsWsMediaRoomRef.current;
-      if (!roomId || payload.roomId !== roomId) return;
+      const stableDeviceId = getStableCallsDeviceId();
+      if (c.consumerDeviceId !== stableDeviceId) {
+        logger.debug("[VideoCallContext] CONSUMER_ADDED ignored: consumerDeviceId mismatch", {
+          consumerId: c.consumerId,
+          producerId: c.producerId,
+          consumerDeviceId: c.consumerDeviceId,
+          stableDeviceId,
+        });
+        return;
+      }
+      const bootstrapRoomId = callsWsRoomRef.current;
+      const roomId = callsWsMediaRoomRef.current ?? bootstrapRoomId;
+      if (!roomId || payload.roomId !== roomId) {
+        logger.debug("[VideoCallContext] CONSUMER_ADDED ignored: room mismatch", {
+          consumerId: c.consumerId,
+          producerId: c.producerId,
+          payloadRoomId: payload.roomId,
+          mediaRoomId: callsWsMediaRoomRef.current,
+          bootstrapRoomId,
+        });
+        return;
+      }
 
-      const localDeviceId = getStableCallsDeviceId();
+      const localDeviceId = stableDeviceId;
       const isOwnProducer =
         c.ownerUserId === user?.id && c.ownerDeviceId === localDeviceId;
       const localProducerIds = localProducerIdsRef.current;
@@ -1014,15 +1041,17 @@ dispatchFsm,
       unansweredCallTimerRef.current = null;
     }
 
-    const configIssue = getCallsConfigIssue();
-    if (configIssue) {
-      logger.error("[VideoCallContext] answerCall blocked by config:", configIssue);
-      toast.error("Звонок недоступен", {
-        description: getCallsConfigToastDescription(configIssue),
-        duration: 6000,
-      });
-      answerCallInFlightRef.current = false;
-      return;
+    if (!legacyEngineActive) {
+      const configIssue = getCallsConfigIssue();
+      if (configIssue) {
+        logger.error("[VideoCallContext] answerCall blocked by config:", configIssue);
+        toast.error("Звонок недоступен", {
+          description: getCallsConfigToastDescription(configIssue),
+          duration: 6000,
+        });
+        answerCallInFlightRef.current = false;
+        return;
+      }
     }
 
     logger.info("[VideoCallContext] answerCall: Activating UI-lock BEFORE getUserMedia");
@@ -1037,6 +1066,12 @@ dispatchFsm,
     }
 
     try {
+      if (legacyEngineActive) {
+        await legacyAnswerVideoCall(call);
+        dispatchFsm("CALLEE_ACCEPT");
+        return;
+      }
+
       await answerVideoCall(call);
       activeCallsV2BootstrapCallIdRef.current = call.id;
       dispatchFsm("CALLEE_ACCEPT");
@@ -1240,15 +1275,17 @@ dispatchFsm,
     }
     startCallInFlightRef.current = true;
 
-    const configIssue = getCallsConfigIssue();
-    if (configIssue) {
-      logger.error("[VideoCallContext] startCall blocked by config:", configIssue);
-      toast.error("Не удалось начать звонок", {
-        description: getCallsConfigToastDescription(configIssue),
-        duration: 6000,
-      });
-      startCallInFlightRef.current = false;
-      return null;
+    if (!legacyEngineActive) {
+      const configIssue = getCallsConfigIssue();
+      if (configIssue) {
+        logger.error("[VideoCallContext] startCall blocked by config:", configIssue);
+        toast.error("Не удалось начать звонок", {
+          description: getCallsConfigToastDescription(configIssue),
+          duration: 6000,
+        });
+        startCallInFlightRef.current = false;
+        return null;
+      }
     }
 
     logger.info("[VideoCallContext] startCall: Activating UI-lock BEFORE startVideoCall");
@@ -1256,6 +1293,22 @@ dispatchFsm,
     setIsCallUiActive(true); // Activate UI-lock BEFORE getUserMedia (happens inside startVideoCall)
 
     try {
+      if (legacyEngineActive) {
+        const result = await legacyStartVideoCall(calleeId, conversationId, callType);
+        if (result) {
+          dispatchFsm("CALLER_INITIATE");
+          return result;
+        }
+
+        setPendingCalleeProfile(null);
+        setIsCallUiActive(false);
+        toast.error("Не удалось начать звонок", {
+          description: "Проверьте сеть и попробуйте снова",
+          duration: 5000,
+        });
+        return null;
+      }
+
       const result = await startVideoCall(calleeId, conversationId, callType);
       if (result) dispatchFsm("CALLER_INITIATE");
       if (!result) {
@@ -1284,16 +1337,6 @@ dispatchFsm,
         }
       }, 60_000);
 
-      // B: deliver call.invite via WS relay so caller doesn't need DB polling
-      const ws = callsWsRef.current ?? await ensureCallsV2Connected();
-      if (ws) {
-        void ws.callInvite({
-          to: calleeId,
-          callId: result.id,
-          callType,
-          conversationId: conversationId ?? undefined,
-        }).catch((e) => logger.warn("[VideoCallContext] callInvite WS send failed", e));
-      }
       dispatchFsm("BOOTSTRAP_START");
       const roomBootstrapOk = await bootstrapCallsV2RoomWithRetry(result, "caller");
       if (roomBootstrapOk && callStateRef.current === "bootstrapping") dispatchFsm("BOOTSTRAP_OK");
@@ -1321,6 +1364,21 @@ dispatchFsm,
         });
         return null;
       }
+
+      // Deliver call.invite only after caller has room hints.
+      // This prevents callee-side incoming calls with missing calls_v2_room_id/join token.
+      const ws = callsWsRef.current ?? await ensureCallsV2Connected();
+      if (ws) {
+        void ws.callInvite({
+          to: calleeId,
+          callId: result.id,
+          callType,
+          conversationId: conversationId ?? undefined,
+          callsV2RoomId: (result as VideoCall & { calls_v2_room_id?: string | null }).calls_v2_room_id ?? null,
+          callsV2JoinToken: (result as VideoCall & { calls_v2_join_token?: string | null }).calls_v2_join_token ?? null,
+        }).catch((e) => logger.warn("[VideoCallContext] callInvite WS send failed", e));
+      }
+
       return result;
     } catch (err) {
       dispatchFsm("ERROR");

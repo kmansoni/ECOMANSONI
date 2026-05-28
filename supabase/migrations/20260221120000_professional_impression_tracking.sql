@@ -12,19 +12,15 @@
 CREATE UNIQUE INDEX IF NOT EXISTS ux_reel_impressions_request_dedupe
   ON public.reel_impressions(request_id, user_id, reel_id)
   WHERE request_id IS NOT NULL AND user_id IS NOT NULL;
-
 CREATE UNIQUE INDEX IF NOT EXISTS ux_reel_impressions_request_dedupe_anon
   ON public.reel_impressions(request_id, session_id, reel_id)
   WHERE request_id IS NOT NULL AND user_id IS NULL AND session_id IS NOT NULL;
-
 -- Индекс для частотной капитализации (freq-cap)
 CREATE INDEX IF NOT EXISTS idx_reel_impressions_user_reel_time
   ON public.reel_impressions(user_id, reel_id, created_at DESC)
   WHERE user_id IS NOT NULL;
-
 COMMENT ON INDEX ux_reel_impressions_request_dedupe IS 
   'Предотвращает дубли impression в одном batch (request_id). Для refetch - новый request_id.';
-
 -- ============================================================================
 -- 2. IDEMPOTENT IMPRESSION RECORDING (conflict-safe)
 -- ============================================================================
@@ -102,13 +98,10 @@ BEGIN
   END IF;
 END;
 $$;
-
 GRANT EXECUTE ON FUNCTION public.record_reel_impression_v2(UUID, TEXT, UUID, INTEGER, TEXT, TEXT, NUMERIC) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.record_reel_impression_v2(UUID, TEXT, UUID, INTEGER, TEXT, TEXT, NUMERIC) TO anon;
-
 COMMENT ON FUNCTION public.record_reel_impression_v2 IS 
   'Idempotent impression tracking. ON CONFLICT DO NOTHING предотвращает дубли при refetch/retry.';
-
 -- ============================================================================
 -- 3. PROGRESSIVE DISCLOSURE LAYER 1: "VIEWED" (started watching >2sec)
 -- ============================================================================
@@ -155,13 +148,10 @@ BEGIN
   END IF;
 END;
 $$;
-
 GRANT EXECUTE ON FUNCTION public.record_reel_viewed(UUID, TEXT) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.record_reel_viewed(UUID, TEXT) TO anon;
-
 COMMENT ON FUNCTION public.record_reel_viewed IS 
   'Progressive Layer 1: Пользователь начал смотреть (viewed >2 sec). Upsert в user_reel_interactions.';
-
 -- ============================================================================
 -- 4. PROGRESSIVE DISCLOSURE LAYER 2: "WATCHED" (completion >50%)
 -- ============================================================================
@@ -250,13 +240,10 @@ BEGIN
   END IF;
 END;
 $$;
-
 GRANT EXECUTE ON FUNCTION public.record_reel_watched(UUID, INTEGER, INTEGER, TEXT) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.record_reel_watched(UUID, INTEGER, INTEGER, TEXT) TO anon;
-
 COMMENT ON FUNCTION public.record_reel_watched IS 
   'Progressive Layer 2: Пользователь досмотрел >50% (watched). Обновляет completion_rate, rewatch_count.';
-
 -- ============================================================================
 -- 5. UPDATE INTERACTION: SHORT SKIP (negative signal)
 -- ============================================================================
@@ -310,13 +297,10 @@ BEGIN
   END IF;
 END;
 $$;
-
 GRANT EXECUTE ON FUNCTION public.record_reel_skip(UUID, INTEGER, INTEGER, TEXT) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.record_reel_skip(UUID, INTEGER, INTEGER, TEXT) TO anon;
-
 COMMENT ON FUNCTION public.record_reel_skip IS 
   'Negative signal: Пользователь скипнул reel (особенно <2 sec = quick skip). Влияет на персонализацию.';
-
 -- ============================================================================
 -- 6. МОДИФИКАЦИЯ get_reels_feed_v2: генерация request_id + return metadata
 -- ============================================================================
@@ -510,13 +494,10 @@ BEGIN
   ORDER BY tsr.final_score DESC;
 END;
 $$;
-
 GRANT EXECUTE ON FUNCTION public.get_reels_feed_v2(INTEGER, INTEGER, TEXT) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.get_reels_feed_v2(INTEGER, INTEGER, TEXT) TO anon;
-
 COMMENT ON FUNCTION public.get_reels_feed_v2(INTEGER, INTEGER, TEXT) IS 
   'UPGRADED: Генерирует request_id для batch correlation + возвращает algorithm_version, final_score, feed_position.';
-
 -- ============================================================================
 -- 7. HELPER: Batch impression insert (опционально, для client bulk insert)
 -- ============================================================================
@@ -548,13 +529,10 @@ BEGIN
   END LOOP;
 END;
 $$;
-
 GRANT EXECUTE ON FUNCTION public.record_reel_impressions_batch(JSONB) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.record_reel_impressions_batch(JSONB) TO anon;
-
 COMMENT ON FUNCTION public.record_reel_impressions_batch IS 
   'OPTIONAL: Batch insert для оптимизации сети. Клиент может отправить массив impressions одним вызовом.';
-
 -- ============================================================================
 -- MIGRATION COMPLETE
 -- Теперь фронтенд может:
@@ -563,4 +541,4 @@ COMMENT ON FUNCTION public.record_reel_impressions_batch IS
 -- 3. Вызывать record_reel_impression_v2 (idempotent, безопасно для retry)
 -- 4. Прогрессивно отправлять: viewed (>2s), watched (>50%), skip (negative)
 -- 5. Batch insert через record_reel_impressions_batch (опционально)
--- ============================================================================
+-- ============================================================================;

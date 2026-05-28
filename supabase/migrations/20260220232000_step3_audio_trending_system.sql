@@ -1,4 +1,3 @@
--- ALLOW_NON_IDEMPOTENT_POLICY_DDL: legacy migration already applied to production; non-idempotent policies are intentional here.
 -- ============================================================================
 -- ЭТАП 3: AUDIO TRENDING + DISCOVERY (Supabase-first)
 -- Цели:
@@ -9,7 +8,6 @@
 -- ============================================================================
 
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
-
 -- ============================================================================
 -- 1) Audio tracks catalog
 -- ============================================================================
@@ -39,16 +37,12 @@ CREATE TABLE IF NOT EXISTS public.audio_tracks (
 
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
-
 CREATE INDEX IF NOT EXISTS idx_audio_tracks_trending
   ON public.audio_tracks(is_trending, velocity_score DESC)
   WHERE is_trending = true;
-
 CREATE INDEX IF NOT EXISTS idx_audio_tracks_usage
   ON public.audio_tracks(usage_count DESC);
-
 COMMENT ON TABLE public.audio_tracks IS 'Нормализованный слой аудио/звуков для рекомендаций и трендов';
-
 -- ============================================================================
 -- 2) Link reels -> audio_track (1 reel = 0..1 audio)
 -- ============================================================================
@@ -57,12 +51,9 @@ CREATE TABLE IF NOT EXISTS public.reel_audio_tracks (
   audio_track_id UUID NOT NULL REFERENCES public.audio_tracks(id) ON DELETE RESTRICT,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
-
 CREATE INDEX IF NOT EXISTS idx_reel_audio_tracks_track
   ON public.reel_audio_tracks(audio_track_id, created_at DESC);
-
 COMMENT ON TABLE public.reel_audio_tracks IS 'Связь Reel -> audio_track (для trending audio и boosts)';
-
 -- ============================================================================
 -- 3) Normalize function for music_title
 -- ============================================================================
@@ -82,9 +73,7 @@ BEGIN
   RETURN v;
 END;
 $$;
-
 COMMENT ON FUNCTION public.normalize_audio_key IS 'Нормализация music_title в ключ аудио (lower + trim + collapse spaces)';
-
 -- ============================================================================
 -- 4) Upsert audio track + link reel
 -- ============================================================================
@@ -152,9 +141,7 @@ BEGIN
     audio_track_id = EXCLUDED.audio_track_id;
 END;
 $$;
-
 COMMENT ON FUNCTION public.upsert_reel_audio_link IS 'Создаёт/обновляет связь Reel->audio_track и counters';
-
 -- Auto-link trigger from reels.music_title
 CREATE OR REPLACE FUNCTION public.auto_link_reel_audio_from_reels()
 RETURNS TRIGGER
@@ -167,13 +154,11 @@ BEGIN
   RETURN NEW;
 END;
 $$;
-
 DROP TRIGGER IF EXISTS trg_auto_link_reel_audio ON public.reels;
 CREATE TRIGGER trg_auto_link_reel_audio
 AFTER INSERT OR UPDATE OF music_title ON public.reels
 FOR EACH ROW
 EXECUTE FUNCTION public.auto_link_reel_audio_from_reels();
-
 -- ============================================================================
 -- 5) Trending calculation for audios (cron)
 -- ============================================================================
@@ -277,9 +262,7 @@ BEGIN
   WHERE at.id = scored.audio_track_id;
 END;
 $$;
-
 COMMENT ON FUNCTION public.calculate_audio_trending IS 'Пересчёт трендов аудио. Запускать по cron (каждый час) через Supabase scheduled jobs.';
-
 -- ============================================================================
 -- 6) RPC: trending audios for UI
 -- ============================================================================
@@ -316,7 +299,6 @@ BEGIN
   LIMIT p_limit;
 END;
 $$;
-
 -- ============================================================================
 -- 7) Boost score for reel based on trending audio
 -- ============================================================================
@@ -353,13 +335,11 @@ BEGIN
   RETURN LEAST(v_score, 200.0);
 END;
 $$;
-
 -- ============================================================================
 -- 8) RLS + permissions
 -- ============================================================================
 ALTER TABLE public.audio_tracks ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.reel_audio_tracks ENABLE ROW LEVEL SECURITY;
-
 DO $$
 BEGIN
   BEGIN
@@ -378,18 +358,13 @@ BEGIN
   EXCEPTION WHEN duplicate_object THEN NULL;
   END;
 END $$;
-
 GRANT SELECT ON public.audio_tracks TO authenticated, anon;
 GRANT SELECT ON public.reel_audio_tracks TO authenticated, anon;
-
 REVOKE ALL ON FUNCTION public.get_trending_audio_tracks FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.get_trending_audio_tracks TO authenticated, anon;
-
 REVOKE ALL ON FUNCTION public.get_audio_boost_score FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.get_audio_boost_score TO authenticated, anon;
-
 -- cron functions: only service_role
 REVOKE ALL ON FUNCTION public.calculate_audio_trending FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.calculate_audio_trending TO service_role;
-
 COMMENT ON SCHEMA public IS 'Reels audio discovery: audio_tracks + reel_audio_tracks + trending calculation + boosts';

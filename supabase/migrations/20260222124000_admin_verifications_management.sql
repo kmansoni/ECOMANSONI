@@ -8,7 +8,6 @@ ALTER TABLE public.user_verifications
   ADD COLUMN IF NOT EXISTS revoked_at TIMESTAMPTZ,
   ADD COLUMN IF NOT EXISTS revoked_by_admin_id UUID REFERENCES public.admin_users(id) ON DELETE SET NULL,
   ADD COLUMN IF NOT EXISTS ticket_id TEXT;
-
 -- 2) Allow multiple verification types per user (one row per type)
 DO $$
 BEGIN
@@ -23,7 +22,6 @@ BEGIN
   END IF;
 END
 $$;
-
 DO $$
 BEGIN
   IF NOT EXISTS (
@@ -38,16 +36,12 @@ BEGIN
   END IF;
 END
 $$;
-
 CREATE INDEX IF NOT EXISTS idx_user_verifications_active
   ON public.user_verifications(user_id, is_active, verification_type);
-
 CREATE INDEX IF NOT EXISTS idx_user_verifications_verified_by_admin
   ON public.user_verifications(verified_by_admin_id, verified_at DESC);
-
 CREATE INDEX IF NOT EXISTS idx_user_verifications_revoked_by_admin
   ON public.user_verifications(revoked_by_admin_id, revoked_at DESC);
-
 -- 3) Permissions/scopes for admin-api
 INSERT INTO public.admin_permissions (scope, resource, action, description, risk_level, is_system)
 VALUES
@@ -55,7 +49,6 @@ VALUES
   ('verification.grant', 'verification', 'grant', 'Grant verification badge to user', 'high', true),
   ('verification.revoke', 'verification', 'revoke', 'Revoke verification badge from user', 'high', true)
 ON CONFLICT (scope) DO NOTHING;
-
 WITH roles AS (
   SELECT id, name FROM public.admin_roles WHERE name IN ('owner', 'security_admin', 'readonly_auditor')
 ), perms AS (

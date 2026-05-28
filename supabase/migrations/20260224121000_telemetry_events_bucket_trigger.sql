@@ -14,7 +14,6 @@ begin
   return new;
 end;
 $$;
-
 drop trigger if exists trg_telemetry_events_set_bucket_date_v1 on public.telemetry_events;
 create trigger trg_telemetry_events_set_bucket_date_v1
 before insert on public.telemetry_events

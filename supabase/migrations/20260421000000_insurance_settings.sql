@@ -13,14 +13,11 @@ CREATE TABLE IF NOT EXISTS public.insurance_settings (
   created_at timestamptz DEFAULT now(),
   updated_at timestamptz DEFAULT now()
 );
-
 -- Индекс для быстрого поиска по ключу
 CREATE UNIQUE INDEX IF NOT EXISTS idx_insurance_settings_key 
   ON public.insurance_settings (key);
-
 -- RLS: только админы могут читать и писать
 ALTER TABLE public.insurance_settings ENABLE ROW LEVEL SECURITY;
-
 -- Политика для чтения (админы с соответствующей ролью)
 DO $$ BEGIN
   CREATE POLICY "insurance_settings_read" ON public.insurance_settings
@@ -39,7 +36,6 @@ DO $$ BEGIN
       )
     );
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
-
 -- Политика для записи (только owner)
 DO $$ BEGIN
   CREATE POLICY "insurance_settings_write" ON public.insurance_settings
@@ -58,7 +54,6 @@ DO $$ BEGIN
       )
     );
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
-
 -- Триггер для обновления updated_at
 CREATE OR REPLACE FUNCTION public.trg_insurance_settings_updated_at()
 RETURNS trigger LANGUAGE plpgsql AS $$
@@ -67,12 +62,10 @@ BEGIN
   RETURN NEW;
 END;
 $$;
-
 DROP TRIGGER IF EXISTS insurance_settings_updated_at ON public.insurance_settings;
 CREATE TRIGGER insurance_settings_updated_at
   BEFORE UPDATE ON public.insurance_settings
   FOR EACH ROW EXECUTE FUNCTION public.trg_insurance_settings_updated_at();
-
 -- Начальные настройки для СК Согласие (Е-ОСАГО)
 INSERT INTO public.insurance_settings (key, value, description, is_active)
 VALUES 
@@ -81,5 +74,4 @@ VALUES
    'Настройки API СК Согласие (Е-ОСАГО)', 
    true)
 ON CONFLICT (key) DO NOTHING;
-
--- Готово
+-- Готово;

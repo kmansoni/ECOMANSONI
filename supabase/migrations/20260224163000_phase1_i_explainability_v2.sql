@@ -54,18 +54,13 @@ CREATE TABLE IF NOT EXISTS public.ranking_explanations (
   -- Lifecycle
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
-
 CREATE INDEX IF NOT EXISTS ranking_explanations_request_idx
   ON public.ranking_explanations(request_id, position ASC);
-
 CREATE INDEX IF NOT EXISTS ranking_explanations_user_created_idx
   ON public.ranking_explanations(user_id, created_at DESC);
-
 CREATE INDEX IF NOT EXISTS ranking_explanations_reel_created_idx
   ON public.ranking_explanations(reel_id, created_at DESC);
-
 ALTER TABLE public.ranking_explanations ENABLE ROW LEVEL SECURITY;
-
 -- Service role for writing
 DROP POLICY IF EXISTS "ranking_explanations_service_role_all" ON public.ranking_explanations;
 CREATE POLICY "ranking_explanations_service_role_all"
@@ -73,14 +68,12 @@ CREATE POLICY "ranking_explanations_service_role_all"
   FOR ALL TO service_role
   USING (TRUE)
   WITH CHECK (TRUE);
-
 -- Users can read their own explanations
 DROP POLICY IF EXISTS "ranking_explanations_select_own" ON public.ranking_explanations;
 CREATE POLICY "ranking_explanations_select_own"
   ON public.ranking_explanations
   FOR SELECT TO authenticated
   USING (auth.uid() = user_id);
-
 -- 2) RPC: Record Ranking Explanation
 CREATE OR REPLACE FUNCTION public.record_ranking_explanation_v1(
   p_user_id UUID,
@@ -133,10 +126,8 @@ BEGIN
   RETURN v_explanation_id;
 END;
 $$;
-
 COMMENT ON FUNCTION record_ranking_explanation_v1 IS
   'Phase 1 EPIC I: Record detailed ranking explanation for transparency and debugging';
-
 -- 3) RPC: Get Explanation for Item
 CREATE OR REPLACE FUNCTION public.get_ranking_explanation_v1(p_request_id UUID, p_reel_id UUID)
 RETURNS TABLE (
@@ -178,10 +169,8 @@ BEGIN
   LIMIT 1;
 END;
 $$;
-
 COMMENT ON FUNCTION get_ranking_explanation_v1 IS
   'Phase 1 EPIC I: Get detailed explanation for why an item was ranked/shown';
-
 -- 4) RPC: Get Feed Explanation Summary
 CREATE OR REPLACE FUNCTION public.get_feed_explanation_summary_v1(p_request_id UUID)
 RETURNS TABLE (
@@ -221,10 +210,8 @@ BEGIN
   GROUP BY request_id;
 END;
 $$;
-
 COMMENT ON FUNCTION get_feed_explanation_summary_v1 IS
   'Phase 1 EPIC I: Get summary of feed composition and applied interventions';
-
 -- 5) View: Reason Code Leaderboard (for debugging/QA)
 CREATE OR REPLACE VIEW public.reason_code_stats_v1 AS
 SELECT 
@@ -237,19 +224,15 @@ FROM public.ranking_explanations re,
 WHERE re.created_at > NOW() - INTERVAL '7 days'
 GROUP BY boost->>'name'
 ORDER BY usage_count DESC;
-
 COMMENT ON VIEW reason_code_stats_v1 IS
   'Phase 1 EPIC I: Leaderboard of most common ranking boost signals';
-
 -- Grant permissions
 REVOKE ALL ON FUNCTION record_ranking_explanation_v1(UUID, TEXT, UUID, UUID, INTEGER, TEXT, NUMERIC, NUMERIC, JSONB, JSONB, JSONB, BOOLEAN, TEXT, BOOLEAN, NUMERIC, NUMERIC, TEXT, UUID) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON FUNCTION get_ranking_explanation_v1(UUID, UUID) FROM PUBLIC, anon;
 REVOKE ALL ON FUNCTION get_feed_explanation_summary_v1(UUID) FROM PUBLIC, anon;
-
 GRANT EXECUTE ON FUNCTION record_ranking_explanation_v1(UUID, TEXT, UUID, UUID, INTEGER, TEXT, NUMERIC, NUMERIC, JSONB, JSONB, JSONB, BOOLEAN, TEXT, BOOLEAN, NUMERIC, NUMERIC, TEXT, UUID) TO service_role;
 GRANT EXECUTE ON FUNCTION get_ranking_explanation_v1(UUID, UUID) TO service_role, authenticated;
 GRANT EXECUTE ON FUNCTION get_feed_explanation_summary_v1(UUID) TO service_role, authenticated;
-
 -- 6) Cleanup old explanations (retention: 30 days)
 CREATE OR REPLACE FUNCTION public.cleanup_ranking_explanations_v1(p_retention_days INTEGER DEFAULT 30)
 RETURNS INTEGER
@@ -267,9 +250,7 @@ BEGIN
   RETURN v_deleted;
 END;
 $$;
-
 REVOKE ALL ON FUNCTION cleanup_ranking_explanations_v1(INTEGER) FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION cleanup_ranking_explanations_v1(INTEGER) TO service_role;
-
 COMMENT ON FUNCTION cleanup_ranking_explanations_v1 IS
   'Phase 1 EPIC I: Cleanup old ranking explanations (default 30 days retention)';

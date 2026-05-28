@@ -92,9 +92,7 @@ BEGIN
   RETURN conv_id;
 END;
 $$;
-
 REVOKE ALL ON FUNCTION public.get_or_create_dm(UUID) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.get_or_create_dm(UUID) TO authenticated;
-
 COMMENT ON FUNCTION public.get_or_create_dm(UUID)
   IS 'REQ-0137: Create or get DM conversation between auth.uid() and target. Enforces blocked_users policy server-side. Idempotent via advisory lock + dm_pairs PK.';

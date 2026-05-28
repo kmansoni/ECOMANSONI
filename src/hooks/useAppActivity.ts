@@ -23,13 +23,9 @@ function getModuleId(pathname: string) {
   if (pathname === "/") return "messenger";
   if (pathname.startsWith("/reels")) return "reels";
   if (pathname.startsWith("/settings")) return "settings";
-  if (pathname.startsWith("/shop") || pathname.startsWith("/checkout")) return "marketplace";
   if (pathname.startsWith("/live")) return "streaming";
   if (pathname.startsWith("/people") || pathname.startsWith("/dating")) return "dating";
   if (pathname.startsWith("/crm")) return "crm";
-  if (pathname.startsWith("/insurance")) return "insurance";
-  if (pathname.startsWith("/taxi")) return "taxi";
-  if (pathname.startsWith("/realestate")) return "real-estate";
   if (pathname.startsWith("/chats") || pathname.startsWith("/chat")) return "messenger";
 
   const [segment] = pathname.split("/").filter(Boolean);

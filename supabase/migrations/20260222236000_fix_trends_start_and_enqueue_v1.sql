@@ -67,10 +67,7 @@ BEGIN
   RETURN QUERY SELECT v_job_id, v_status, TRUE;
 END;
 $$;
-
 GRANT EXECUTE ON FUNCTION public.enqueue_decision_job_v1 TO service_role;
-
-
 CREATE OR REPLACE FUNCTION public.start_trend_run_v1(
   p_segment_id TEXT DEFAULT 'seg_default',
   p_window TEXT DEFAULT '24h',
@@ -223,6 +220,5 @@ BEGIN
     v_run.notes;
 END;
 $$;
-
 REVOKE ALL ON FUNCTION public.start_trend_run_v1(TEXT, TEXT, INT, TEXT, TEXT) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.start_trend_run_v1(TEXT, TEXT, INT, TEXT, TEXT) TO service_role;

@@ -61,6 +61,22 @@ interface UseCallsV2BootstrapParams {
   onDecryptionKeyReady?: (peerKey: string) => void;
 }
 
+const CALLS_V2_PREFERRED_REGION = String(import.meta.env.VITE_CALLS_V2_PREFERRED_REGION ?? "ru")
+  .trim()
+  .toLowerCase();
+
+function prioritizeEndpointsByRegion(endpoints: string[], region: string): string[] {
+  if (!region) return endpoints;
+
+  const regionToken = `sfu-${region.toLowerCase()}.`;
+  const preferred = endpoints.filter((endpoint) => endpoint.toLowerCase().includes(regionToken));
+  if (preferred.length === 0) return endpoints;
+
+  const preferredSet = new Set(preferred);
+  const rest = endpoints.filter((endpoint) => !preferredSet.has(endpoint));
+  return [...preferred, ...rest];
+}
+
 export function useCallsV2Bootstrap({
   user,
   fetchTurnIceServers,
@@ -111,6 +127,8 @@ export function useCallsV2Bootstrap({
     epochGuardRef,
     producerPeerKeyRef,
     peerUserIdByDeviceIdRef,
+    sfuManagerRef,
+    sfuRouterRtpCapabilitiesRef,
     pendingProducersToConsumeRef,
     consumePendingProducersRef,
     handleE2eePipeBreakRef,
@@ -162,16 +180,18 @@ export function useCallsV2Bootstrap({
       callsWsRef.current = null;
     }
 
-    const endpoints = CALLS_V2_ENDPOINTS;
+    const endpoints = prioritizeEndpointsByRegion(CALLS_V2_ENDPOINTS, CALLS_V2_PREFERRED_REGION);
 
     await fetchTurnIceServers();
 
-    const requireWss = true;
+    const requireWss = typeof window !== "undefined" ? window.location.protocol === "https:" : true;
     logger.info("[VideoCallContext] calls-v2 connect:start", {
       endpointCount: endpoints.length,
       firstEndpoint: endpoints[0],
+      preferredRegion: CALLS_V2_PREFERRED_REGION,
       requireWss,
     });
+    logger.info(`[VideoCallContext] calls-v2 first-endpoint=${endpoints[0] ?? "none"}`);
     const client = new CallsWsClient({
       url: endpoints[0],
       urls: endpoints,
@@ -222,17 +242,24 @@ export function useCallsV2Bootstrap({
       if (REQUIRE_SFRAME && !hasInsertableStreams) {
         throw new Error("calls_v2_e2ee_media_unsupported: Insertable Streams required for SFrame");
       }
-      if (FRAME_E2EE_ADVERTISE_SFRAME || REQUIRE_SFRAME) {
-        await client.e2eeCaps({
-          insertableStreams: hasInsertableStreams,
-          sframe: hasInsertableStreams,
-          doubleRatchet: true,
-          supportedCipherSuites: ["DOUBLE_RATCHET_P256_AES128GCM"],
-        });
-        logger.info("[VideoCallContext] calls-v2 e2ee_caps:ok");
+      // Some SFU deployments require E2EE_CAPS before ROOM_JOIN even in dev-mode.
+      // Advertise runtime capabilities unconditionally to keep bootstrap protocol-compatible.
+      await client.e2eeCaps({
+        insertableStreams: hasInsertableStreams,
+        sframe: hasInsertableStreams,
+        doubleRatchet: true,
+        supportedCipherSuites: ["DOUBLE_RATCHET_P256_AES128GCM"],
+      });
+      logger.info("[VideoCallContext] calls-v2 e2ee_caps:ok", {
+        hasInsertableStreams,
+        frameE2eeAdvertiseSframe: FRAME_E2EE_ADVERTISE_SFRAME,
+        requireSframe: REQUIRE_SFRAME,
+      });
+
+      if (hasInsertableStreams) {
         await initializeCallsV2E2ee(client);
       } else {
-        logger.info("[VideoCallContext] calls-v2 e2ee disabled (FRAME_E2EE_ADVERTISE_SFRAME=false, REQUIRE_SFRAME=false)");
+        logger.warn("[VideoCallContext] calls-v2 e2ee runtime unavailable: Insertable Streams not supported");
       }
 
       client.on("call.invite", (frame) => {
@@ -322,75 +349,88 @@ export function useCallsV2Bootstrap({
       try {
         let roomId: string;
         let joinToken: string | undefined;
+        const hintedRoomId = (call as VideoCall & { room_id?: string; calls_v2_room_id?: string }).calls_v2_room_id
+          ?? (call as VideoCall & { room_id?: string }).room_id;
+        const hintedJoinToken = (call as VideoCall & { join_token?: string; calls_v2_join_token?: string }).calls_v2_join_token
+          ?? (call as VideoCall & { join_token?: string }).join_token;
 
         if (role === "caller") {
-          const allowedUserIds = [call.caller_id, call.callee_id].filter(
-            (value, index, array): value is string => typeof value === "string" && value.length > 0 && array.indexOf(value) === index,
-          );
-
-          await client.roomCreate({
-            callId,
-            preferredRegion: "tr",
-            allowedUserIds,
-          });
-          logger.info("[VideoCallContext] calls-v2 room-create:sent", { callId });
-
-          const createdFrame = await client.waitFor(
-            "ROOM_CREATED",
-            (frame) => {
-              const payload = frame.payload as { roomId?: string } | undefined;
-              return typeof payload?.roomId === "string" && payload.roomId.length > 0;
-            },
-            { timeoutMs: 5000, acceptRecent: true }
-          );
-          if (isStale()) {
-            logger.info("[VideoCallContext] calls-v2 caller room ignored: stale call", { callId });
-            return false;
-          }
-          roomId = (createdFrame.payload as { roomId?: string } | undefined)?.roomId as string;
-          logger.info("[VideoCallContext] calls-v2 room-created:ok", { callId, roomId });
-
-          try {
-            const secretFrame = await client.waitFor(
-              "ROOM_JOIN_SECRET",
-              (frame) => {
-                const payload = frame.payload as { roomId?: string; joinToken?: string } | undefined;
-                return payload?.roomId === roomId && typeof payload?.joinToken === "string" && payload.joinToken.length > 0;
-              },
-              { timeoutMs: 1200, acceptRecent: true }
-            );
-            joinToken = (secretFrame.payload as { joinToken?: string } | undefined)?.joinToken as string;
-            logger.info("[VideoCallContext] calls-v2 room-join-secret:ok", { roomId });
-          } catch (error) {
-            logger.warn("video_call_context.room_join_secret_wait_failed", { error, roomId });
-            joinToken = undefined;
-            logger.info("[VideoCallContext] calls-v2 room-join-secret:skip (sfu mode)", { roomId });
-          }
-
-          const { error: persistRoomError } = await supabase
-            .from("video_calls")
-            .update({
-              calls_v2_room_id: roomId,
-              calls_v2_join_token: joinToken ?? null,
-            })
-            .eq("id", callId);
-          if (isStale()) {
-            logger.info("[VideoCallContext] calls-v2 caller room persisted but not activated: stale call", { callId, roomId });
-            return false;
-          }
-          if (persistRoomError) {
-            logger.warn("[VideoCallContext] calls-v2 room hints persist failed", {
+          if (hintedRoomId) {
+            roomId = hintedRoomId;
+            joinToken = hintedJoinToken;
+            logger.info("[VideoCallContext] calls-v2 caller-room-hint reused", {
               callId,
               roomId,
-              error: persistRoomError.message,
+              hasJoinToken: !!joinToken,
             });
+          } else {
+            const allowedUserIds = [call.caller_id, call.callee_id].filter(
+              (value, index, array): value is string => typeof value === "string" && value.length > 0 && array.indexOf(value) === index,
+            );
+
+            await client.roomCreate({
+              callId,
+              preferredRegion: CALLS_V2_PREFERRED_REGION,
+              allowedUserIds,
+            });
+            logger.info("[VideoCallContext] calls-v2 room-create:sent", { callId });
+
+            const createdFrame = await client.waitFor(
+              "ROOM_CREATED",
+              (frame) => {
+                const payload = frame.payload as { roomId?: string } | undefined;
+                return typeof payload?.roomId === "string" && payload.roomId.length > 0;
+              },
+              { timeoutMs: 5000, acceptRecent: true }
+            );
+            if (isStale()) {
+              logger.info("[VideoCallContext] calls-v2 caller room ignored: stale call", { callId });
+              return false;
+            }
+            roomId = (createdFrame.payload as { roomId?: string } | undefined)?.roomId as string;
+            logger.info("[VideoCallContext] calls-v2 room-created:ok", { callId, roomId });
+
+            try {
+              const secretFrame = await client.waitFor(
+                "ROOM_JOIN_SECRET",
+                (frame) => {
+                  const payload = frame.payload as { roomId?: string; joinToken?: string } | undefined;
+                  return payload?.roomId === roomId && typeof payload?.joinToken === "string" && payload.joinToken.length > 0;
+                },
+                { timeoutMs: 1200, acceptRecent: true }
+              );
+              joinToken = (secretFrame.payload as { joinToken?: string } | undefined)?.joinToken as string;
+              logger.info("[VideoCallContext] calls-v2 room-join-secret:ok", { roomId });
+            } catch (error) {
+              logger.warn("video_call_context.room_join_secret_wait_failed", { error, roomId });
+              joinToken = undefined;
+              logger.info("[VideoCallContext] calls-v2 room-join-secret:skip (sfu mode)", { roomId });
+            }
+
+            const { error: persistRoomError } = await supabase
+              .from("video_calls")
+              .update({
+                calls_v2_room_id: roomId,
+                calls_v2_join_token: joinToken ?? null,
+              })
+              .eq("id", callId);
+            if (isStale()) {
+              logger.info("[VideoCallContext] calls-v2 caller room persisted but not activated: stale call", { callId, roomId });
+              return false;
+            }
+            if (persistRoomError) {
+              logger.warn("[VideoCallContext] calls-v2 room hints persist failed", {
+                callId,
+                roomId,
+                error: persistRoomError.message,
+              });
+            }
+
+            // Preserve room hints in memory so retry path does not re-create rooms.
+            (call as VideoCall & { calls_v2_room_id?: string | null; calls_v2_join_token?: string | null }).calls_v2_room_id = roomId;
+            (call as VideoCall & { calls_v2_room_id?: string | null; calls_v2_join_token?: string | null }).calls_v2_join_token = joinToken ?? null;
           }
         } else {
-          const hintedRoomId = (call as VideoCall & { room_id?: string; calls_v2_room_id?: string }).calls_v2_room_id
-            ?? (call as VideoCall & { room_id?: string }).room_id;
-          const hintedJoinToken = (call as VideoCall & { join_token?: string; calls_v2_join_token?: string }).calls_v2_join_token
-            ?? (call as VideoCall & { join_token?: string }).join_token;
-
           if (!hintedRoomId) {
             logger.warn("[VideoCallContext] calls-v2 callee bootstrap skipped: missing room/join token", {
               callId,
@@ -409,12 +449,34 @@ export function useCallsV2Bootstrap({
           });
         }
 
-        await client.roomJoin({
+        const roomJoinPayload = {
           roomId,
           joinToken,
           deviceId: getStableCallsDeviceId(),
-          preferredRegion: "tr",
-        });
+          preferredRegion: CALLS_V2_PREFERRED_REGION,
+        };
+
+        try {
+          await client.roomJoin(roomJoinPayload);
+        } catch (roomJoinError) {
+          // Some SFU deployments issue ROOM_JOIN_SECRET for callee only.
+          // Caller should still be able to join its own room without token.
+          if (role === "caller" && typeof joinToken === "string" && joinToken.length > 0) {
+            logger.warn("[VideoCallContext] calls-v2 caller room-join with token failed; retrying without joinToken", {
+              callId,
+              roomId,
+              error: roomJoinError instanceof Error ? roomJoinError.message : String(roomJoinError),
+            });
+
+            await client.roomJoin({
+              roomId,
+              deviceId: roomJoinPayload.deviceId,
+              preferredRegion: roomJoinPayload.preferredRegion,
+            });
+          } else {
+            throw roomJoinError;
+          }
+        }
         logger.info("[VideoCallContext] calls-v2 room-join:ok", { callId, roomId, role });
         const joinedFrame = await client.waitFor(
           "ROOM_JOIN_OK",
@@ -441,10 +503,11 @@ export function useCallsV2Bootstrap({
           sfuRouterRtpCapabilitiesRef.current = joinCaps;
           logger.info("[VideoCallContext] calls-v2 routerRtpCapabilities captured from ROOM_JOIN_OK", { roomId });
         } else {
-          logger.warn("[VideoCallContext] calls-v2 ROOM_JOIN_OK payload missing routerRtpCapabilities — will retry in media-bootstrap", {
-            roomId,
-            payloadKeys: joinedPayload ? Object.keys(joinedPayload) : [],
-          });
+          throw new Error(
+            `[calls-v2] FATAL protocol violation: ROOM_JOIN_OK missing routerRtpCapabilities (roomId=${roomId}, payloadKeys=${JSON.stringify(
+              joinedPayload ? Object.keys(joinedPayload) : []
+            )})`
+          );
         }
         const joinedTurn = (joinedPayload as Record<string, unknown> | undefined)?.turn as { iceServers?: RTCIceServer[] } | undefined;
         if (Array.isArray(joinedTurn?.iceServers) && joinedTurn.iceServers.length > 0 && !turnIceServersRef.current?.length) {
@@ -469,12 +532,31 @@ export function useCallsV2Bootstrap({
 
         producerAddedUnsubRef.current?.();
         producerAddedUnsubRef.current = client.on("PRODUCER_ADDED", (frame) => {
-          const payload = frame.payload as { roomId?: string; producerId?: string; peerDeviceId?: string } | undefined;
+          const payload = frame.payload as {
+            roomId?: string;
+            producerId?: string;
+            peerDeviceId?: string;
+            ownerUserId?: string;
+            ownerDeviceId?: string;
+            producer?: {
+              producerId?: string;
+              peerDeviceId?: string;
+              ownerUserId?: string;
+              ownerDeviceId?: string;
+            };
+          } | undefined;
           if (payload?.roomId !== roomId) return;
-          const producerId = payload?.producerId;
+
+          const producerPayload = payload?.producer;
+          const producerId = producerPayload?.producerId ?? payload?.producerId;
           if (!producerId) return;
 
-          const peerDeviceId = typeof payload.peerDeviceId === "string" ? payload.peerDeviceId : "";
+          const peerDeviceIdRaw =
+            producerPayload?.peerDeviceId ??
+            producerPayload?.ownerDeviceId ??
+            payload?.peerDeviceId ??
+            payload?.ownerDeviceId;
+          const peerDeviceId = typeof peerDeviceIdRaw === "string" ? peerDeviceIdRaw : "";
           const localDeviceId = getStableCallsDeviceId();
           if (peerDeviceId && peerDeviceId === localDeviceId) {
             logger.debug("[VideoCallContext] calls-v2 consume skipped for local producer", {
@@ -485,7 +567,11 @@ export function useCallsV2Bootstrap({
             return;
           }
 
-          const peerUserId = peerDeviceId ? peerUserIdByDeviceIdRef.current.get(peerDeviceId) : "";
+          const peerUserIdRaw =
+            producerPayload?.ownerUserId ??
+            payload?.ownerUserId ??
+            (peerDeviceId ? peerUserIdByDeviceIdRef.current.get(peerDeviceId) : "");
+          const peerUserId = typeof peerUserIdRaw === "string" ? peerUserIdRaw : "";
           if (peerUserId && peerDeviceId) {
             producerPeerKeyRef.current.set(producerId, `${peerUserId}:${peerDeviceId}`);
           } else if (peerUserId) {
@@ -508,7 +594,19 @@ export function useCallsV2Bootstrap({
              return;
            }
           void client.consume({ roomId, producerId, rtpCapabilities }).catch((err) => {
-            logger.warn("[VideoCallContext] calls-v2 consume failed", err);
+            pendingProducersToConsumeRef.current.set(producerId, {
+              roomId,
+              peerDeviceId,
+              peerUserId: peerDeviceId ? peerUserIdByDeviceIdRef.current.get(peerDeviceId) : undefined,
+            });
+            logger.warn("[VideoCallContext] calls-v2 consume failed; producer re-queued", {
+              roomId,
+              producerId,
+              error: err instanceof Error ? err.message : String(err),
+            });
+            window.setTimeout(() => {
+              consumePendingProducersRef.current?.();
+            }, 250);
           });
         });
 
@@ -553,7 +651,15 @@ export function useCallsV2Bootstrap({
         }, REKEY_INTERVAL_MS);
         return true;
       } catch (err) {
-        logger.warn("[VideoCallContext] calls-v2 room bootstrap failed", err);
+        const errorMessage = err instanceof Error ? err.message : String(err);
+        logger.warn("[VideoCallContext] calls-v2 room bootstrap failed", {
+          callId,
+          role,
+          error: errorMessage,
+          wsState: callsWsRef.current?.connectionState ?? "none",
+          hasRoomHint: !!hintedRoomId,
+          hasJoinTokenHint: !!hintedJoinToken,
+        });
         lastCallsBootstrapErrorRef.current = err instanceof Error ? err : new Error(String(err));
         return false;
       }

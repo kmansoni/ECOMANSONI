@@ -5,7 +5,6 @@
 
 -- Ensure required extension
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
-
 -- =====================================================
 -- 1) RLS: lock down all admin tables to service_role only
 -- =====================================================
@@ -49,23 +48,18 @@ BEGIN
     );
   END LOOP;
 END$$;
-
 -- admin_audit_events: keep append-only; ensure service_role can SELECT/INSERT only
 ALTER TABLE public.admin_audit_events ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.admin_audit_events FORCE ROW LEVEL SECURITY;
-
 DROP POLICY IF EXISTS "service_role can read audit events" ON public.admin_audit_events;
 DROP POLICY IF EXISTS "service_role can insert audit events" ON public.admin_audit_events;
 DROP POLICY IF EXISTS "service_role_all" ON public.admin_audit_events;
-
 CREATE POLICY "service_role can read audit events" ON public.admin_audit_events
   FOR SELECT
   USING (auth.role() = 'service_role');
-
 CREATE POLICY "service_role can insert audit events" ON public.admin_audit_events
   FOR INSERT
   WITH CHECK (auth.role() = 'service_role');
-
 -- =====================================================
 -- 2) Audit append function (atomic hash chain)
 -- =====================================================
@@ -78,7 +72,6 @@ IMMUTABLE
 AS $$
   SELECT encode(extensions.digest(convert_to(coalesce(prev_hash, '') || payload::text, 'utf8'), 'sha256'::text), 'hex');
 $$;
-
 -- Append audit event with correct prev hash + self hash.
 -- Uses advisory lock to serialize writes and avoid hash chain forks.
 CREATE OR REPLACE FUNCTION public.admin_audit_append(
@@ -203,12 +196,9 @@ BEGIN
   RETURN v_id;
 END;
 $$;
-
 REVOKE ALL ON FUNCTION public.admin_audit_append FROM PUBLIC;
 REVOKE ALL ON FUNCTION public.admin_audit_compute_hash FROM PUBLIC;
-
 COMMENT ON FUNCTION public.admin_audit_append IS 'Append-only audit writer with tamper-evident hash chain';
-
 -- =====================================================
 -- 3) Seed minimal roles/permissions for admin-api MVP
 -- =====================================================
@@ -221,7 +211,6 @@ VALUES
   ('sre_admin', 'SRE Admin', 'Operations/infra monitoring and config changes', 'operations', true),
   ('readonly_auditor', 'Read-only Auditor', 'Read-only access to admin domain via admin-api', 'readonly', true)
 ON CONFLICT (name) DO NOTHING;
-
 -- Permissions (scopes)
 INSERT INTO public.admin_permissions (scope, resource, action, description, risk_level, is_system)
 VALUES
@@ -232,7 +221,6 @@ VALUES
   ('approvals.request', 'approvals', 'request', 'Request approval for dangerous operation', 'high', true),
   ('approvals.decide', 'approvals', 'decide', 'Approve/Deny approval requests', 'high', true)
 ON CONFLICT (scope) DO NOTHING;
-
 -- Role-permissions
 WITH r AS (
   SELECT id, name FROM public.admin_roles WHERE name IN ('owner', 'security_admin', 'sre_admin', 'readonly_auditor')

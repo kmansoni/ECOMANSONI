@@ -16,7 +16,6 @@
 ALTER TABLE public.hashtags
   ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'normal',
   ADD COLUMN IF NOT EXISTS status_updated_at TIMESTAMPTZ NOT NULL DEFAULT now();
-
 DO $$
 BEGIN
   IF NOT EXISTS (
@@ -31,10 +30,8 @@ BEGIN
   END IF;
 END
 $$;
-
 CREATE INDEX IF NOT EXISTS idx_hashtags_status
   ON public.hashtags(status, is_trending, velocity_score DESC);
-
 -- 2) Audit table for status changes (append-only)
 CREATE TABLE IF NOT EXISTS public.hashtag_status_changes (
   change_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -49,10 +46,8 @@ CREATE TABLE IF NOT EXISTS public.hashtag_status_changes (
   notes TEXT,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
-
 CREATE INDEX IF NOT EXISTS idx_hashtag_status_changes_hashtag
   ON public.hashtag_status_changes(hashtag_id, decided_at DESC);
-
 -- 3) Explore cache entries
 CREATE TABLE IF NOT EXISTS public.explore_cache_entries (
   cache_key TEXT PRIMARY KEY,
@@ -65,10 +60,8 @@ CREATE TABLE IF NOT EXISTS public.explore_cache_entries (
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
-
 CREATE INDEX IF NOT EXISTS idx_explore_cache_entries_expiry
   ON public.explore_cache_entries(expires_at);
-
 -- 4) Trending hashtags RPC (public)
 CREATE OR REPLACE FUNCTION public.get_trending_hashtags_v1(
   p_limit INTEGER DEFAULT 10
@@ -99,10 +92,8 @@ AS $$
   ORDER BY h.velocity_score DESC NULLS LAST, h.usage_last_24h DESC, h.usage_count DESC
   LIMIT GREATEST(1, LEAST(p_limit, 50));
 $$;
-
 REVOKE ALL ON FUNCTION public.get_trending_hashtags_v1(INTEGER) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.get_trending_hashtags_v1(INTEGER) TO anon, authenticated;
-
 -- 5) Explore page RPC (returns JSONB payload matching docs/contracts explore-page.v1)
 CREATE OR REPLACE FUNCTION public.get_explore_page_v1(
   p_segment_id TEXT DEFAULT 'seg_default',
@@ -267,10 +258,8 @@ BEGIN
   RETURN v_payload;
 END;
 $$;
-
 REVOKE ALL ON FUNCTION public.get_explore_page_v1(TEXT, TEXT, TEXT, BOOLEAN, BOOLEAN) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.get_explore_page_v1(TEXT, TEXT, TEXT, BOOLEAN, BOOLEAN) TO anon, authenticated;
-
 -- 6) Hashtag page RPC (returns JSONB payload matching docs/contracts hashtag-page.v1)
 CREATE OR REPLACE FUNCTION public.get_hashtag_page_v1(
   p_hashtag TEXT,
@@ -388,6 +377,5 @@ BEGIN
   );
 END;
 $$;
-
 REVOKE ALL ON FUNCTION public.get_hashtag_page_v1(TEXT, TEXT, INTEGER, INTEGER) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.get_hashtag_page_v1(TEXT, TEXT, INTEGER, INTEGER) TO anon, authenticated;

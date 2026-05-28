@@ -1,6 +1,7 @@
 # SFU Requirements (v1)
 
 This document defines baseline production requirements for the SFU path.
+It is constrained by the [RTC Resilience Constitution](RTC_RESILIENCE_CONSTITUTION.md), which defines the higher-level rules for recovery, governance, and epistemic stability.
 
 ## Capacity
 

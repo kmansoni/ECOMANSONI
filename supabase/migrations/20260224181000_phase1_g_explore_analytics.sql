@@ -32,16 +32,12 @@ CREATE TABLE IF NOT EXISTS public.explore_sessions (
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
-
 CREATE INDEX IF NOT EXISTS idx_explore_sessions_user
   ON public.explore_sessions(user_id, started_at DESC);
-
 CREATE INDEX IF NOT EXISTS idx_explore_sessions_started
   ON public.explore_sessions(started_at DESC);
-
 CREATE INDEX IF NOT EXISTS idx_explore_sessions_key
   ON public.explore_sessions(session_key, started_at DESC);
-
 -- 2) Explore section clicks tracking
 
 CREATE TABLE IF NOT EXISTS public.explore_section_clicks (
@@ -58,19 +54,14 @@ CREATE TABLE IF NOT EXISTS public.explore_section_clicks (
   algorithm_version TEXT,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
-
 CREATE INDEX IF NOT EXISTS idx_explore_section_clicks_session
   ON public.explore_section_clicks(session_id, clicked_at DESC);
-
 CREATE INDEX IF NOT EXISTS idx_explore_section_clicks_user
   ON public.explore_section_clicks(user_id, clicked_at DESC);
-
 CREATE INDEX IF NOT EXISTS idx_explore_section_clicks_section
   ON public.explore_section_clicks(section_type, clicked_at DESC);
-
 CREATE INDEX IF NOT EXISTS idx_explore_section_clicks_item
   ON public.explore_section_clicks(item_type, item_id, clicked_at DESC);
-
 -- 3) RPC: Start Explore session
 
 CREATE OR REPLACE FUNCTION public.start_explore_session_v1(
@@ -106,13 +97,10 @@ BEGIN
   RETURN v_session_id;
 END;
 $$;
-
 REVOKE ALL ON FUNCTION public.start_explore_session_v1(UUID, TEXT, TEXT) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.start_explore_session_v1(UUID, TEXT, TEXT) TO anon, authenticated;
-
 COMMENT ON FUNCTION public.start_explore_session_v1(UUID, TEXT, TEXT) IS
   'Phase 1 EPIC G: Start an Explore session for analytics tracking';
-
 -- 4) RPC: End Explore session
 
 CREATE OR REPLACE FUNCTION public.end_explore_session_v1(
@@ -150,18 +138,14 @@ BEGIN
   RETURN true;
 END;
 $$;
-
 REVOKE ALL ON FUNCTION public.end_explore_session_v1(UUID) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.end_explore_session_v1(UUID) TO anon, authenticated;
-
 COMMENT ON FUNCTION public.end_explore_session_v1(UUID) IS
   'Phase 1 EPIC G: End an Explore session and calculate duration';
-
 -- 5) RPC: Track Explore section click
 
 CREATE OR REPLACE FUNCTION public.track_explore_click_v1(
   p_session_id UUID,
-  p_user_id UUID DEFAULT NULL,
   p_section_type TEXT,
   p_item_type TEXT,
   p_item_id TEXT,
@@ -211,13 +195,10 @@ BEGIN
   RETURN v_click_id;
 END;
 $$;
-
-REVOKE ALL ON FUNCTION public.track_explore_click_v1(UUID, UUID, TEXT, TEXT, TEXT, INTEGER, TEXT) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION public.track_explore_click_v1(UUID, UUID, TEXT, TEXT, TEXT, INTEGER, TEXT) TO anon, authenticated;
-
-COMMENT ON FUNCTION public.track_explore_click_v1(UUID, UUID, TEXT, TEXT, TEXT, INTEGER, TEXT) IS
+REVOKE ALL ON FUNCTION public.track_explore_click_v1(UUID, TEXT, TEXT, TEXT, UUID, INTEGER, TEXT) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.track_explore_click_v1(UUID, TEXT, TEXT, TEXT, UUID, INTEGER, TEXT) TO anon, authenticated;
+COMMENT ON FUNCTION public.track_explore_click_v1(UUID, TEXT, TEXT, TEXT, UUID, INTEGER, TEXT) IS
   'Phase 1 EPIC G: Track a click on an Explore section item';
-
 -- 6) RPC: Update watch event (mark click as watched)
 
 CREATE OR REPLACE FUNCTION public.update_explore_watch_v1(
@@ -254,13 +235,10 @@ BEGIN
   RETURN true;
 END;
 $$;
-
 REVOKE ALL ON FUNCTION public.update_explore_watch_v1(UUID, INTEGER) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.update_explore_watch_v1(UUID, INTEGER) TO anon, authenticated;
-
 COMMENT ON FUNCTION public.update_explore_watch_v1(UUID, INTEGER) IS
   'Phase 1 EPIC G: Mark an Explore click as watched with duration';
-
 -- 7) Metrics calculation functions
 
 -- Metric: explore_open_rate (% of users who opened Explore in last N days)
@@ -291,13 +269,10 @@ AS $$
     END
   FROM total_users, explore_users;
 $$;
-
 REVOKE ALL ON FUNCTION public.calculate_explore_open_rate_v1(INTEGER) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.calculate_explore_open_rate_v1(INTEGER) TO service_role;
-
 COMMENT ON FUNCTION public.calculate_explore_open_rate_v1(INTEGER) IS
   'Phase 1 EPIC G Metric: % of users who opened Explore in last N days';
-
 -- Metric: explore_to_watch_rate (% of Explore clicks that led to watch)
 CREATE OR REPLACE FUNCTION public.calculate_explore_to_watch_rate_v1(
   p_window_days INTEGER DEFAULT 7
@@ -326,13 +301,10 @@ AS $$
     END
   FROM total_clicks, watched_clicks;
 $$;
-
 REVOKE ALL ON FUNCTION public.calculate_explore_to_watch_rate_v1(INTEGER) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.calculate_explore_to_watch_rate_v1(INTEGER) TO service_role;
-
 COMMENT ON FUNCTION public.calculate_explore_to_watch_rate_v1(INTEGER) IS
   'Phase 1 EPIC G Metric: % of Explore clicks that led to watch in last N days';
-
 -- Metric: explore_session_length (avg duration in seconds)
 CREATE OR REPLACE FUNCTION public.calculate_explore_session_length_v1(
   p_window_days INTEGER DEFAULT 7
@@ -349,13 +321,10 @@ AS $$
     AND ended_at IS NOT NULL
     AND duration_seconds IS NOT NULL;
 $$;
-
 REVOKE ALL ON FUNCTION public.calculate_explore_session_length_v1(INTEGER) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.calculate_explore_session_length_v1(INTEGER) TO service_role;
-
 COMMENT ON FUNCTION public.calculate_explore_session_length_v1(INTEGER) IS
   'Phase 1 EPIC G Metric: Average Explore session duration in seconds (last N days)';
-
 -- Metric: explore_section_click_distribution (breakdown by section type)
 CREATE OR REPLACE FUNCTION public.calculate_explore_section_distribution_v1(
   p_window_days INTEGER DEFAULT 7
@@ -396,13 +365,10 @@ AS $$
   FROM section_stats ss, total
   ORDER BY ss.click_count DESC;
 $$;
-
 REVOKE ALL ON FUNCTION public.calculate_explore_section_distribution_v1(INTEGER) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.calculate_explore_section_distribution_v1(INTEGER) TO service_role;
-
 COMMENT ON FUNCTION public.calculate_explore_section_distribution_v1(INTEGER) IS
   'Phase 1 EPIC G Metric: Explore section click distribution with watch rates (last N days)';
-
 -- ============================================================================
 -- Summary:
 -- - ✅ explore_sessions table for session tracking
@@ -410,4 +376,4 @@ COMMENT ON FUNCTION public.calculate_explore_section_distribution_v1(INTEGER) IS
 -- - ✅ start_explore_session_v1(), end_explore_session_v1() RPCs
 -- - ✅ track_explore_click_v1(), update_explore_watch_v1() RPCs
 -- - ✅ Metric calculation functions (open_rate, to_watch_rate, session_length, section_distribution)
--- ============================================================================
+-- ============================================================================;

@@ -83,10 +83,8 @@ BEGIN
   RETURN NEXT;
 END;
 $$;
-
 REVOKE ALL ON FUNCTION public.ack_read_v1(UUID, BIGINT) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.ack_read_v1(UUID, BIGINT) TO authenticated;
-
 CREATE OR REPLACE FUNCTION public.chat_get_inbox_v2(
   p_limit INTEGER DEFAULT 100,
   p_cursor_seq BIGINT DEFAULT NULL
@@ -175,6 +173,5 @@ BEGIN
   ORDER BY r.last_seq DESC, r.updated_at DESC;
 END;
 $$;
-
 REVOKE ALL ON FUNCTION public.chat_get_inbox_v2(INTEGER, BIGINT) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.chat_get_inbox_v2(INTEGER, BIGINT) TO authenticated;

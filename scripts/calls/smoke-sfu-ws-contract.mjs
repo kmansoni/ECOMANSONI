@@ -4,8 +4,6 @@ import WebSocket from "ws";
 
 const DEFAULT_ENDPOINTS = [
   "wss://sfu-ru.mansoni.ru/ws",
-  "wss://sfu-tr.mansoni.ru/ws",
-  "wss://sfu-ae.mansoni.ru/ws",
 ];
 
 const AUTH_TIMEOUT_MS = Number(process.env.CALLS_SMOKE_AUTH_TIMEOUT_MS ?? "7000");

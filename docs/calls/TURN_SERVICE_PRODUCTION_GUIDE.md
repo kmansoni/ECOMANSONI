@@ -1,5 +1,8 @@
 # TURN Service: Production Blueprint (Telegram/WhatsApp Class)
 
+This blueprint is the TURN-specific operational layer under the broader RTC resilience model in [RTC Resilience Constitution](RTC_RESILIENCE_CONSTITUTION.md).
+Use the constitution for cross-cutting rules about state integrity, governance drift, recovery budgets, and signal validity.
+
 ## 1. Architecture
 
 ### Control Plane

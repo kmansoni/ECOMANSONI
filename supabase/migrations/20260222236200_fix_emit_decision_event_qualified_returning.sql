@@ -92,5 +92,4 @@ BEGIN
   RETURN QUERY SELECT v_event_id, v_created_at, TRUE;
 END;
 $$;
-
 GRANT EXECUTE ON FUNCTION public.emit_decision_event TO service_role;

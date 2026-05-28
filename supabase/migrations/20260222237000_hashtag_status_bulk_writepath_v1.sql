@@ -139,9 +139,7 @@ BEGIN
   END IF;
 END;
 $$;
-
 REVOKE ALL ON FUNCTION public.set_hashtag_status_bulk_v1(TEXT[], TEXT, TEXT[], JSONB, TEXT, UUID) FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.set_hashtag_status_bulk_v1(TEXT[], TEXT, TEXT[], JSONB, TEXT, UUID) TO service_role;
-
 COMMENT ON FUNCTION public.set_hashtag_status_bulk_v1 IS
   'Service-only: bulk changes hashtag statuses with audit rows + single explore cache invalidation. Actor is an admin_user_id validated via admin_has_scope_v1.';

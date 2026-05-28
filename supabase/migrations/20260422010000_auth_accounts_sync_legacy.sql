@@ -33,7 +33,6 @@ where u.email is not null
     where a.email = lower(u.email)
   )
 on conflict do nothing;
-
 -- For users that already had an email row but no phone, fill the phone in.
 update public.auth_accounts a
 set phone_e164 = nullif(u.phone, '')
@@ -47,7 +46,6 @@ where a.email = lower(u.email)
     where a2.phone_e164 = nullif(u.phone, '')
       and a2.email <> a.email
   );
-
 -- ─────────────────────────────────────────────────────────────────────────────
 -- 2. Trigger: keep auth_accounts aligned with auth.users automatically
 -- ─────────────────────────────────────────────────────────────────────────────
@@ -80,12 +78,10 @@ begin
   return new;
 end;
 $$;
-
 drop trigger if exists on_auth_user_sync_account on auth.users;
 create trigger on_auth_user_sync_account
   after insert or update of email, phone on auth.users
   for each row execute function public.sync_auth_account_from_user();
-
 -- ─────────────────────────────────────────────────────────────────────────────
 -- 3. Tolerant lookup RPCs with auth.users fallback
 -- ─────────────────────────────────────────────────────────────────────────────
@@ -125,9 +121,7 @@ begin
   return v_email;
 end;
 $$;
-
 grant execute on function public.get_email_by_phone_v1(text) to anon, authenticated;
-
 create or replace function public.check_recovery_phone_email_v1(p_phone text, p_email text)
 returns boolean
 language plpgsql
@@ -165,5 +159,4 @@ begin
   return coalesce(v_found, false);
 end;
 $$;
-
 grant execute on function public.check_recovery_phone_email_v1(text, text) to anon, authenticated;

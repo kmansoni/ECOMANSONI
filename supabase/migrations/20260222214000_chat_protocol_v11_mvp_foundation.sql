@@ -9,7 +9,6 @@ CREATE TABLE IF NOT EXISTS public.chat_stream_heads (
   last_event_seq BIGINT NOT NULL DEFAULT 0,
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
-
 CREATE TABLE IF NOT EXISTS public.chat_write_ledger (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   actor_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
@@ -28,7 +27,6 @@ CREATE TABLE IF NOT EXISTS public.chat_write_ledger (
   expires_at TIMESTAMPTZ NOT NULL DEFAULT (now() + interval '30 days'),
   UNIQUE(actor_id, device_id, client_write_seq)
 );
-
 CREATE TABLE IF NOT EXISTS public.chat_events (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   stream_id TEXT NOT NULL,
@@ -53,7 +51,6 @@ CREATE TABLE IF NOT EXISTS public.chat_events (
   UNIQUE(stream_id, event_seq),
   UNIQUE(event_id)
 );
-
 CREATE TABLE IF NOT EXISTS public.chat_inbox_projection (
   user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
   dialog_id UUID NOT NULL REFERENCES public.conversations(id) ON DELETE CASCADE,
@@ -68,7 +65,6 @@ CREATE TABLE IF NOT EXISTS public.chat_inbox_projection (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   PRIMARY KEY (user_id, dialog_id)
 );
-
 CREATE TABLE IF NOT EXISTS public.chat_receipts (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
@@ -81,37 +77,28 @@ CREATE TABLE IF NOT EXISTS public.chat_receipts (
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   UNIQUE(user_id, device_id, client_write_seq)
 );
-
 -- 1) Indexes
 CREATE INDEX IF NOT EXISTS idx_chat_write_ledger_expires_at
   ON public.chat_write_ledger (expires_at);
-
 CREATE INDEX IF NOT EXISTS idx_chat_write_ledger_actor_device_created
   ON public.chat_write_ledger (actor_id, device_id, created_at DESC);
-
 CREATE INDEX IF NOT EXISTS idx_chat_events_stream_created
   ON public.chat_events (stream_id, created_at DESC);
-
 CREATE INDEX IF NOT EXISTS idx_chat_events_dialog_seq
   ON public.chat_events (dialog_id, event_seq)
   WHERE dialog_id IS NOT NULL;
-
 CREATE INDEX IF NOT EXISTS idx_chat_inbox_projection_user_sort
   ON public.chat_inbox_projection (user_id, sort_key DESC);
-
 CREATE INDEX IF NOT EXISTS idx_chat_inbox_projection_user_updated
   ON public.chat_inbox_projection (user_id, updated_at DESC);
-
 CREATE INDEX IF NOT EXISTS idx_chat_receipts_created
   ON public.chat_receipts (user_id, created_at DESC);
-
 -- 2) RLS (tables are backend-controlled, read via security definer RPC)
 ALTER TABLE public.chat_stream_heads ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.chat_write_ledger ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.chat_events ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.chat_inbox_projection ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.chat_receipts ENABLE ROW LEVEL SECURITY;
-
 -- 3) Utility functions
 CREATE OR REPLACE FUNCTION public.chat_sha256_hex(input TEXT)
 RETURNS TEXT
@@ -120,7 +107,6 @@ IMMUTABLE
 AS $$
   SELECT encode(extensions.digest(convert_to(coalesce(input, ''), 'utf8'), 'sha256'::text), 'hex');
 $$;
-
 CREATE OR REPLACE FUNCTION public.chat_next_stream_seq(p_stream_id TEXT)
 RETURNS BIGINT
 LANGUAGE plpgsql
@@ -152,7 +138,6 @@ BEGIN
   END LOOP;
 END;
 $$;
-
 CREATE OR REPLACE FUNCTION public.chat_build_sort_key(
   p_pinned_rank INTEGER,
   p_has_draft BOOLEAN,
@@ -168,7 +153,6 @@ AS $$
     || ':' || lpad((999999999999999 - COALESCE(p_activity_seq, 0))::text, 15, '0')
     || ':' || COALESCE(p_dialog_id::text, '00000000-0000-0000-0000-000000000000');
 $$;
-
 -- 4) RPC: get_inbox (projection read path)
 CREATE OR REPLACE FUNCTION public.chat_get_inbox_v11(
   p_limit INTEGER DEFAULT 50,
@@ -237,7 +221,6 @@ BEGIN
   ORDER BY b.sort_key ASC, b.dialog_id ASC;
 END;
 $$;
-
 -- 5) RPC: status_write
 CREATE OR REPLACE FUNCTION public.chat_status_write_v11(
   p_device_id TEXT,
@@ -277,7 +260,6 @@ BEGIN
   LIMIT 1;
 END;
 $$;
-
 -- 6) RPC: resync_stream
 CREATE OR REPLACE FUNCTION public.chat_resync_stream_v11(
   p_stream_id TEXT,
@@ -358,7 +340,6 @@ BEGIN
   LIMIT v_limit;
 END;
 $$;
-
 -- 7) RPC: send_message (durable ledger + events + projection + receipt)
 CREATE OR REPLACE FUNCTION public.chat_send_message_v11(
   p_dialog_id UUID,
@@ -610,7 +591,6 @@ BEGIN
   RETURN QUERY SELECT v_ack_id, 'accepted', p_dialog_id, v_msg.id, v_msg.seq, p_client_write_seq, now(), NULL::TEXT;
 END;
 $$;
-
 -- 8) RPC: mark_read (monotonic)
 CREATE OR REPLACE FUNCTION public.chat_mark_read_v11(
   p_dialog_id UUID,
@@ -774,14 +754,12 @@ BEGIN
   RETURN QUERY SELECT v_ack_id, 'accepted', p_dialog_id, v_applied, p_client_write_seq, now(), NULL::TEXT;
 END;
 $$;
-
 -- 9) Grants
 GRANT EXECUTE ON FUNCTION public.chat_get_inbox_v11(INTEGER, TEXT) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.chat_status_write_v11(TEXT, BIGINT) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.chat_resync_stream_v11(TEXT, BIGINT, INTEGER) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.chat_send_message_v11(UUID, TEXT, BIGINT, UUID, TEXT, TIMESTAMPTZ) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.chat_mark_read_v11(UUID, TEXT, BIGINT, UUID, BIGINT, TIMESTAMPTZ) TO authenticated;
-
 -- 10) Realtime publication for events/receipts/projection (if used by clients)
 DO $$
 BEGIN
@@ -800,5 +778,3 @@ BEGIN
   EXCEPTION WHEN duplicate_object THEN NULL;
   END;
 END $$;
-
-

@@ -5,15 +5,14 @@
 -- Добавляем поле для хранения номеров телефонов из контактов пользователя
 ALTER TABLE public.profiles 
 ADD COLUMN IF NOT EXISTS contacts_phones TEXT[], -- Массив номеров телефонов из контактов
-ADD COLUMN IF NOT EXISTS contacts_access_granted BOOLEAN DEFAULT false; -- Разрешил ли доступ к контактам
+ADD COLUMN IF NOT EXISTS contacts_access_granted BOOLEAN DEFAULT false;
+-- Разрешил ли доступ к контактам
 
 -- Индекс для быстрого поиска по номерам телефонов
 CREATE INDEX IF NOT EXISTS idx_profiles_phone ON public.profiles(phone);
 CREATE INDEX IF NOT EXISTS idx_profiles_contacts_phones ON public.profiles USING GIN(contacts_phones);
-
 -- Обновляем функцию рекомендаций
 DROP FUNCTION IF EXISTS public.get_recommended_users_for_new_user(INTEGER);
-
 -- Новая функция: рекомендации на основе контактов или случайные
 CREATE OR REPLACE FUNCTION public.get_recommended_users_for_new_user(
     p_user_id UUID,
@@ -75,7 +74,6 @@ BEGIN
     END IF;
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-
 -- Функция для сохранения контактов пользователя
 CREATE OR REPLACE FUNCTION public.save_user_contacts(
     p_user_id UUID,
@@ -91,7 +89,6 @@ BEGIN
     WHERE user_id = p_user_id;
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-
 -- Функция для отзыва доступа к контактам
 CREATE OR REPLACE FUNCTION public.revoke_contacts_access(
     p_user_id UUID
@@ -106,7 +103,6 @@ BEGIN
     WHERE user_id = p_user_id;
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-
 COMMENT ON COLUMN public.profiles.contacts_phones IS 'Номера телефонов из контактов пользователя для рекомендаций';
 COMMENT ON COLUMN public.profiles.contacts_access_granted IS 'Разрешил ли пользователь доступ к своим контактам';
 COMMENT ON FUNCTION public.get_recommended_users_for_new_user IS 'Рекомендации: из контактов если доступ дан, иначе случайные пользователи';

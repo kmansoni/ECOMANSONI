@@ -6,10 +6,8 @@
 
 CREATE INDEX IF NOT EXISTS idx_reel_views_reel_user_viewed_at_desc
 ON public.reel_views (reel_id, user_id, viewed_at DESC);
-
 CREATE INDEX IF NOT EXISTS idx_reel_views_reel_session_viewed_at_desc
 ON public.reel_views (reel_id, session_id, viewed_at DESC);
-
 CREATE OR REPLACE FUNCTION public.record_reel_view(
   p_reel_id UUID,
   p_session_id TEXT DEFAULT NULL
@@ -79,6 +77,5 @@ BEGIN
   RETURN FALSE;
 END;
 $$;
-
 GRANT EXECUTE ON FUNCTION public.record_reel_view(UUID, TEXT) TO anon;
 GRANT EXECUTE ON FUNCTION public.record_reel_view(UUID, TEXT) TO authenticated;

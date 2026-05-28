@@ -16,11 +16,9 @@
 -- ---------------------------------------------------------------------------
 CREATE INDEX IF NOT EXISTS idx_reel_impressions_created_at
   ON public.reel_impressions(created_at DESC);
-
 CREATE INDEX IF NOT EXISTS idx_reel_impressions_request_id_created_at
   ON public.reel_impressions(created_at DESC)
   WHERE request_id IS NULL;
-
 -- ---------------------------------------------------------------------------
 -- 2) Monitoring snapshot
 -- ---------------------------------------------------------------------------
@@ -72,10 +70,8 @@ BEGIN
   );
 END;
 $$;
-
 ALTER FUNCTION public.reels_engine_monitor_snapshot_v1(INTEGER)
   SET search_path = public, pg_catalog;
-
 -- ---------------------------------------------------------------------------
 -- 3) RBAC audit for reels_engine_* functions
 -- ---------------------------------------------------------------------------
@@ -111,15 +107,12 @@ AS $$
     AND p.proname LIKE 'reels_engine_%'
   ORDER BY p.proname, pg_get_function_identity_arguments(p.oid);
 $$;
-
 ALTER FUNCTION public.reels_engine_rbac_audit_v1()
   SET search_path = public, pg_catalog;
-
 -- ---------------------------------------------------------------------------
 -- 4) Grants (service_role only)
 -- ---------------------------------------------------------------------------
 REVOKE EXECUTE ON FUNCTION public.reels_engine_monitor_snapshot_v1(INTEGER) FROM PUBLIC, anon, authenticated;
 REVOKE EXECUTE ON FUNCTION public.reels_engine_rbac_audit_v1() FROM PUBLIC, anon, authenticated;
-
 GRANT EXECUTE ON FUNCTION public.reels_engine_monitor_snapshot_v1(INTEGER) TO service_role;
 GRANT EXECUTE ON FUNCTION public.reels_engine_rbac_audit_v1() TO service_role;

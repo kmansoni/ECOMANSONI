@@ -1,4 +1,3 @@
--- ALLOW_NON_IDEMPOTENT_POLICY_DDL: legacy migration already applied to production; non-idempotent policies are intentional here.
 -- Темы (Topics) для групп — как в Telegram
 CREATE TABLE IF NOT EXISTS group_topics (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -15,16 +14,12 @@ CREATE TABLE IF NOT EXISTS group_topics (
   created_at TIMESTAMPTZ DEFAULT now(),
   sort_order INTEGER DEFAULT 0
 );
-
 CREATE INDEX IF NOT EXISTS idx_group_topics_group ON group_topics(group_id, sort_order);
-
 -- Привязка сообщений к темам
 ALTER TABLE messages ADD COLUMN IF NOT EXISTS topic_id UUID;
 CREATE INDEX IF NOT EXISTS idx_messages_topic ON messages(topic_id, created_at DESC) WHERE topic_id IS NOT NULL;
-
 -- Включить темы для группы
 ALTER TABLE group_chats ADD COLUMN IF NOT EXISTS topics_enabled BOOLEAN DEFAULT false;
-
 -- RLS
 ALTER TABLE group_topics ENABLE ROW LEVEL SECURITY;
 DO $$
@@ -50,7 +45,6 @@ BEGIN
     CREATE POLICY "Topics updated by creator" ON group_topics FOR UPDATE USING (created_by = auth.uid());
   END IF;
 END $$;
-
 -- Бот API таблицы
 CREATE TABLE IF NOT EXISTS bots (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -66,7 +60,6 @@ CREATE TABLE IF NOT EXISTS bots (
   created_at TIMESTAMPTZ DEFAULT now(),
   updated_at TIMESTAMPTZ DEFAULT now()
 );
-
 ALTER TABLE bots ADD COLUMN IF NOT EXISTS owner_id UUID;
 ALTER TABLE bots ADD COLUMN IF NOT EXISTS username TEXT;
 ALTER TABLE bots ADD COLUMN IF NOT EXISTS display_name TEXT;
@@ -78,10 +71,8 @@ ALTER TABLE bots ADD COLUMN IF NOT EXISTS capabilities JSONB DEFAULT '["send_mes
 ALTER TABLE bots ADD COLUMN IF NOT EXISTS webhook_url TEXT;
 ALTER TABLE bots ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT now();
 ALTER TABLE bots ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT now();
-
 CREATE UNIQUE INDEX IF NOT EXISTS ux_bots_username ON bots(username);
 CREATE UNIQUE INDEX IF NOT EXISTS ux_bots_api_token ON bots(api_token);
-
 CREATE TABLE IF NOT EXISTS bot_commands (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   bot_id UUID NOT NULL REFERENCES bots(id) ON DELETE CASCADE,
@@ -90,7 +81,6 @@ CREATE TABLE IF NOT EXISTS bot_commands (
   sort_order INTEGER DEFAULT 0,
   UNIQUE(bot_id, command)
 );
-
 -- Бот может быть участником чата
 CREATE TABLE IF NOT EXISTS bot_conversations (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -100,7 +90,6 @@ CREATE TABLE IF NOT EXISTS bot_conversations (
   added_at TIMESTAMPTZ DEFAULT now(),
   UNIQUE(bot_id, conversation_id)
 );
-
 -- Inline кнопки бота
 CREATE TABLE IF NOT EXISTS bot_inline_keyboards (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -108,13 +97,11 @@ CREATE TABLE IF NOT EXISTS bot_inline_keyboards (
   keyboard_data JSONB NOT NULL, -- [[{text, callback_data, url}]]
   created_at TIMESTAMPTZ DEFAULT now()
 );
-
 -- RLS для ботов
 ALTER TABLE bots ENABLE ROW LEVEL SECURITY;
 ALTER TABLE bot_commands ENABLE ROW LEVEL SECURITY;
 ALTER TABLE bot_conversations ENABLE ROW LEVEL SECURITY;
 ALTER TABLE bot_inline_keyboards ENABLE ROW LEVEL SECURITY;
-
 DO $$
 BEGIN
   IF NOT EXISTS (
@@ -152,7 +139,6 @@ BEGIN
     CREATE POLICY "Bot keyboards readable" ON bot_inline_keyboards FOR SELECT USING (true);
   END IF;
 END $$;
-
 -- Seed: системный бот (только если существует owner profile)
 INSERT INTO bots (id, owner_id, username, display_name, description, capabilities)
 SELECT

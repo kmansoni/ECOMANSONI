@@ -11,7 +11,6 @@ BEGIN
   GET DIAGNOSTICS v_deleted2 = ROW_COUNT;
   RETURN QUERY SELECT v_deleted1 + v_deleted2;
 END;$$ LANGUAGE plpgsql SECURITY DEFINER;
-
 CREATE OR REPLACE FUNCTION purge_service_keys_v1()
 RETURNS TABLE(purged_count BIGINT) AS $$
 DECLARE v_deleted BIGINT;
@@ -20,7 +19,6 @@ BEGIN
   GET DIAGNOSTICS v_deleted = ROW_COUNT;
   RETURN QUERY SELECT v_deleted;
 END;$$ LANGUAGE plpgsql SECURITY DEFINER;
-
 CREATE OR REPLACE FUNCTION purge_risk_events_v1()
 RETURNS TABLE(purged_count BIGINT) AS $$
 DECLARE v_deleted BIGINT;
@@ -29,7 +27,6 @@ BEGIN
   GET DIAGNOSTICS v_deleted = ROW_COUNT;
   RETURN QUERY SELECT v_deleted;
 END;$$ LANGUAGE plpgsql SECURITY DEFINER;
-
 CREATE OR REPLACE FUNCTION cleanup_phase1_retention_v1()
 RETURNS TABLE(tokens_purged BIGINT,keys_purged BIGINT,events_purged BIGINT) AS $$
 DECLARE v_tokens BIGINT;v_keys BIGINT;v_events BIGINT;
@@ -40,9 +37,7 @@ BEGIN
   RAISE NOTICE'Phase1 cleanup: tokens=%,keys=%,events=%',v_tokens,v_keys,v_events;
   RETURN QUERY SELECT v_tokens,v_keys,v_events;
 END;$$LANGUAGE plpgsql SECURITY DEFINER;
-
 CREATE EXTENSION IF NOT EXISTS pg_cron;
-
 SELECT cron.schedule(
   'phase1-cleanup-nightly',
   '0 2 * * *',

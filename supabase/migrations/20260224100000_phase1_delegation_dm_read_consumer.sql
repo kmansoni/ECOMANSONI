@@ -2,7 +2,6 @@
 -- Service-role-only wrapper that fetches messages "as user" by setting JWT sub.
 
 BEGIN;
-
 CREATE OR REPLACE FUNCTION public.fetch_messages_delegated_v1(
   p_user_id UUID,
   p_conversation_id UUID,
@@ -39,8 +38,6 @@ BEGIN
   FROM public.fetch_messages_v1(p_conversation_id, p_before_seq, p_limit);
 END;
 $$;
-
 REVOKE ALL ON FUNCTION public.fetch_messages_delegated_v1(UUID, UUID, BIGINT, INTEGER) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.fetch_messages_delegated_v1(UUID, UUID, BIGINT, INTEGER) TO service_role;
-
 COMMIT;

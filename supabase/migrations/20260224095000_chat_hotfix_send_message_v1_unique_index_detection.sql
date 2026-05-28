@@ -38,7 +38,6 @@ DECLARE
   final_duration INTEGER;
   final_shared_post UUID;
   final_shared_reel UUID;
-  v_conversation_id UUID := conversation_id;
 BEGIN
   IF initiator IS NULL THEN
     RAISE EXCEPTION 'not_authenticated' USING ERRCODE = '28000';
@@ -64,7 +63,7 @@ BEGIN
   IF NOT EXISTS (
     SELECT 1
     FROM public.conversation_participants cp
-    WHERE cp.conversation_id = v_conversation_id
+    WHERE cp.conversation_id = conversation_id
       AND cp.user_id = initiator
   ) THEN
     RAISE EXCEPTION 'not_participant' USING ERRCODE = '42501';
@@ -75,7 +74,7 @@ BEGIN
   SELECT m.id, m.seq
     INTO inserted_id, inserted_seq
   FROM public.messages m
-  WHERE m.conversation_id = v_conversation_id
+  WHERE m.conversation_id = conversation_id
     AND m.sender_id = initiator
     AND m.client_msg_id = client_msg_id
   LIMIT 1;
@@ -202,7 +201,7 @@ BEGIN
     SELECT m.id, m.seq
       INTO inserted_id, inserted_seq
     FROM public.messages m
-    WHERE m.conversation_id = v_conversation_id
+    WHERE m.conversation_id = conversation_id
       AND m.sender_id = initiator
       AND m.client_msg_id = client_msg_id
     LIMIT 1;
@@ -217,6 +216,5 @@ BEGIN
   RETURN NEXT;
 END;
 $$;
-
 REVOKE ALL ON FUNCTION public.send_message_v1(UUID, UUID, TEXT) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.send_message_v1(UUID, UUID, TEXT) TO authenticated;

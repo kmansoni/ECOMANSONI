@@ -1,10 +1,8 @@
--- ALLOW_NON_IDEMPOTENT_POLICY_DDL: legacy migration already applied to production; non-idempotent policies are intentional here.
 -- Read receipts: статус доставки
-ALTER TABLE messages ADD COLUMN IF NOT EXISTS delivery_status TEXT DEFAULT 'sent'; 
+ALTER TABLE messages ADD COLUMN IF NOT EXISTS delivery_status TEXT DEFAULT 'sent';
 -- Значения: 'sending', 'sent', 'delivered', 'read', 'failed'
 ALTER TABLE messages ADD COLUMN IF NOT EXISTS delivered_at TIMESTAMPTZ;
 ALTER TABLE messages ADD COLUMN IF NOT EXISTS read_at TIMESTAMPTZ;
-
 -- Закреплённые сообщения
 CREATE TABLE IF NOT EXISTS pinned_messages (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -15,9 +13,7 @@ CREATE TABLE IF NOT EXISTS pinned_messages (
   pinned_at TIMESTAMPTZ DEFAULT now(),
   UNIQUE(message_id, conversation_id)
 );
-
 CREATE INDEX IF NOT EXISTS idx_pinned_messages_conv ON pinned_messages(conversation_id, pin_position);
-
 ALTER TABLE pinned_messages ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "Users can read pinned messages in their conversations" ON pinned_messages
   FOR SELECT USING (
@@ -31,14 +27,11 @@ CREATE POLICY "Users can pin messages in their conversations" ON pinned_messages
   FOR INSERT WITH CHECK (pinned_by = auth.uid());
 CREATE POLICY "Users can unpin messages" ON pinned_messages
   FOR DELETE USING (pinned_by = auth.uid());
-
 -- Scheduled messages доработка
 ALTER TABLE messages ADD COLUMN IF NOT EXISTS scheduled_for TIMESTAMPTZ;
 ALTER TABLE messages ADD COLUMN IF NOT EXISTS is_scheduled BOOLEAN DEFAULT false;
-
 CREATE INDEX IF NOT EXISTS idx_messages_scheduled ON messages(scheduled_for) 
   WHERE is_scheduled = true AND scheduled_for IS NOT NULL;
-
 -- Функция обработки scheduled messages
 CREATE OR REPLACE FUNCTION process_scheduled_messages()
 RETURNS INTEGER AS $$

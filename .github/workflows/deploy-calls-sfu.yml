@@ -744,12 +744,6 @@ jobs:
         run: |
           set -euo pipefail
           endpoints="wss://sfu-ru.mansoni.ru/ws"
-          if [ "${{ needs.deploy-sfu-tr.result }}" != "skipped" ]; then
-            endpoints="$endpoints,wss://sfu-tr.mansoni.ru/ws"
-          fi
-          if [ "${{ needs.deploy-sfu-ae.result }}" != "skipped" ]; then
-            endpoints="$endpoints,wss://sfu-ae.mansoni.ru/ws"
-          fi
           echo "CALLS_SMOKE_ENDPOINTS=$endpoints" >> "$GITHUB_ENV"
           echo "[verify-sfu] endpoints=$endpoints"
 

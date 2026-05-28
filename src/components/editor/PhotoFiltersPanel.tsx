@@ -1,81 +1,45 @@
-/**
- * PhotoFiltersPanel — 20 Instagram-фильтров через CSS filter + mix-blend-mode
- */
-import React, { useState } from "react";
-import { cn } from "@/lib/utils";
-import { Slider } from "@/components/ui/slider";
-import { FILTERS, type Filter } from "./photoFiltersModel";
+import { FILTERS } from "./photoFiltersModel";
 
-interface Props {
+interface PhotoFiltersPanelProps {
   imageUrl: string;
   selected: number;
   intensity: number;
   onSelectFilter: (idx: number) => void;
-  onChangeIntensity: (v: number) => void;
+  onChangeIntensity: (value: number) => void;
 }
 
-export function PhotoFiltersPanel({ imageUrl, selected, intensity, onSelectFilter, onChangeIntensity }: Props) {
-  const getStyle = (f: Filter, strength = 1): React.CSSProperties => {
-    if (!f.style.filter) return {};
-    // Применяем интенсивность: интерполируем между none и full фильтром
-    return { filter: f.style.filter };
-  };
-
+export function PhotoFiltersPanel({ selected, intensity, onSelectFilter, onChangeIntensity }: PhotoFiltersPanelProps) {
   return (
-    <div className="flex flex-col gap-3">
-      {/* Превью фильтров */}
-      <div className="flex gap-2 overflow-x-auto pb-2 px-1">
-        {FILTERS.map((f, idx) => (
+    <div className="space-y-3">
+      <div className="grid grid-cols-3 gap-2">
+        {FILTERS.map((filter, idx) => (
           <button
-            key={f.name}
-            className={cn(
-              "flex-shrink-0 flex flex-col items-center gap-1",
-              selected === idx && "opacity-100",
-              selected !== idx && "opacity-70",
-            )}
+            key={filter.id}
+            type="button"
             onClick={() => onSelectFilter(idx)}
+            className={
+              idx === selected
+                ? "rounded-md border border-white bg-white/20 px-2 py-1 text-xs text-white"
+                : "rounded-md border border-white/20 bg-black/20 px-2 py-1 text-xs text-white/80"
+            }
           >
-            <div className={cn(
-              "relative w-16 h-16 rounded-xl overflow-hidden border-2 transition-all",
-              selected === idx ? "border-primary" : "border-transparent",
-            )}>
-              <img loading="lazy"
-                src={imageUrl}
-                alt={f.name}
-                className="w-full h-full object-cover"
-                style={getStyle(f)}
-              />
-              {f.overlay && (
-                <div
-                  className="absolute inset-0"
-                  style={{
-                    backgroundColor: f.overlay.color,
-                    mixBlendMode: f.overlay.blendMode as any,
-                    opacity: f.overlay.opacity,
-                  }}
-                />
-              )}
-            </div>
-            <span className="text-[10px] text-white/80 whitespace-nowrap">{f.name}</span>
+            {filter.name}
           </button>
         ))}
       </div>
 
-      {/* Интенсивность */}
-      {selected > 0 && (
-        <div className="flex items-center gap-3 px-2">
-          <span className="text-xs text-white/60 w-20">Интенсивность</span>
-          <Slider
-            value={[intensity]}
-            onValueChange={([v]) => onChangeIntensity(v)}
-            min={0}
-            max={100}
-            step={1}
-            className="flex-1"
-          />
-          <span className="text-xs text-white/60 w-8 text-right">{intensity}%</span>
-        </div>
-      )}
+      <label className="block text-xs text-white/80">
+        Intensity
+        <input
+          type="range"
+          min={0}
+          max={1}
+          step={0.01}
+          value={intensity}
+          onChange={(e) => onChangeIntensity(Number(e.target.value))}
+          className="mt-2 w-full"
+        />
+      </label>
     </div>
   );
 }

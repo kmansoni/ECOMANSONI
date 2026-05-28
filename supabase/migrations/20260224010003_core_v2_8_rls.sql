@@ -1,4 +1,3 @@
--- ALLOW_NON_IDEMPOTENT_POLICY_DDL: legacy migration already applied to production; non-idempotent policies are intentional here.
 -- v2.8 Platform Core RLS Policies
 --
 -- Section 5: RLS deny-by-default + REVOKE direct writes
@@ -28,17 +27,13 @@ CREATE POLICY core_scopes_read_member ON public.core_scopes
     -- Service role can read all
     auth.role() = 'service'
   );
-
 -- No direct insert, update, delete on core_scopes
 CREATE POLICY core_scopes_deny_all_write ON public.core_scopes
   FOR INSERT WITH CHECK (FALSE);
-
 CREATE POLICY core_scopes_deny_all_update ON public.core_scopes
   FOR UPDATE USING (FALSE);
-
 CREATE POLICY core_scopes_deny_all_delete ON public.core_scopes
   FOR DELETE USING (FALSE);
-
 -- ============================================================================
 -- RLS Policy: core_events (read access within scope membership)
 -- ============================================================================
@@ -57,17 +52,13 @@ CREATE POLICY core_events_read_member ON public.core_events
     -- Service role can read all
     auth.role() = 'service'
   );
-
 -- Deny all writes (append-only, no updates)
 CREATE POLICY core_events_deny_all_write ON public.core_events
   FOR INSERT WITH CHECK (FALSE);
-
 CREATE POLICY core_events_deny_all_update ON public.core_events
   FOR UPDATE USING (FALSE);
-
 CREATE POLICY core_events_deny_all_delete ON public.core_events
   FOR DELETE USING (FALSE);
-
 -- ============================================================================
 -- RLS Policy: core_scope_members (read own membership, modify via RPC)
 -- ============================================================================
@@ -89,17 +80,13 @@ CREATE POLICY core_scope_members_read_own ON public.core_scope_members
     -- Service role can read all
     auth.role() = 'service'
   );
-
 -- Deny all writes (modify via RPC)
 CREATE POLICY core_scope_members_deny_all_write ON public.core_scope_members
   FOR INSERT WITH CHECK (FALSE);
-
 CREATE POLICY core_scope_members_deny_all_update ON public.core_scope_members
   FOR UPDATE USING (FALSE);
-
 CREATE POLICY core_scope_members_deny_all_delete ON public.core_scope_members
   FOR DELETE USING (FALSE);
-
 -- ============================================================================
 -- RLS Policy: scope_invites (read own invites, modify via RPC)
 -- ============================================================================
@@ -121,17 +108,13 @@ CREATE POLICY scope_invites_read_own ON public.scope_invites
     -- Service role
     auth.role() = 'service'
   );
-
 -- Deny all writes
 CREATE POLICY scope_invites_deny_all_write ON public.scope_invites
   FOR INSERT WITH CHECK (FALSE);
-
 CREATE POLICY scope_invites_deny_all_update ON public.scope_invites
   FOR UPDATE USING (FALSE);
-
 CREATE POLICY scope_invites_deny_all_delete ON public.scope_invites
   FOR DELETE USING (FALSE);
-
 -- ============================================================================
 -- RLS Policy: core_receipts (read/write own receipts only)
 -- ============================================================================
@@ -143,17 +126,17 @@ CREATE POLICY core_receipts_read_own ON public.core_receipts
     OR
     auth.role() = 'service'
   );
-
 -- Users can update their own receipts via RPC
 CREATE POLICY core_receipts_update_own ON public.core_receipts
-  FOR UPDATE USING (FALSE);  -- Actual updates go through RPC
+  FOR UPDATE USING (FALSE);
+-- Actual updates go through RPC
 
 CREATE POLICY core_receipts_insert_own ON public.core_receipts
-  FOR INSERT WITH CHECK (FALSE);  -- Actual inserts go through RPC
+  FOR INSERT WITH CHECK (FALSE);
+-- Actual inserts go through RPC
 
 CREATE POLICY core_receipts_delete_own ON public.core_receipts
   FOR DELETE USING (FALSE);
-
 -- ============================================================================
 -- RLS Policy: idempotency_outcomes_hot (read own outcomes)
 -- ============================================================================
@@ -165,17 +148,13 @@ CREATE POLICY idempotency_outcomes_hot_read_own ON public.idempotency_outcomes_h
     OR
     auth.role() = 'service'
   );
-
 -- Deny all writes (RPC only)
 CREATE POLICY idempotency_outcomes_hot_deny_write ON public.idempotency_outcomes_hot
   FOR INSERT WITH CHECK (FALSE);
-
 CREATE POLICY idempotency_outcomes_hot_deny_update ON public.idempotency_outcomes_hot
   FOR UPDATE USING (FALSE);
-
 CREATE POLICY idempotency_outcomes_hot_deny_delete ON public.idempotency_outcomes_hot
   FOR DELETE USING (FALSE);
-
 -- ============================================================================
 -- RLS Policy: idempotency_outcomes_archive (read own outcomes)
 -- ============================================================================
@@ -187,17 +166,13 @@ CREATE POLICY idempotency_outcomes_archive_read_own ON public.idempotency_outcom
     OR
     auth.role() = 'service'
   );
-
 -- Deny all writes
 CREATE POLICY idempotency_outcomes_archive_deny_write ON public.idempotency_outcomes_archive
   FOR INSERT WITH CHECK (FALSE);
-
 CREATE POLICY idempotency_outcomes_archive_deny_update ON public.idempotency_outcomes_archive
   FOR UPDATE USING (FALSE);
-
 CREATE POLICY idempotency_outcomes_archive_deny_delete ON public.idempotency_outcomes_archive
   FOR DELETE USING (FALSE);
-
 -- ============================================================================
 -- RLS Policy: idempotency_locks (service role only)
 -- ============================================================================
@@ -206,7 +181,6 @@ CREATE POLICY idempotency_locks_service_only ON public.idempotency_locks
   FOR ALL
   USING (auth.role() = 'service')
   WITH CHECK (auth.role() = 'service');
-
 -- ============================================================================
 -- RLS Policy: projection_watermarks (service role + members read)
 -- ============================================================================
@@ -225,17 +199,13 @@ CREATE POLICY projection_watermarks_read_members ON public.projection_watermarks
     -- Service role
     auth.role() = 'service'
   );
-
 -- Deny all writes (service RPC only)
 CREATE POLICY projection_watermarks_deny_all_write ON public.projection_watermarks
   FOR INSERT WITH CHECK (FALSE);
-
 CREATE POLICY projection_watermarks_deny_all_update ON public.projection_watermarks
   FOR UPDATE USING (FALSE);
-
 CREATE POLICY projection_watermarks_deny_all_delete ON public.projection_watermarks
   FOR DELETE USING (FALSE);
-
 -- ============================================================================
 -- RLS Policy: admin_action_log (service + admins read, service write)
 -- ============================================================================
@@ -254,13 +224,11 @@ CREATE POLICY admin_action_log_read_admin ON public.admin_action_log
     -- Service role
     auth.role() = 'service'
   );
-
 -- Deny all direct writes
 CREATE POLICY admin_action_log_deny_all_write ON public.admin_action_log
   FOR INSERT WITH CHECK (FALSE);
-
 -- ============================================================================
 -- Summary: All tables have RLS enabled
 -- All direct writes forbidden via RLS + REVOKE
 -- All mutations go through SECURITY DEFINER RPC layer
--- ============================================================================
+-- ============================================================================;

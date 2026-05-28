@@ -8,7 +8,6 @@
 DROP INDEX IF EXISTS public.idx_reels_author_client_publish_id_uniq;
 CREATE UNIQUE INDEX IF NOT EXISTS idx_reels_author_client_publish_id_uniq
   ON public.reels(author_id, client_publish_id);
-
 CREATE OR REPLACE FUNCTION public.create_reel_v1(
   p_client_publish_id UUID,
   p_video_url TEXT,
@@ -71,6 +70,5 @@ BEGIN
   RETURN v_row;
 END;
 $$;
-
 REVOKE ALL ON FUNCTION public.create_reel_v1(UUID, TEXT, TEXT, TEXT, TEXT) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.create_reel_v1(UUID, TEXT, TEXT, TEXT, TEXT) TO authenticated;

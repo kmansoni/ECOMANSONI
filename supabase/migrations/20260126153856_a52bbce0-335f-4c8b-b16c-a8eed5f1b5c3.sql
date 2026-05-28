@@ -1,4 +1,3 @@
--- ALLOW_NON_IDEMPOTENT_POLICY_DDL: legacy migration already applied to production; non-idempotent policies are intentional here.
 -- Создаём таблицу для групповых чатов
 CREATE TABLE IF NOT EXISTS public.group_chats (
   id UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
@@ -10,7 +9,6 @@ CREATE TABLE IF NOT EXISTS public.group_chats (
   created_at TIMESTAMP WITH TIME ZONE DEFAULT now(),
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT now()
 );
-
 -- Участники групп
 CREATE TABLE IF NOT EXISTS public.group_chat_members (
   id UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
@@ -20,7 +18,6 @@ CREATE TABLE IF NOT EXISTS public.group_chat_members (
   joined_at TIMESTAMP WITH TIME ZONE DEFAULT now(),
   UNIQUE(group_id, user_id)
 );
-
 -- Сообщения в группах
 CREATE TABLE IF NOT EXISTS public.group_chat_messages (
   id UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
@@ -31,10 +28,8 @@ CREATE TABLE IF NOT EXISTS public.group_chat_messages (
   media_type TEXT,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT now()
 );
-
 -- RLS для group_chats
 ALTER TABLE public.group_chats ENABLE ROW LEVEL SECURITY;
-
 CREATE POLICY "Members can view groups"
 ON public.group_chats FOR SELECT
 USING (
@@ -43,22 +38,17 @@ USING (
     WHERE gcm.group_id = id AND gcm.user_id = auth.uid()
   )
 );
-
 CREATE POLICY "Auth users can create groups"
 ON public.group_chats FOR INSERT
 WITH CHECK (owner_id = auth.uid());
-
 CREATE POLICY "Owner can update group"
 ON public.group_chats FOR UPDATE
 USING (owner_id = auth.uid());
-
 CREATE POLICY "Owner can delete group"
 ON public.group_chats FOR DELETE
 USING (owner_id = auth.uid());
-
 -- RLS для group_chat_members
 ALTER TABLE public.group_chat_members ENABLE ROW LEVEL SECURITY;
-
 CREATE POLICY "Members can view members"
 ON public.group_chat_members FOR SELECT
 USING (
@@ -67,7 +57,6 @@ USING (
     WHERE gcm2.group_id = group_id AND gcm2.user_id = auth.uid()
   )
 );
-
 CREATE POLICY "Group admins can add members"
 ON public.group_chat_members FOR INSERT
 WITH CHECK (
@@ -79,14 +68,11 @@ WITH CHECK (
   )
   OR user_id = auth.uid() -- Or adding yourself as owner
 );
-
 CREATE POLICY "Members can leave"
 ON public.group_chat_members FOR DELETE
 USING (user_id = auth.uid());
-
 -- RLS для group_chat_messages
 ALTER TABLE public.group_chat_messages ENABLE ROW LEVEL SECURITY;
-
 CREATE POLICY "Members can view messages"
 ON public.group_chat_messages FOR SELECT
 USING (
@@ -95,7 +81,6 @@ USING (
     WHERE gcm.group_id = group_id AND gcm.user_id = auth.uid()
   )
 );
-
 CREATE POLICY "Members can send messages"
 ON public.group_chat_messages FOR INSERT
 WITH CHECK (
@@ -105,7 +90,6 @@ WITH CHECK (
     WHERE gcm.group_id = group_id AND gcm.user_id = auth.uid()
   )
 );
-
 -- Функция для создания группы
 CREATE OR REPLACE FUNCTION public.create_group_chat(
   p_name TEXT,
@@ -132,7 +116,6 @@ BEGIN
   RETURN new_group_id;
 END;
 $$;
-
 -- Триггер для подсчёта участников
 CREATE OR REPLACE FUNCTION public.update_group_member_count()
 RETURNS TRIGGER
@@ -151,17 +134,14 @@ BEGIN
   RETURN NULL;
 END;
 $$;
-
 CREATE TRIGGER on_group_member_change
 AFTER INSERT OR DELETE ON public.group_chat_members
 FOR EACH ROW
 EXECUTE FUNCTION public.update_group_member_count();
-
 -- Индексы
 CREATE INDEX IF NOT EXISTS idx_group_members_group_id ON public.group_chat_members(group_id);
 CREATE INDEX IF NOT EXISTS idx_group_members_user_id ON public.group_chat_members(user_id);
 CREATE INDEX IF NOT EXISTS idx_group_messages_group_id ON public.group_chat_messages(group_id);
 CREATE INDEX IF NOT EXISTS idx_group_messages_created_at ON public.group_chat_messages(created_at DESC);
-
 -- Realtime
 ALTER PUBLICATION supabase_realtime ADD TABLE public.group_chat_messages;

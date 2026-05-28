@@ -302,7 +302,7 @@ BEGIN
     ELSE
       -- Check each weight value is in [0,1] and sum ~= 1.0.
       FOR v_weight_key, v_weight_val IN
-        SELECT key, (value::TEXT)::numeric FROM jsonb_each_text(v_weights)
+        SELECT key, (val::TEXT)::numeric FROM jsonb_each_text(v_weights)
       LOOP
         v_weight_count := v_weight_count + 1;
         BEGIN
@@ -375,15 +375,12 @@ BEGIN
   RETURN v_result;
 END;
 $$;
-
 ALTER FUNCTION public.reels_engine_validate_config_v1(JSONB)
   SET search_path = public, pg_catalog;
-
 REVOKE EXECUTE ON FUNCTION public.reels_engine_validate_config_v1(JSONB)
   FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.reels_engine_validate_config_v1(JSONB)
   TO service_role;
-
 -- ---------------------------------------------------------------------------
 -- Validate config version from database
 -- ---------------------------------------------------------------------------
@@ -399,10 +396,8 @@ AS $$
   FROM public.reels_engine_config_versions c
   WHERE c.id = p_version_id;
 $$;
-
 ALTER FUNCTION public.reels_engine_validate_config_version_v1(UUID)
   SET search_path = public, pg_catalog;
-
 REVOKE EXECUTE ON FUNCTION public.reels_engine_validate_config_version_v1(UUID)
   FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.reels_engine_validate_config_version_v1(UUID)

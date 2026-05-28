@@ -6,7 +6,7 @@ import { IS_PROD_LIKE, readJoinTokenSecretConfig, validateSfuStartupEnv } from "
 import { createMediaPlaneController } from "./mediaPlane.mjs";
 
 const PORT = Number(process.env.SFU_PORT ?? "8888");
-const REGION = process.env.SFU_REGION ?? "tr";
+const REGION = process.env.SFU_REGION ?? "ru";
 const NODE_ID = process.env.SFU_NODE_ID ?? "local-sfu-1";
 const E2EE_REQUIRED_DEFAULT = (() => {
   const raw = String(process.env.SFU_E2EE_REQUIRED ?? process.env.E2EE_REQUIRED_DEFAULT ?? "1").trim().toLowerCase();

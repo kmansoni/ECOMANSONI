@@ -18,32 +18,25 @@ CREATE TABLE IF NOT EXISTS public.device_tokens (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
-
 CREATE UNIQUE INDEX IF NOT EXISTS device_tokens_provider_token_uniq
   ON public.device_tokens(provider, token);
-
 CREATE UNIQUE INDEX IF NOT EXISTS device_tokens_user_device_uniq
   ON public.device_tokens(user_id, device_id);
-
 CREATE INDEX IF NOT EXISTS device_tokens_user_valid_idx
   ON public.device_tokens(user_id, is_valid, push_enabled);
-
 ALTER TABLE public.device_tokens ENABLE ROW LEVEL SECURITY;
-
 DROP POLICY IF EXISTS "device_tokens_select_own" ON public.device_tokens;
 CREATE POLICY "device_tokens_select_own"
   ON public.device_tokens
   FOR SELECT
   TO authenticated
   USING (auth.uid() = user_id);
-
 DROP POLICY IF EXISTS "device_tokens_insert_own" ON public.device_tokens;
 CREATE POLICY "device_tokens_insert_own"
   ON public.device_tokens
   FOR INSERT
   TO authenticated
   WITH CHECK (auth.uid() = user_id);
-
 DROP POLICY IF EXISTS "device_tokens_update_own" ON public.device_tokens;
 CREATE POLICY "device_tokens_update_own"
   ON public.device_tokens
@@ -51,7 +44,6 @@ CREATE POLICY "device_tokens_update_own"
   TO authenticated
   USING (auth.uid() = user_id)
   WITH CHECK (auth.uid() = user_id);
-
 DROP POLICY IF EXISTS "device_tokens_service_role_all" ON public.device_tokens;
 CREATE POLICY "device_tokens_service_role_all"
   ON public.device_tokens
@@ -59,7 +51,6 @@ CREATE POLICY "device_tokens_service_role_all"
   TO service_role
   USING (TRUE)
   WITH CHECK (TRUE);
-
 CREATE TABLE IF NOT EXISTS public.notification_events (
   event_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   type TEXT NOT NULL CHECK (type IN ('message', 'incoming_call', 'security')),
@@ -78,15 +69,11 @@ CREATE TABLE IF NOT EXISTS public.notification_events (
   last_error TEXT,
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
-
 CREATE INDEX IF NOT EXISTS notification_events_claim_idx
   ON public.notification_events(status, available_at, priority DESC, created_at ASC);
-
 CREATE INDEX IF NOT EXISTS notification_events_user_created_idx
   ON public.notification_events(user_id, created_at DESC);
-
 ALTER TABLE public.notification_events ENABLE ROW LEVEL SECURITY;
-
 DROP POLICY IF EXISTS "notification_events_service_role_all" ON public.notification_events;
 CREATE POLICY "notification_events_service_role_all"
   ON public.notification_events
@@ -94,7 +81,6 @@ CREATE POLICY "notification_events_service_role_all"
   TO service_role
   USING (TRUE)
   WITH CHECK (TRUE);
-
 CREATE TABLE IF NOT EXISTS public.notification_deliveries (
   delivery_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   event_id UUID NOT NULL REFERENCES public.notification_events(event_id) ON DELETE CASCADE,
@@ -108,15 +94,11 @@ CREATE TABLE IF NOT EXISTS public.notification_deliveries (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
-
 CREATE INDEX IF NOT EXISTS notification_deliveries_event_idx
   ON public.notification_deliveries(event_id, created_at DESC);
-
 CREATE INDEX IF NOT EXISTS notification_deliveries_device_idx
   ON public.notification_deliveries(device_id, created_at DESC);
-
 ALTER TABLE public.notification_deliveries ENABLE ROW LEVEL SECURITY;
-
 DROP POLICY IF EXISTS "notification_deliveries_service_role_all" ON public.notification_deliveries;
 CREATE POLICY "notification_deliveries_service_role_all"
   ON public.notification_deliveries
@@ -124,7 +106,6 @@ CREATE POLICY "notification_deliveries_service_role_all"
   TO service_role
   USING (TRUE)
   WITH CHECK (TRUE);
-
 CREATE OR REPLACE FUNCTION public.claim_notification_events(p_limit INTEGER DEFAULT 100)
 RETURNS SETOF public.notification_events
 LANGUAGE plpgsql
@@ -155,10 +136,8 @@ BEGIN
   RETURNING ne.*;
 END;
 $$;
-
 REVOKE ALL ON FUNCTION public.claim_notification_events(INTEGER) FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.claim_notification_events(INTEGER) TO service_role;
-
 CREATE OR REPLACE FUNCTION public.upsert_device_token(
   p_device_id TEXT,
   p_platform TEXT,
@@ -206,10 +185,8 @@ BEGIN
   RETURN v_row;
 END;
 $$;
-
 REVOKE ALL ON FUNCTION public.upsert_device_token(TEXT, TEXT, TEXT, TEXT, INTEGER, TEXT, TEXT, TEXT) FROM PUBLIC, anon;
 GRANT EXECUTE ON FUNCTION public.upsert_device_token(TEXT, TEXT, TEXT, TEXT, INTEGER, TEXT, TEXT, TEXT) TO authenticated, service_role;
-
 CREATE OR REPLACE FUNCTION public.enqueue_notification_event(
   p_type TEXT,
   p_user_id UUID,
@@ -243,6 +220,5 @@ BEGIN
   RETURN v_row;
 END;
 $$;
-
 REVOKE ALL ON FUNCTION public.enqueue_notification_event(TEXT, UUID, JSONB, INTEGER, INTEGER, TEXT, TEXT, INTEGER) FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.enqueue_notification_event(TEXT, UUID, JSONB, INTEGER, INTEGER, TEXT, TEXT, INTEGER) TO service_role;

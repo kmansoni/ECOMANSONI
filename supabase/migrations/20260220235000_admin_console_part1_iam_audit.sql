@@ -1,4 +1,3 @@
--- ALLOW_NON_IDEMPOTENT_POLICY_DDL: legacy migration already applied to production; non-idempotent policies are intentional here.
 -- =====================================================
 -- ADMIN CONSOLE - DATABASE SCHEMA
 -- Production-grade admin panel with strict security
@@ -44,13 +43,10 @@ CREATE TABLE public.admin_users (
     deactivated_by UUID REFERENCES public.admin_users(id),
     deactivation_reason TEXT
 );
-
 CREATE INDEX idx_admin_users_status ON public.admin_users(status) WHERE status = 'active';
 CREATE INDEX idx_admin_users_email ON public.admin_users(email);
 CREATE INDEX idx_admin_users_sso ON public.admin_users(sso_provider, sso_subject);
-
 COMMENT ON TABLE public.admin_users IS 'Admin accounts with MFA/WebAuthn enforcement';
-
 -- =====================================================
 -- 2. RBAC (Roles & Permissions)
 -- =====================================================
@@ -74,7 +70,6 @@ CREATE TABLE public.admin_roles (
     is_system BOOLEAN DEFAULT false, -- Cannot be deleted
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
-
 -- Predefined permissions (scopes)
 CREATE TABLE public.admin_permissions (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -86,9 +81,7 @@ CREATE TABLE public.admin_permissions (
     is_system BOOLEAN DEFAULT false,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
-
 CREATE INDEX idx_admin_permissions_resource ON public.admin_permissions(resource);
-
 -- Role-Permission mapping
 CREATE TABLE public.admin_role_permissions (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -98,9 +91,7 @@ CREATE TABLE public.admin_role_permissions (
     granted_by UUID REFERENCES public.admin_users(id),
     UNIQUE(role_id, permission_id)
 );
-
 CREATE INDEX idx_role_permissions_role ON public.admin_role_permissions(role_id);
-
 -- User-Role assignment
 CREATE TABLE public.admin_user_roles (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -123,11 +114,9 @@ CREATE TABLE public.admin_user_roles (
     
     UNIQUE(admin_user_id, role_id)
 );
-
 CREATE INDEX idx_user_roles_user ON public.admin_user_roles(admin_user_id);
 CREATE INDEX idx_user_roles_permanent ON public.admin_user_roles(admin_user_id) WHERE expires_at IS NULL;
 CREATE INDEX idx_user_roles_expires ON public.admin_user_roles(admin_user_id, expires_at);
-
 -- =====================================================
 -- 3. OWNER MANAGEMENT
 -- =====================================================
@@ -148,11 +137,8 @@ CREATE TABLE public.owners (
     transferred_from UUID REFERENCES public.owners(id), -- Ownership transfer history
     transferred_at TIMESTAMPTZ
 );
-
 CREATE INDEX idx_owners_active ON public.owners(admin_user_id) WHERE transferred_at IS NULL;
-
 COMMENT ON TABLE public.owners IS 'Platform owners with highest privileges but constrained access';
-
 -- Owner escalation requests (JIT access to sensitive data)
 CREATE TABLE public.owner_escalation_requests (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -173,7 +159,6 @@ CREATE TABLE public.owner_escalation_requests (
     status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'approved', 'denied', 'expired', 'revoked')),
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
-
 -- =====================================================
 -- 4. SESSIONS & TOKENS
 -- =====================================================
@@ -205,10 +190,8 @@ CREATE TABLE public.admin_sessions (
     revoked_by UUID REFERENCES public.admin_users(id),
     revoke_reason TEXT
 );
-
 CREATE INDEX idx_admin_sessions_user ON public.admin_sessions(admin_user_id, expires_at DESC) WHERE NOT revoked;
 CREATE INDEX idx_admin_sessions_jti ON public.admin_sessions(access_token_jti) WHERE NOT revoked;
-
 -- =====================================================
 -- 5. AUDIT LOG (Append-only with Hash Chain)
 -- =====================================================
@@ -257,30 +240,23 @@ CREATE TABLE public.admin_audit_events (
     
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
-
 -- Indexes
 CREATE INDEX idx_audit_actor ON public.admin_audit_events(actor_id, created_at DESC);
 CREATE INDEX idx_audit_resource ON public.admin_audit_events(resource_type, resource_id, created_at DESC);
 CREATE INDEX idx_audit_severity ON public.admin_audit_events(severity, created_at DESC);
 CREATE INDEX idx_audit_sequence ON public.admin_audit_events(sequence_number DESC);
 CREATE INDEX idx_audit_request ON public.admin_audit_events(request_id);
-
 -- No UPDATE/DELETE allowed
 ALTER TABLE public.admin_audit_events ENABLE ROW LEVEL SECURITY;
-
 -- Strictly restrict audit access to service_role (admin-api only).
 DROP POLICY IF EXISTS "Audit events are append-only" ON public.admin_audit_events;
-
 CREATE POLICY "service_role can read audit events" ON public.admin_audit_events
     FOR SELECT
     USING (auth.role() = 'service_role');
-
 CREATE POLICY "service_role can insert audit events" ON public.admin_audit_events
     FOR INSERT
     WITH CHECK (auth.role() = 'service_role');
-
 COMMENT ON TABLE public.admin_audit_events IS 'Immutable audit log with hash chain for tamper detection';
-
 -- Audit hash anchors (periodic snapshots to immutable storage)
 CREATE TABLE public.audit_hash_anchors (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -290,7 +266,6 @@ CREATE TABLE public.audit_hash_anchors (
     anchor_storage_url TEXT, -- S3/IPFS URL of signed backup
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
-
 -- =====================================================
 -- 6. APPROVAL WORKFLOWS (4-eyes, M-of-N)
 -- =====================================================
@@ -327,10 +302,8 @@ CREATE TABLE public.approvals (
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
-
 CREATE INDEX idx_approvals_status ON public.approvals(status, created_at DESC);
 CREATE INDEX idx_approvals_requester ON public.approvals(requested_by);
-
 -- Individual approval steps
 CREATE TABLE public.approval_steps (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -351,9 +324,7 @@ CREATE TABLE public.approval_steps (
     
     UNIQUE(approval_id, approver_id)
 );
-
 CREATE INDEX idx_approval_steps_approval ON public.approval_steps(approval_id);
-
 -- =====================================================
 -- 7. POLICIES (ABAC Rules)
 -- =====================================================
@@ -394,11 +365,8 @@ CREATE TABLE public.admin_policies (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_by UUID REFERENCES public.admin_users(id)
 );
-
 CREATE INDEX idx_policies_resource_action ON public.admin_policies(resource, action) WHERE enabled;
-
 COMMENT ON TABLE public.admin_policies IS 'ABAC policy rules for fine-grained access control';
-
 -- =====================================================
 -- 8. MODERATION DOMAIN
 -- =====================================================
@@ -436,11 +404,9 @@ CREATE TABLE public.moderation_reports (
     
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
-
 CREATE INDEX idx_moderation_reports_status ON public.moderation_reports(status, priority DESC, created_at DESC);
 CREATE INDEX idx_moderation_reports_target ON public.moderation_reports(reported_entity_type, reported_entity_id);
 CREATE INDEX idx_moderation_reports_assignee ON public.moderation_reports(assigned_to) WHERE status = 'assigned';
-
 -- Moderation cases (aggregated, long-running investigations)
 CREATE TABLE public.moderation_cases (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -481,10 +447,8 @@ CREATE TABLE public.moderation_cases (
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
-
 CREATE INDEX idx_moderation_cases_status ON public.moderation_cases(status, severity DESC, created_at DESC);
 CREATE INDEX idx_moderation_cases_lead ON public.moderation_cases(lead_investigator);
-
 -- Enforcement actions (bans, restrictions, etc)
 CREATE TABLE public.moderation_actions (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -515,12 +479,9 @@ CREATE TABLE public.moderation_actions (
     
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
-
 CREATE INDEX idx_moderation_actions_target ON public.moderation_actions(target_user_id, active);
 CREATE INDEX idx_moderation_actions_type ON public.moderation_actions(action_type, active);
-
 COMMENT ON TABLE public.moderation_actions IS 'Enforcement actions against users/content';
-
 -- =====================================================
 -- CONTINUED IN PART 2...
--- =====================================================
+-- =====================================================;

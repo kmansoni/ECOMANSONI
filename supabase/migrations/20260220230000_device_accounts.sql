@@ -1,4 +1,3 @@
--- ALLOW_NON_IDEMPOTENT_POLICY_DDL: legacy migration already applied to production; non-idempotent policies are intentional here.
 -- Device ↔ account linkage for multi-account UX.
 
 CREATE TABLE IF NOT EXISTS public.device_accounts (
@@ -8,9 +7,7 @@ CREATE TABLE IF NOT EXISTS public.device_accounts (
   last_active_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   PRIMARY KEY (device_id, user_id)
 );
-
 ALTER TABLE public.device_accounts ENABLE ROW LEVEL SECURITY;
-
 DO $$
 BEGIN
   IF NOT EXISTS (
@@ -37,6 +34,5 @@ BEGIN
       FOR UPDATE USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
   END IF;
 END $$;
-
 CREATE INDEX IF NOT EXISTS device_accounts_user_last_active_idx
   ON public.device_accounts(user_id, last_active_at DESC);

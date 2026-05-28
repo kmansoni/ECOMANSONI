@@ -5,7 +5,6 @@
 --    Legacy auth.users rows were observed to store phones without the leading '+'.
 
 drop function if exists public.__debug_phone_probe_v1(text);
-
 create or replace function public.get_email_by_phone_v1(p_phone text)
 returns text
 language plpgsql
@@ -41,9 +40,7 @@ begin
   return v_email;
 end;
 $$;
-
 grant execute on function public.get_email_by_phone_v1(text) to anon, authenticated;
-
 create or replace function public.check_recovery_phone_email_v1(p_phone text, p_email text)
 returns boolean
 language plpgsql
@@ -81,5 +78,4 @@ begin
   return coalesce(v_found, false);
 end;
 $$;
-
 grant execute on function public.check_recovery_phone_email_v1(text, text) to anon, authenticated;

@@ -1,4 +1,3 @@
--- ALLOW_NON_IDEMPOTENT_POLICY_DDL: legacy migration already applied to production; non-idempotent policies are intentional here.
 -- Telegram-like: Data & Storage settings + Chat Folders
 
 -- =====================================================
@@ -13,7 +12,6 @@ ALTER TABLE public.user_settings
   ADD COLUMN IF NOT EXISTS media_auto_download_files_max_mb INTEGER NOT NULL DEFAULT 3,
   ADD COLUMN IF NOT EXISTS cache_auto_delete_days INTEGER NOT NULL DEFAULT 7,
   ADD COLUMN IF NOT EXISTS cache_max_size_mb INTEGER;
-
 -- =====================================================
 -- 2) Chat folders (server-side, sync across devices)
 -- =====================================================
@@ -26,7 +24,6 @@ CREATE TABLE IF NOT EXISTS public.chat_folders (
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
-
 CREATE TABLE IF NOT EXISTS public.chat_folder_items (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   folder_id UUID NOT NULL REFERENCES public.chat_folders(id) ON DELETE CASCADE,
@@ -35,10 +32,8 @@ CREATE TABLE IF NOT EXISTS public.chat_folder_items (
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   UNIQUE(folder_id, item_kind, item_id)
 );
-
 ALTER TABLE public.chat_folders ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.chat_folder_items ENABLE ROW LEVEL SECURITY;
-
 -- RLS: folders
 DO $$
 BEGIN
@@ -74,7 +69,6 @@ BEGIN
       FOR DELETE USING (auth.uid() = user_id);
   END IF;
 END $$;
-
 -- RLS: items
 DO $$
 BEGIN
@@ -117,13 +111,11 @@ BEGIN
       );
   END IF;
 END $$;
-
 -- updated_at trigger
 DROP TRIGGER IF EXISTS update_chat_folders_updated_at ON public.chat_folders;
 CREATE TRIGGER update_chat_folders_updated_at
 BEFORE UPDATE ON public.chat_folders
 FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
-
 -- Enable realtime
 DO $$
 BEGIN

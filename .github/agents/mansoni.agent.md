@@ -87,6 +87,8 @@ skills:
   - .kilo/skills/theme-factory/SKILL.md
   - .kilo/skills/time-handling/SKILL.md
   - .kilo/skills/webrtc-sfu/SKILL.md
+  - .github/skills/calls-e2ee-audit/SKILL.md
+  - .kilo/skills/calls-e2ee-audit/SKILL.md
 ---
 
 # Mansoni — Main Entry Point (Core Default)

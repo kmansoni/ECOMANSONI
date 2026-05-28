@@ -7,8 +7,8 @@ import { staticDataUrl } from './staticDataUrl';
 import type { LatLng } from '@/types/taxi';
 import type { NavRoute, NavigationMapObject, RouteObjectRelevance, SpeedCamera } from '@/types/navigation';
 import type { RoadInfraSnapshot } from '@/types/roadInfra';
-import { calculateDistance } from '@/lib/taxi/calculations';
 import { scanInfrastructure } from './infra';
+import { calculateDistance } from './distance';
 import { logger } from '@/lib/logger';
 
 export interface TrafficLight {

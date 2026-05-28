@@ -318,88 +318,21 @@ screenStream,
         return;
       }
 
-      let routerRtpCapabilities = sfuRouterRtpCapabilitiesRef.current;
-      if (!routerRtpCapabilities) {
-        try {
-          const joinOk = await client.waitFor(
-            "ROOM_JOIN_OK",
-            (frame) => {
-              const payload = frame.payload as { roomId?: string } | undefined;
-              return payload?.roomId === roomId;
-            },
-            { timeoutMs: 1200, acceptRecent: true }
-          );
-          const joinOkCaps = extractRouterCapsFromJoinPayload(joinOk.payload as Record<string, unknown> | undefined);
-          if (joinOkCaps) {
-            sfuRouterRtpCapabilitiesRef.current = joinOkCaps;
-            routerRtpCapabilities = joinOkCaps;
-          }
-        } catch (error) {
-          logger.debug("video_call_context.room_join_ok_caps_not_available_yet", {
-            roomId,
-            error,
-          });
-        }
-      }
+      const routerRtpCapabilities = sfuRouterRtpCapabilitiesRef.current;
 
       if (!routerRtpCapabilities) {
-        try {
-          const joined = await client.waitFor(
-            "ROOM_JOINED",
-            (frame) => {
-              const payload = frame.payload as { roomId?: string } | undefined;
-              return payload?.roomId === roomId;
-            },
-            { timeoutMs: 1200, acceptRecent: true }
-          );
-          const joinedCaps = extractRouterCapsFromJoinPayload(joined.payload as Record<string, unknown> | undefined);
-          if (joinedCaps) {
-            sfuRouterRtpCapabilitiesRef.current = joinedCaps;
-            routerRtpCapabilities = joinedCaps;
-          }
-        } catch (error) {
-          logger.debug("video_call_context.room_joined_caps_not_available_yet", {
-            roomId,
-            error,
-          });
-        }
-      }
-
-      if (!routerRtpCapabilities) {
-        try {
-          await client.getRouterRtpCapabilities({ roomId });
-          const rtpCapsFrame = await client.waitFor(
-            "ROUTER_RTP_CAPABILITIES",
-            (frame) => {
-              const p = frame.payload as { roomId?: string } | undefined;
-              return p?.roomId === roomId;
-            },
-            { timeoutMs: 3000, acceptRecent: false }
-          );
-          const rtpCaps = extractRouterCapsFromJoinPayload(rtpCapsFrame.payload as Record<string, unknown> | undefined);
-          if (rtpCaps) {
-            sfuRouterRtpCapabilitiesRef.current = rtpCaps;
-            routerRtpCapabilities = rtpCaps;
-            logger.info("[VideoCallContext] calls-v2 routerRtpCapabilities obtained via GET_ROUTER_RTP_CAPABILITIES fallback", { roomId });
-          }
-        } catch (error) {
-          logger.debug("video_call_context.get_router_rtp_capabilities_not_supported", { roomId, error });
-        }
-      }
-
-      if (!routerRtpCapabilities) {
-        logger.warn("[VideoCallContext] calls-v2 media-bootstrap skipped: routerRtpCapabilities unresolved", { roomId });
+        logger.error("[VideoCallContext] calls-v2 media-bootstrap aborted: missing routerRtpCapabilities from ROOM_JOIN_OK", { roomId });
         reportMediaBootstrapFailure(
           roomId,
           callId,
-          new Error("routerRtpCapabilities missing in ROOM_JOIN_OK/ROOM_JOINED")
+          new Error("FATAL protocol violation: routerRtpCapabilities missing in ROOM_JOIN_OK")
         );
         return;
       }
 
       if (!sfuManagerRef.current) {
         sfuManagerRef.current = new SfuMediaManager({
-          requireSenderReceiverAccessForE2ee: CallMediaEncryption.isSupported(),
+          requireSenderReceiverAccessForE2ee: REQUIRE_SFRAME && CallMediaEncryption.isSupported(),
           onTransportClosed: (transportId, direction) => {
             logger.error("[VideoCallContext] ICE restart exhausted — transport permanently closed", { transportId, direction });
             dispatchFsm("ERROR");

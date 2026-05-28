@@ -14,8 +14,6 @@ import {
   Search,
   MessageCircle,
   User,
-  Building2,
-  Shield,
   Settings,
   Plus,
   TrendingUp,
@@ -28,8 +26,6 @@ const navigationItems = [
   { icon: Search, label: "Поиск", path: "/search", keywords: "search поиск найти" },
   { icon: MessageCircle, label: "Чаты", path: "/chats", keywords: "chats чаты сообщения" },
   { icon: User, label: "Профиль", path: "/profile", keywords: "profile профиль аккаунт" },
-  { icon: Building2, label: "Недвижимость", path: "/realestate", keywords: "real estate недвижимость квартира дом" },
-  { icon: Shield, label: "Страхование", path: "/insurance", keywords: "insurance страхование полис" },
 ];
 
 const quickActions = [

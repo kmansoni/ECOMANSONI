@@ -1,4 +1,3 @@
--- ALLOW_NON_IDEMPOTENT_POLICY_DDL: legacy migration already applied to production; non-idempotent policies are intentional here.
 -- ============================================================================
 -- REELS ENGINE 4.x CONTROL PLANE (DB FOUNDATION)
 -- Purpose:
@@ -31,7 +30,6 @@ BEGIN
     );
   END IF;
 END $$;
-
 -- ---------------------------------------------------------------------------
 -- 1) Config snapshots
 -- ---------------------------------------------------------------------------
@@ -50,16 +48,12 @@ CREATE TABLE IF NOT EXISTS public.reels_engine_config_versions (
   activated_at TIMESTAMPTZ,
   activated_by UUID REFERENCES auth.users(id) ON DELETE SET NULL
 );
-
 CREATE INDEX IF NOT EXISTS idx_reels_engine_config_versions_env_time
   ON public.reels_engine_config_versions(environment, created_at DESC);
-
 CREATE UNIQUE INDEX IF NOT EXISTS ux_reels_engine_config_versions_active
   ON public.reels_engine_config_versions(environment)
   WHERE is_active = true;
-
 ALTER TABLE public.reels_engine_config_versions ENABLE ROW LEVEL SECURITY;
-
 DO $$
 BEGIN
   BEGIN
@@ -71,7 +65,6 @@ BEGIN
   EXCEPTION WHEN duplicate_object THEN NULL;
   END;
 END $$;
-
 -- ---------------------------------------------------------------------------
 -- 2) Per-segment state
 -- ---------------------------------------------------------------------------
@@ -99,15 +92,11 @@ CREATE TABLE IF NOT EXISTS public.reels_engine_segment_state (
 
   PRIMARY KEY (environment, segment_key)
 );
-
 CREATE INDEX IF NOT EXISTS idx_reels_engine_segment_state_env_mode
   ON public.reels_engine_segment_state(environment, mode);
-
 CREATE INDEX IF NOT EXISTS idx_reels_engine_segment_state_updated
   ON public.reels_engine_segment_state(environment, updated_at DESC);
-
 ALTER TABLE public.reels_engine_segment_state ENABLE ROW LEVEL SECURITY;
-
 DO $$
 BEGIN
   BEGIN
@@ -119,7 +108,6 @@ BEGIN
   EXCEPTION WHEN duplicate_object THEN NULL;
   END;
 END $$;
-
 -- ---------------------------------------------------------------------------
 -- 3) Action journal (idempotent)
 -- ---------------------------------------------------------------------------
@@ -147,18 +135,13 @@ CREATE TABLE IF NOT EXISTS public.reels_engine_action_journal (
   suppression_reason TEXT,
   error TEXT
 );
-
 CREATE UNIQUE INDEX IF NOT EXISTS ux_reels_engine_action_journal_idempotency
   ON public.reels_engine_action_journal(environment, idempotency_key);
-
 CREATE INDEX IF NOT EXISTS idx_reels_engine_action_journal_env_time
   ON public.reels_engine_action_journal(environment, decided_at DESC);
-
 CREATE INDEX IF NOT EXISTS idx_reels_engine_action_journal_segment_time
   ON public.reels_engine_action_journal(environment, segment_key, decided_at DESC);
-
 ALTER TABLE public.reels_engine_action_journal ENABLE ROW LEVEL SECURITY;
-
 DO $$
 BEGIN
   BEGIN
@@ -170,7 +153,6 @@ BEGIN
   EXCEPTION WHEN duplicate_object THEN NULL;
   END;
 END $$;
-
 -- ---------------------------------------------------------------------------
 -- 4) Helper: service-role check
 -- ---------------------------------------------------------------------------
@@ -184,7 +166,6 @@ BEGIN
   END IF;
 END;
 $$;
-
 -- ---------------------------------------------------------------------------
 -- 5) Config RPCs
 -- ---------------------------------------------------------------------------
@@ -207,7 +188,6 @@ AS $$
   ORDER BY c.activated_at DESC NULLS LAST
   LIMIT 1;
 $$;
-
 CREATE OR REPLACE FUNCTION public.reels_engine_propose_config(
   p_config JSONB,
   p_environment TEXT DEFAULT 'prod',
@@ -242,10 +222,8 @@ BEGIN
   RETURN v_id;
 END;
 $$;
-
 ALTER FUNCTION public.reels_engine_propose_config(JSONB, TEXT, TEXT, UUID)
   SET search_path = public, pg_catalog;
-
 CREATE OR REPLACE FUNCTION public.reels_engine_activate_config(
   p_version_id UUID
 )
@@ -278,10 +256,8 @@ BEGIN
   WHERE id = p_version_id;
 END;
 $$;
-
 ALTER FUNCTION public.reels_engine_activate_config(UUID)
   SET search_path = public, pg_catalog;
-
 -- ---------------------------------------------------------------------------
 -- 6) Suppression RPC (pipeline supremacy)
 -- ---------------------------------------------------------------------------
@@ -325,10 +301,8 @@ BEGIN
     updated_at = now();
 END;
 $$;
-
 ALTER FUNCTION public.reels_engine_set_pipeline_suppression(TEXT, TEXT, TIMESTAMPTZ, TEXT)
   SET search_path = public, pg_catalog;
-
 -- ---------------------------------------------------------------------------
 -- 7) Idempotent action apply (core primitive for DAS)
 -- ---------------------------------------------------------------------------
@@ -488,32 +462,25 @@ BEGIN
   SELECT v_existing_id, v_status, v_message;
 END;
 $$;
-
 ALTER FUNCTION public.reels_engine_apply_action(TEXT, TEXT, TEXT, TEXT, JSONB, INTEGER, BOOLEAN, TEXT)
   SET search_path = public, pg_catalog;
-
 -- ---------------------------------------------------------------------------
 -- 8) Grants (service_role only)
 -- ---------------------------------------------------------------------------
 REVOKE ALL ON TABLE public.reels_engine_config_versions FROM anon, authenticated;
 REVOKE ALL ON TABLE public.reels_engine_segment_state FROM anon, authenticated;
 REVOKE ALL ON TABLE public.reels_engine_action_journal FROM anon, authenticated;
-
 GRANT SELECT ON TABLE public.reels_engine_config_versions TO service_role;
 GRANT SELECT ON TABLE public.reels_engine_segment_state TO service_role;
 GRANT SELECT ON TABLE public.reels_engine_action_journal TO service_role;
-
 GRANT EXECUTE ON FUNCTION public.reels_engine_get_active_config(TEXT) TO service_role;
 GRANT EXECUTE ON FUNCTION public.reels_engine_propose_config(JSONB, TEXT, TEXT, UUID) TO service_role;
 GRANT EXECUTE ON FUNCTION public.reels_engine_activate_config(UUID) TO service_role;
 GRANT EXECUTE ON FUNCTION public.reels_engine_set_pipeline_suppression(TEXT, TEXT, TIMESTAMPTZ, TEXT) TO service_role;
 GRANT EXECUTE ON FUNCTION public.reels_engine_apply_action(TEXT, TEXT, TEXT, TEXT, JSONB, INTEGER, BOOLEAN, TEXT) TO service_role;
-
 COMMENT ON TABLE public.reels_engine_config_versions IS
   'Reels Engine control plane: immutable config snapshots + activation.';
-
 COMMENT ON TABLE public.reels_engine_segment_state IS
   'Reels Engine control plane: per-segment operational state (mode/suppression/overrides/cooldowns).';
-
 COMMENT ON TABLE public.reels_engine_action_journal IS
   'Reels Engine control plane: idempotent action journal for arbitration and audit.';

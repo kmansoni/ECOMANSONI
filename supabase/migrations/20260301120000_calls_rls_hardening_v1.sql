@@ -10,7 +10,6 @@ WITH CHECK (
   (auth.uid() = caller_id OR auth.uid() = callee_id)
   AND status IN ('ringing', 'answered', 'declined', 'ended', 'missed')
 );
-
 -- video_call_signals UPDATE: only signal author can update their own signal,
 -- and only while still being a participant of the related call.
 DROP POLICY IF EXISTS "Participants can update their signals" ON public.video_call_signals;

@@ -1,4 +1,3 @@
--- ALLOW_NON_IDEMPOTENT_POLICY_DDL: legacy migration already applied to production; non-idempotent policies are intentional here.
 -- Notifications (categories + exceptions) and calls tab preference
 
 -- =====================================================
@@ -20,9 +19,7 @@ CREATE TABLE IF NOT EXISTS public.notification_category_settings (
   CONSTRAINT notification_category_kind_check
     CHECK (category IN ('dm', 'group', 'channel', 'stories', 'reactions'))
 );
-
 ALTER TABLE public.notification_category_settings ENABLE ROW LEVEL SECURITY;
-
 DO $$
 BEGIN
   IF NOT EXISTS (
@@ -65,18 +62,13 @@ BEGIN
       USING (auth.uid() = user_id);
   END IF;
 END $$;
-
 CREATE INDEX IF NOT EXISTS notification_category_settings_user_idx
   ON public.notification_category_settings(user_id, category);
-
 CREATE TRIGGER update_notification_category_settings_updated_at
 BEFORE UPDATE ON public.notification_category_settings
 FOR EACH ROW
 EXECUTE FUNCTION public.update_updated_at_column();
-
 ALTER PUBLICATION supabase_realtime ADD TABLE public.notification_category_settings;
-
-
 -- =====================================================
 -- 2) Notification exceptions
 -- =====================================================
@@ -97,9 +89,7 @@ CREATE TABLE IF NOT EXISTS public.notification_exceptions (
   CONSTRAINT notification_exception_kind_check
     CHECK (item_kind IN ('dm', 'group', 'channel'))
 );
-
 ALTER TABLE public.notification_exceptions ENABLE ROW LEVEL SECURITY;
-
 DO $$
 BEGIN
   IF NOT EXISTS (
@@ -142,18 +132,13 @@ BEGIN
       USING (auth.uid() = user_id);
   END IF;
 END $$;
-
 CREATE INDEX IF NOT EXISTS notification_exceptions_user_idx
   ON public.notification_exceptions(user_id, item_kind);
-
 CREATE TRIGGER update_notification_exceptions_updated_at
 BEFORE UPDATE ON public.notification_exceptions
 FOR EACH ROW
 EXECUTE FUNCTION public.update_updated_at_column();
-
 ALTER PUBLICATION supabase_realtime ADD TABLE public.notification_exceptions;
-
-
 -- =====================================================
 -- 3) Calls tab preference (user_settings)
 -- =====================================================

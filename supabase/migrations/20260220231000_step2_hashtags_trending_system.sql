@@ -1,4 +1,3 @@
--- ALLOW_NON_IDEMPOTENT_POLICY_DDL: legacy migration already applied to production; non-idempotent policies are intentional here.
 -- ============================================================================
 -- ЭТАП 2: СИСТЕМА ХЕШТЕГОВ И АВТОМАТИЧЕСКОЕ ОПРЕДЕЛЕНИЕ ТРЕНДОВ
 -- Hashtag tracking, trending detection, topic clustering
@@ -49,16 +48,13 @@ CREATE TABLE IF NOT EXISTS public.hashtags (
   
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
-
 CREATE UNIQUE INDEX idx_hashtags_normalized ON public.hashtags(normalized_tag);
 CREATE INDEX idx_hashtags_trending ON public.hashtags(is_trending, velocity_score DESC) WHERE is_trending = true;
 CREATE INDEX idx_hashtags_growth ON public.hashtags(growth_rate_24h DESC);
 CREATE INDEX idx_hashtags_category ON public.hashtags(category, is_trending);
 CREATE INDEX idx_hashtags_usage ON public.hashtags(usage_count DESC);
-
 COMMENT ON TABLE public.hashtags IS 
   'Система хештегов с автоматическим trending detection и velocity tracking';
-
 -- ============================================================================
 -- 2. Связь Reels с хештегами (Many-to-Many)
 -- ============================================================================
@@ -71,13 +67,10 @@ CREATE TABLE IF NOT EXISTS public.reel_hashtags (
   
   PRIMARY KEY (reel_id, hashtag_id)
 );
-
 CREATE INDEX idx_reel_hashtags_reel ON public.reel_hashtags(reel_id);
 CREATE INDEX idx_reel_hashtags_hashtag ON public.reel_hashtags(hashtag_id, created_at DESC);
-
 COMMENT ON TABLE public.reel_hashtags IS 
   'Связь Reels с хештегами для discovery и trending boost';
-
 -- ============================================================================
 -- 3. Trending Topics (автоматически определённые темы БЕЗ хештегов)
 -- ============================================================================
@@ -113,14 +106,11 @@ CREATE TABLE IF NOT EXISTS public.trending_topics (
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
-
 CREATE INDEX idx_trending_topics_active ON public.trending_topics(is_active, growth_velocity DESC) WHERE is_active = true;
 CREATE INDEX idx_trending_topics_keywords ON public.trending_topics USING GIN(keywords);
 CREATE INDEX idx_trending_topics_created ON public.trending_topics(created_at DESC);
-
 COMMENT ON TABLE public.trending_topics IS 
   'Автоматически определённые трендовые темы (через NLP, независимо от хештегов)';
-
 -- ============================================================================
 -- 4. Связь Reels с Trending Topics
 -- ============================================================================
@@ -133,10 +123,8 @@ CREATE TABLE IF NOT EXISTS public.reel_trending_topics (
   
   PRIMARY KEY (reel_id, topic_id)
 );
-
 CREATE INDEX idx_reel_topics_reel ON public.reel_trending_topics(reel_id);
 CREATE INDEX idx_reel_topics_topic ON public.reel_trending_topics(topic_id, relevance_score DESC);
-
 -- ============================================================================
 -- 5. Функция: Извлечение хештегов из текста
 -- ============================================================================
@@ -153,10 +141,8 @@ BEGIN
   RETURN COALESCE(v_hashtags, ARRAY[]::TEXT[]);
 END;
 $$ LANGUAGE plpgsql IMMUTABLE;
-
 COMMENT ON FUNCTION extract_hashtags IS 
   'Извлекает все хештеги из текста (поддержка русского и английского)';
-
 -- ============================================================================
 -- 6. Функция: Автоматическое связывание Reel с хештегами
 -- ============================================================================
@@ -194,13 +180,11 @@ BEGIN
   RETURN NEW;
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-
 -- Триггер на создание/обновление Reel
 DROP TRIGGER IF EXISTS trg_auto_link_hashtags ON reels;
 CREATE TRIGGER trg_auto_link_hashtags
   AFTER INSERT OR UPDATE OF description ON reels
   FOR EACH ROW EXECUTE FUNCTION auto_link_reel_hashtags();
-
 -- ============================================================================
 -- 7. Функция: Расчёт trending score для хештега
 -- ============================================================================
@@ -273,10 +257,8 @@ BEGIN
   END LOOP;
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-
 COMMENT ON FUNCTION calculate_hashtag_trending IS 
   'Периодический расчёт trending status для всех хештегов (запускать каждый час через cron)';
-
 -- ============================================================================
 -- 8. Функция: Автоопределение трендовых тем (NLP-based)
 -- ============================================================================
@@ -354,10 +336,8 @@ BEGIN
     AND is_active = true;
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-
 COMMENT ON FUNCTION detect_trending_topics IS 
   'Автоматическое определение трендовых тем через NLP (частотный анализ слов). Запуск каждые 2-4 часа.';
-
 -- ============================================================================
 -- 9. Функция: Получить trending хештеги
 -- ============================================================================
@@ -391,7 +371,6 @@ BEGIN
   LIMIT p_limit;
 END;
 $$ LANGUAGE plpgsql STABLE SECURITY DEFINER;
-
 -- ============================================================================
 -- 10. Функция: Hashtag Boost для Reels
 -- ============================================================================
@@ -423,10 +402,8 @@ BEGIN
   RETURN LEAST(v_boost_score, 200.0);
 END;
 $$ LANGUAGE plpgsql STABLE SECURITY DEFINER;
-
 COMMENT ON FUNCTION get_hashtag_boost_score IS 
   'Рассчитывает boost score для Reel на основе trending хештегов: mega=100, hot=60, rising=30';
-
 -- ============================================================================
 -- 11. Permissions
 -- ============================================================================
@@ -434,23 +411,18 @@ GRANT SELECT ON public.hashtags TO authenticated, anon;
 GRANT SELECT ON public.reel_hashtags TO authenticated, anon;
 GRANT SELECT ON public.trending_topics TO authenticated, anon;
 GRANT SELECT ON public.reel_trending_topics TO authenticated, anon;
-
 GRANT EXECUTE ON FUNCTION public.extract_hashtags TO authenticated;
 GRANT EXECUTE ON FUNCTION public.get_trending_hashtags TO authenticated, anon;
 GRANT EXECUTE ON FUNCTION public.get_hashtag_boost_score TO authenticated, anon;
-
 -- Admin functions (для cron jobs)
 GRANT EXECUTE ON FUNCTION public.calculate_hashtag_trending TO service_role;
 GRANT EXECUTE ON FUNCTION public.detect_trending_topics TO service_role;
-
 -- RLS (публичное чтение)
 ALTER TABLE public.hashtags ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.reel_hashtags ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.trending_topics ENABLE ROW LEVEL SECURITY;
-
 CREATE POLICY "Public read hashtags" ON public.hashtags FOR SELECT USING (true);
 CREATE POLICY "Public read reel_hashtags" ON public.reel_hashtags FOR SELECT USING (true);
 CREATE POLICY "Public read trending_topics" ON public.trending_topics FOR SELECT USING (true);
-
 COMMENT ON SCHEMA public IS 
   'Hashtag System: auto-extraction, trending detection (mega/hot/rising), NLP topic clustering';

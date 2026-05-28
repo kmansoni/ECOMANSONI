@@ -55,19 +55,14 @@ CREATE TABLE IF NOT EXISTS public.reel_metrics (
   last_updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
-
 CREATE INDEX IF NOT EXISTS idx_reel_metrics_author
   ON public.reel_metrics(author_id, last_updated_at DESC);
-
 CREATE INDEX IF NOT EXISTS idx_reel_metrics_impressions
   ON public.reel_metrics(impressions DESC);
-
 CREATE INDEX IF NOT EXISTS idx_reel_metrics_watched_rate
   ON public.reel_metrics(watched_rate DESC);
-
 COMMENT ON TABLE public.reel_metrics IS
   'Phase 1 EPIC J: Nearline per-reel metrics aggregates (updated every N minutes by background worker)';
-
 -- 2) Reel metrics daily snapshots (for time-series analytics)
 
 CREATE TABLE IF NOT EXISTS public.reel_metrics_snapshots (
@@ -99,19 +94,14 @@ CREATE TABLE IF NOT EXISTS public.reel_metrics_snapshots (
   
   UNIQUE(reel_id, snapshot_date)
 );
-
 CREATE INDEX IF NOT EXISTS idx_reel_metrics_snapshots_reel
   ON public.reel_metrics_snapshots(reel_id, snapshot_date DESC);
-
 CREATE INDEX IF NOT EXISTS idx_reel_metrics_snapshots_author
   ON public.reel_metrics_snapshots(author_id, snapshot_date DESC);
-
 CREATE INDEX IF NOT EXISTS idx_reel_metrics_snapshots_date
   ON public.reel_metrics_snapshots(snapshot_date DESC);
-
 COMMENT ON TABLE public.reel_metrics_snapshots IS
   'Phase 1 EPIC J: Daily snapshots of reel metrics for time-series analytics (24h/7d/30d windows)';
-
 -- 3) Creator dashboard metrics (aggregates across all reels)
 
 CREATE TABLE IF NOT EXISTS public.creator_metrics (
@@ -149,19 +139,14 @@ CREATE TABLE IF NOT EXISTS public.creator_metrics (
   last_updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
-
 CREATE INDEX IF NOT EXISTS idx_creator_metrics_impressions
   ON public.creator_metrics(total_impressions DESC);
-
 CREATE INDEX IF NOT EXISTS idx_creator_metrics_followers
   ON public.creator_metrics(total_followers DESC);
-
 CREATE INDEX IF NOT EXISTS idx_creator_metrics_updated
   ON public.creator_metrics(last_updated_at DESC);
-
 COMMENT ON TABLE public.creator_metrics IS
   'Phase 1 EPIC J: Creator dashboard metrics (aggregates across all creator reels)';
-
 -- 4) Creator metrics daily snapshots
 
 CREATE TABLE IF NOT EXISTS public.creator_metrics_snapshots (
@@ -191,16 +176,12 @@ CREATE TABLE IF NOT EXISTS public.creator_metrics_snapshots (
   
   UNIQUE(creator_id, snapshot_date)
 );
-
 CREATE INDEX IF NOT EXISTS idx_creator_metrics_snapshots_creator
   ON public.creator_metrics_snapshots(creator_id, snapshot_date DESC);
-
 CREATE INDEX IF NOT EXISTS idx_creator_metrics_snapshots_date
   ON public.creator_metrics_snapshots(snapshot_date DESC);
-
 COMMENT ON TABLE public.creator_metrics_snapshots IS
   'Phase 1 EPIC J: Daily snapshots of creator metrics for growth tracking';
-
 -- 5) Helper function: Get reel metrics with time windows
 
 CREATE OR REPLACE FUNCTION public.get_reel_metrics_v1(
@@ -331,13 +312,10 @@ BEGIN
   RETURN v_result;
 END;
 $$;
-
 REVOKE ALL ON FUNCTION public.get_reel_metrics_v1(UUID, TEXT) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.get_reel_metrics_v1(UUID, TEXT) TO authenticated;
-
 COMMENT ON FUNCTION public.get_reel_metrics_v1(UUID, TEXT) IS
   'Phase 1 EPIC J: Get reel metrics with time window (all/24h/7d/30d)';
-
 -- 6) Helper function: Get creator dashboard metrics
 
 CREATE OR REPLACE FUNCTION public.get_creator_dashboard_v1(
@@ -397,13 +375,10 @@ BEGIN
   RETURN v_result;
 END;
 $$;
-
 REVOKE ALL ON FUNCTION public.get_creator_dashboard_v1(UUID) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.get_creator_dashboard_v1(UUID) TO authenticated;
-
 COMMENT ON FUNCTION public.get_creator_dashboard_v1(UUID) IS
   'Phase 1 EPIC J: Get creator dashboard metrics (aggregates across all reels)';
-
 -- ============================================================================
 -- Summary:
 -- - ✅ reel_metrics table (nearline per-reel aggregates)
@@ -412,4 +387,4 @@ COMMENT ON FUNCTION public.get_creator_dashboard_v1(UUID) IS
 -- - ✅ creator_metrics_snapshots table (daily snapshots for growth tracking)
 -- - ✅ get_reel_metrics_v1(reel_id, window) RPC
 -- - ✅ get_creator_dashboard_v1(creator_id) RPC
--- ============================================================================
+-- ============================================================================;

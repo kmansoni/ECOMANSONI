@@ -13,11 +13,9 @@ CREATE TABLE IF NOT EXISTS public.reel_reactions (
   created_at  TIMESTAMPTZ DEFAULT now(),
   UNIQUE (reel_id, user_id, emoji)
 );
-
 CREATE INDEX IF NOT EXISTS idx_reel_reactions_reel_id ON public.reel_reactions (reel_id);
 CREATE INDEX IF NOT EXISTS idx_reel_reactions_user_id ON public.reel_reactions (user_id);
 CREATE INDEX IF NOT EXISTS idx_reel_reactions_reel_emoji ON public.reel_reactions (reel_id, emoji);
-
 -- ── 2. Music Tracks Library (licensed music for reels, like Instagram Music) ──
 CREATE TABLE IF NOT EXISTS public.music_tracks (
   id            UUID        DEFAULT gen_random_uuid() PRIMARY KEY,
@@ -32,15 +30,12 @@ CREATE TABLE IF NOT EXISTS public.music_tracks (
   play_count    INTEGER     DEFAULT 0,
   created_at    TIMESTAMPTZ DEFAULT now()
 );
-
 CREATE INDEX IF NOT EXISTS idx_music_tracks_active ON public.music_tracks (is_active) WHERE is_active = true;
 CREATE INDEX IF NOT EXISTS idx_music_tracks_genre ON public.music_tracks (genre) WHERE genre IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_music_tracks_search ON public.music_tracks USING gin (to_tsvector('russian', title || ' ' || artist));
-
 -- RLS for music tracks (read-only for authenticated, manage via service role)
 ALTER TABLE public.music_tracks ENABLE ROW LEVEL SECURITY;
 CREATE POLICY music_tracks_select ON public.music_tracks FOR SELECT USING (true);
-
 -- ── 3. Reel Effects / Filters (applied effects on reels) ──
 CREATE TABLE IF NOT EXISTS public.reel_effects (
   id            UUID        DEFAULT gen_random_uuid() PRIMARY KEY,
@@ -51,9 +46,7 @@ CREATE TABLE IF NOT EXISTS public.reel_effects (
   position      INTEGER     DEFAULT 0,  -- order in the effect chain
   created_at    TIMESTAMPTZ DEFAULT now()
 );
-
 CREATE INDEX IF NOT EXISTS idx_reel_effects_reel_id ON public.reel_effects (reel_id);
-
 -- ── 4. Playback State (resume playback, watch history per user) ──
 CREATE TABLE IF NOT EXISTS public.reel_playback_state (
   id                UUID        DEFAULT gen_random_uuid() PRIMARY KEY,
@@ -65,15 +58,12 @@ CREATE TABLE IF NOT EXISTS public.reel_playback_state (
   last_watched_at   TIMESTAMPTZ DEFAULT now(),
   UNIQUE (user_id, reel_id)
 );
-
 CREATE INDEX IF NOT EXISTS idx_playback_state_user ON public.reel_playback_state (user_id, reel_id);
-
 -- RLS: users can read/write their own playback state
 ALTER TABLE public.reel_playback_state ENABLE ROW LEVEL SECURITY;
 CREATE POLICY playback_state_select ON public.reel_playback_state FOR SELECT USING (user_id = auth.uid());
 CREATE POLICY playback_state_insert ON public.reel_playback_state FOR INSERT WITH CHECK (user_id = auth.uid());
 CREATE POLICY playback_state_update ON public.reel_playback_state FOR UPDATE USING (user_id = auth.uid());
-
 -- ── 5. Reel Mentions (@username mentions in reel descriptions) ──
 CREATE TABLE IF NOT EXISTS public.reel_mentions (
   id          UUID        DEFAULT gen_random_uuid() PRIMARY KEY,
@@ -82,14 +72,11 @@ CREATE TABLE IF NOT EXISTS public.reel_mentions (
   position    INTEGER     DEFAULT 0,  -- character position in description
   created_at  TIMESTAMPTZ DEFAULT now()
 );
-
 CREATE INDEX IF NOT EXISTS idx_reel_mentions_mentioned ON public.reel_mentions (mentioned_user_id);
 CREATE INDEX IF NOT EXISTS idx_reel_mentions_reel ON public.reel_mentions (reel_id);
-
 ALTER TABLE public.reel_mentions ENABLE ROW LEVEL SECURITY;
 CREATE POLICY reel_mentions_select ON public.reel_mentions FOR SELECT USING (true);
 CREATE POLICY reel_mentions_insert ON public.reel_mentions FOR INSERT WITH CHECK (true);
-
 -- ── 6. Reel Playlists / Collections (user-curated playlists of reels) ──
 CREATE TABLE IF NOT EXISTS public.reel_playlists (
   id          UUID        DEFAULT gen_random_uuid() PRIMARY KEY,
@@ -102,7 +89,6 @@ CREATE TABLE IF NOT EXISTS public.reel_playlists (
   created_at  TIMESTAMPTZ DEFAULT now(),
   updated_at  TIMESTAMPTZ DEFAULT now()
 );
-
 CREATE TABLE IF NOT EXISTS public.reel_playlist_items (
   id          UUID        DEFAULT gen_random_uuid() PRIMARY KEY,
   playlist_id UUID        NOT NULL REFERENCES public.reel_playlists(id) ON DELETE CASCADE,
@@ -111,24 +97,20 @@ CREATE TABLE IF NOT EXISTS public.reel_playlist_items (
   added_at    TIMESTAMPTZ DEFAULT now(),
   UNIQUE (playlist_id, reel_id)
 );
-
 ALTER TABLE public.reel_playlists ENABLE ROW LEVEL SECURITY;
 CREATE POLICY playlists_select ON public.reel_playlists FOR SELECT USING (is_public = true OR user_id = auth.uid());
 CREATE POLICY playlists_insert ON public.reel_playlists FOR INSERT WITH CHECK (user_id = auth.uid());
 CREATE POLICY playlists_update ON public.reel_playlists FOR UPDATE USING (user_id = auth.uid());
 CREATE POLICY playlists_delete ON public.reel_playlists FOR DELETE USING (user_id = auth.uid());
-
 ALTER TABLE public.reel_playlist_items ENABLE ROW LEVEL SECURITY;
 CREATE POLICY playlist_items_select ON public.reel_playlist_items FOR SELECT USING (true);
 CREATE POLICY playlist_items_insert ON public.reel_playlist_items FOR INSERT WITH CHECK (true);
 CREATE POLICY playlist_items_delete ON public.reel_playlist_items FOR DELETE USING (true);
-
 -- ── 7. RLS policies for new tables ──
 ALTER TABLE public.reel_reactions ENABLE ROW LEVEL SECURITY;
 CREATE POLICY reactions_select ON public.reel_reactions FOR SELECT USING (true);
 CREATE POLICY reactions_insert ON public.reel_reactions FOR INSERT WITH CHECK (user_id = auth.uid());
 CREATE POLICY reactions_delete ON public.reel_reactions FOR DELETE USING (user_id = auth.uid());
-
 -- ── 8. Updated RPCs ──
 
 -- Record a reaction on a reel
@@ -154,9 +136,7 @@ BEGIN
 EXCEPTION WHEN OTHERS THEN NULL;
 END;
 $$;
-
 GRANT EXECUTE ON FUNCTION public.record_reel_reaction(UUID, TEXT) TO authenticated, anon;
-
 -- Save playback position
 CREATE OR REPLACE FUNCTION public.save_reel_playback(
   p_reel_id UUID,
@@ -179,9 +159,7 @@ BEGIN
 EXCEPTION WHEN OTHERS THEN NULL;
 END;
 $$;
-
 GRANT EXECUTE ON FUNCTION public.save_reel_playback(UUID, FLOAT, BOOLEAN) TO authenticated, anon;
-
 -- Get playback position for a reel
 CREATE OR REPLACE FUNCTION public.get_reel_playback(
   p_reel_id UUID
@@ -202,16 +180,12 @@ BEGIN
   WHERE s.reel_id = p_reel_id AND s.user_id = auth.uid();
 END;
 $$;
-
 GRANT EXECUTE ON FUNCTION public.get_reel_playback(UUID) TO authenticated, anon;
-
 -- ── 9. Storage buckets for new media ──
 INSERT INTO storage.buckets (id, name, public) VALUES ('reel-effects', 'reel-effects', true)
 ON CONFLICT (id) DO NOTHING;
-
 INSERT INTO storage.buckets (id, name, public) VALUES ('music-thumbnails', 'music-thumbnails', true)
 ON CONFLICT (id) DO NOTHING;
-
 -- ── 10. Updated reels feed with reaction counts ──
 CREATE OR REPLACE FUNCTION public.get_reels_feed_v3(
   p_limit            INTEGER DEFAULT 50,
@@ -357,12 +331,9 @@ BEGIN
   END IF;
 END;
 $$;
-
 REVOKE ALL ON FUNCTION public.get_reels_feed_v3(INTEGER, INTEGER, TEXT, NUMERIC, INTEGER, INTEGER, TEXT) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.get_reels_feed_v3(INTEGER, INTEGER, TEXT, NUMERIC, INTEGER, INTEGER, TEXT) TO authenticated, anon;
-
 -- Update reels schema version tracking
 INSERT INTO public.reels_engine_config_versions (id, environment, config)
 VALUES (gen_random_uuid(), 'production', '{"schema_version": "3.0", "features": ["reactions", "music_tracks", "playback_state", "reel_mentions", "playlists"]}');
-
--- ── Done ──
+-- ── Done ──;

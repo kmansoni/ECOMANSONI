@@ -455,10 +455,8 @@ BEGIN
 
 END;
 $$;
-
 REVOKE ALL ON FUNCTION public.get_reels_feed_v2(INTEGER, INTEGER, TEXT, NUMERIC, INTEGER, INTEGER, TEXT) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.get_reels_feed_v2(INTEGER, INTEGER, TEXT, NUMERIC, INTEGER, INTEGER, TEXT) TO authenticated, anon;
-
 -- ============================================================================
 -- EPIC I Feed Integration Summary
 -- ============================================================================
@@ -484,4 +482,4 @@ GRANT EXECUTE ON FUNCTION public.get_reels_feed_v2(INTEGER, INTEGER, TEXT, NUMER
 --     - batch_analyze_diversity_v1 (every 6 hours)
 --  2. Test feed with EPIC I integration
 --  3. Monitor ranking_explanations table for audit trail
--- ============================================================================
+-- ============================================================================;

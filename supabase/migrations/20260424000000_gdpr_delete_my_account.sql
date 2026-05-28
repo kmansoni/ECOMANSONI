@@ -58,7 +58,6 @@ BEGIN
   RETURN jsonb_build_object('success', true);
 END;
 $$;
-
 -- Только сам пользователь может вызвать функцию
 REVOKE ALL ON FUNCTION public.delete_my_account(TEXT) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.delete_my_account(TEXT) TO authenticated;

@@ -1,4 +1,3 @@
--- ALLOW_NON_IDEMPOTENT_POLICY_DDL: legacy migration already applied to production; non-idempotent policies are intentional here.
 -- Branded content partner approval requests
 
 DO $$
@@ -7,7 +6,6 @@ BEGIN
     CREATE TYPE public.branded_request_status AS ENUM ('pending', 'approved', 'rejected', 'cancelled');
   END IF;
 END $$;
-
 CREATE TABLE IF NOT EXISTS public.branded_content_partner_requests (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   brand_user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
@@ -17,9 +15,7 @@ CREATE TABLE IF NOT EXISTS public.branded_content_partner_requests (
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   decided_at TIMESTAMPTZ
 );
-
 ALTER TABLE public.branded_content_partner_requests ENABLE ROW LEVEL SECURITY;
-
 -- Brand can manage own outgoing requests
 DO $$
 BEGIN
@@ -60,7 +56,6 @@ BEGIN
       WITH CHECK (auth.uid() = brand_user_id);
   END IF;
 END $$;
-
 -- Partner can see incoming requests and approve/reject
 DO $$
 BEGIN
@@ -89,13 +84,10 @@ BEGIN
       WITH CHECK (auth.uid() = partner_user_id);
   END IF;
 END $$;
-
 CREATE INDEX IF NOT EXISTS idx_branded_partner_requests_brand
   ON public.branded_content_partner_requests(brand_user_id, created_at DESC);
-
 CREATE INDEX IF NOT EXISTS idx_branded_partner_requests_partner
   ON public.branded_content_partner_requests(partner_user_id, created_at DESC);
-
 DO $$
 BEGIN
   BEGIN

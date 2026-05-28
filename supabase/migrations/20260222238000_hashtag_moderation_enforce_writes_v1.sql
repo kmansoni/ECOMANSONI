@@ -32,10 +32,8 @@ BEGIN
   END IF;
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
-
 REVOKE ALL ON FUNCTION public.validate_hashtags_allowed_v1(TEXT) FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.validate_hashtags_allowed_v1(TEXT) TO service_role;
-
 CREATE OR REPLACE FUNCTION public.enforce_hashtags_on_text_col_v1()
 RETURNS TRIGGER AS $$
 DECLARE
@@ -51,10 +49,8 @@ BEGIN
   RETURN NEW;
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
-
 REVOKE ALL ON FUNCTION public.enforce_hashtags_on_text_col_v1() FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.enforce_hashtags_on_text_col_v1() TO service_role;
-
 DO $$
 BEGIN
   IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='reels') THEN

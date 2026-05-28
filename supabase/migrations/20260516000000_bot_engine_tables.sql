@@ -15,12 +15,10 @@ CREATE TABLE IF NOT EXISTS public.bot_sessions (
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
-
 CREATE INDEX idx_bot_sessions_bot ON public.bot_sessions (bot_id);
 CREATE INDEX idx_bot_sessions_user ON public.bot_sessions (user_id);
 CREATE INDEX idx_bot_sessions_bot_user ON public.bot_sessions (bot_id, user_id);
 CREATE UNIQUE INDEX idx_bot_sessions_unique ON public.bot_sessions (bot_id, user_id) WHERE expires_at IS NULL;
-
 -- 2. BOT HANDLERS — пользовательские обработчики (правила/сценарии)
 CREATE TABLE IF NOT EXISTS public.bot_handlers (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -48,11 +46,9 @@ CREATE TABLE IF NOT EXISTS public.bot_handlers (
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
-
 CREATE INDEX idx_bot_handlers_bot ON public.bot_handlers (bot_id);
 CREATE INDEX idx_bot_handlers_active ON public.bot_handlers (bot_id, is_active);
 CREATE INDEX idx_bot_handlers_priority ON public.bot_handlers (bot_id, priority);
-
 -- 3. BOT KEYBOARDS — переиспользуемые клавиатуры
 CREATE TABLE IF NOT EXISTS public.bot_keyboards (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -66,9 +62,7 @@ CREATE TABLE IF NOT EXISTS public.bot_keyboards (
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
-
 CREATE INDEX idx_bot_keyboards_bot ON public.bot_keyboards (bot_id);
-
 -- 4. BOT RUNS — лог выполнения обработчиков
 CREATE TABLE IF NOT EXISTS public.bot_runs (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -86,11 +80,9 @@ CREATE TABLE IF NOT EXISTS public.bot_runs (
     error_message TEXT,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
-
 CREATE INDEX idx_bot_runs_bot ON public.bot_runs (bot_id);
 CREATE INDEX idx_bot_runs_session ON public.bot_runs (session_id);
 CREATE INDEX idx_bot_runs_created ON public.bot_runs (created_at DESC);
-
 -- 5. BOT CONVERSATION STATES — FSM для сценариев
 CREATE TABLE IF NOT EXISTS public.bot_conversation_states (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -104,9 +96,7 @@ CREATE TABLE IF NOT EXISTS public.bot_conversation_states (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     UNIQUE (bot_id, name)
 );
-
 CREATE INDEX idx_bot_states_bot ON public.bot_conversation_states (bot_id);
-
 -- 6. BOT TOPICS — темы для обсуждений в чатах ботов
 CREATE TABLE IF NOT EXISTS public.bot_topics (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -118,9 +108,7 @@ CREATE TABLE IF NOT EXISTS public.bot_topics (
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
-
 CREATE INDEX idx_bot_topics_bot ON public.bot_topics (bot_id);
-
 -- ============================================================================
 -- ROW LEVEL SECURITY
 -- ============================================================================
@@ -131,26 +119,19 @@ ALTER TABLE public.bot_keyboards ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.bot_runs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.bot_conversation_states ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.bot_topics ENABLE ROW LEVEL SECURITY;
-
 -- Policies
 CREATE POLICY "Bot owners manage sessions" ON public.bot_sessions
     FOR ALL USING (bot_id IN (SELECT id FROM public.bots WHERE owner_id = auth.uid()));
-
 CREATE POLICY "Bot owners manage handlers" ON public.bot_handlers
     FOR ALL USING (bot_id IN (SELECT id FROM public.bots WHERE owner_id = auth.uid()));
-
 CREATE POLICY "Bot owners manage keyboards" ON public.bot_keyboards
     FOR ALL USING (bot_id IN (SELECT id FROM public.bots WHERE owner_id = auth.uid()));
-
 CREATE POLICY "Bot owners view runs" ON public.bot_runs
     FOR ALL USING (bot_id IN (SELECT id FROM public.bots WHERE owner_id = auth.uid()));
-
 CREATE POLICY "Bot owners manage states" ON public.bot_conversation_states
     FOR ALL USING (bot_id IN (SELECT id FROM public.bots WHERE owner_id = auth.uid()));
-
 CREATE POLICY "Bot owners manage topics" ON public.bot_topics
     FOR ALL USING (bot_id IN (SELECT id FROM public.bots WHERE owner_id = auth.uid()));
-
 -- ============================================================================
 -- UPDATED_AT TRIGGERS
 -- ============================================================================
@@ -162,18 +143,13 @@ BEGIN
     RETURN NEW;
 END;
 $$ LANGUAGE plpgsql;
-
 CREATE TRIGGER bot_sessions_updated_at BEFORE UPDATE ON public.bot_sessions
     FOR EACH ROW EXECUTE FUNCTION public.bot_updated_at_trigger();
-
 CREATE TRIGGER bot_handlers_updated_at BEFORE UPDATE ON public.bot_handlers
     FOR EACH ROW EXECUTE FUNCTION public.bot_updated_at_trigger();
-
 CREATE TRIGGER bot_keyboards_updated_at BEFORE UPDATE ON public.bot_keyboards
     FOR EACH ROW EXECUTE FUNCTION public.bot_updated_at_trigger();
-
 CREATE TRIGGER bot_conversation_states_updated_at BEFORE UPDATE ON public.bot_conversation_states
     FOR EACH ROW EXECUTE FUNCTION public.bot_updated_at_trigger();
-
 CREATE TRIGGER bot_topics_updated_at BEFORE UPDATE ON public.bot_topics
     FOR EACH ROW EXECUTE FUNCTION public.bot_updated_at_trigger();

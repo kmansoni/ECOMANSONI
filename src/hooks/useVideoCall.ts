@@ -675,7 +675,7 @@ export function useVideoCall(options: UseVideoCallOptions = {}) {
     // On other platforms keep adaptive behavior: start with "all" and switch to relay on failure.
     const isIOS = /iPhone|iPad/i.test(navigator.userAgent);
     const isTelegramIOS = isIOS && /Telegram|TelegramWebView|Tg\//i.test(navigator.userAgent);
-    const shouldForceRelay = forceRelay || isIOS;
+    const shouldForceRelay = true;
 
     log("Creating peer connection, initiator:", isInitiator, "forceRelay:", shouldForceRelay, "isTelegramIOS:", isTelegramIOS);
 

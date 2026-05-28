@@ -367,10 +367,8 @@ BEGIN
   RETURN v_result;
 END;
 $$;
-
 ALTER FUNCTION public.reels_engine_validate_config_v1(JSONB)
   SET search_path = public, pg_catalog;
-
 REVOKE EXECUTE ON FUNCTION public.reels_engine_validate_config_v1(JSONB)
   FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.reels_engine_validate_config_v1(JSONB)

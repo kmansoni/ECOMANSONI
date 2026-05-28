@@ -1,11 +1,9 @@
 begin;
-
 create table if not exists public.chat_subscription_budget_config_v11 (
   key text primary key,
   value jsonb not null,
   updated_at timestamptz not null default now()
 );
-
 insert into public.chat_subscription_budget_config_v11(key, value)
 values (
   'limits',
@@ -17,7 +15,6 @@ values (
   )
 )
 on conflict (key) do nothing;
-
 create table if not exists public.chat_device_subscriptions_v11 (
   user_id uuid not null references auth.users(id) on delete cascade,
   device_id text not null,
@@ -26,19 +23,15 @@ create table if not exists public.chat_device_subscriptions_v11 (
   updated_at timestamptz not null default now(),
   primary key (user_id, device_id, dialog_id)
 );
-
 create index if not exists idx_chat_device_subscriptions_v11_user_device_mode
   on public.chat_device_subscriptions_v11(user_id, device_id, mode, updated_at desc);
-
 alter table public.chat_device_subscriptions_v11 enable row level security;
-
 drop policy if exists chat_device_subscriptions_v11_owner_select on public.chat_device_subscriptions_v11;
 create policy chat_device_subscriptions_v11_owner_select
 on public.chat_device_subscriptions_v11
 for select
 to authenticated
 using (auth.uid() = user_id);
-
 create or replace function public.chat_subscription_ttl_sweep_v11(
   p_user_id uuid default null
 )
@@ -81,7 +74,6 @@ begin
   return v_rows;
 end;
 $$;
-
 create or replace function public.chat_set_subscription_mode_v11(
   p_device_id text,
   p_dialog_id uuid,
@@ -265,8 +257,6 @@ begin
     ) as total_count;
 end;
 $$;
-
 grant execute on function public.chat_subscription_ttl_sweep_v11(uuid) to authenticated;
 grant execute on function public.chat_set_subscription_mode_v11(text, uuid, text) to authenticated;
-
 commit;

@@ -1,4 +1,3 @@
--- ALLOW_NON_IDEMPOTENT_POLICY_DDL: legacy migration already applied to production; non-idempotent policies are intentional here.
 -- 20260224153000_req_0139_media_attachment_integrity.sql
 -- REQ-0139: Media Attachment Integrity and Signed URL Access (P0)
 
@@ -27,29 +26,22 @@ create table if not exists public.media_objects (
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
-
 -- Unique constraint on bucket + path
 create unique index if not exists media_objects_bucket_path_uniq
   on public.media_objects(bucket_name, object_path);
-
 -- Index for user media lookup
 create index if not exists media_objects_uploaded_by_idx
   on public.media_objects(uploaded_by, uploaded_at desc);
-
 -- Index for entity attachment lookup
 create index if not exists media_objects_entity_idx
   on public.media_objects(entity_type, entity_id);
-
 alter table public.media_objects enable row level security;
-
 -- RLS: users can read their own media objects
 create policy media_objects_select on public.media_objects
   for select using (uploaded_by = auth.uid());
-
 -- RLS: users can insert their own media objects
 create policy media_objects_insert on public.media_objects
   for insert with check (uploaded_by = auth.uid());
-
 -- Trigger: updated_at
 create or replace function public.set_media_objects_updated_at()
 returns trigger
@@ -60,13 +52,11 @@ begin
   return new;
 end;
 $$;
-
 drop trigger if exists trg_media_objects_updated_at on public.media_objects;
 create trigger trg_media_objects_updated_at
 before update on public.media_objects
 for each row
 execute function public.set_media_objects_updated_at();
-
 -- RPC: media_register_upload_v1
 -- Validates and registers media metadata after upload
 create or replace function public.media_register_upload_v1(
@@ -120,7 +110,6 @@ begin
   return v_media_id;
 end;
 $$;
-
 -- RPC: media_get_signed_url_v1
 -- Generates short-lived signed URL for private media access
 -- Note: Simplified implementation - full signed URL generation requires storage extension
@@ -176,11 +165,9 @@ begin
   );
 end;
 $$;
-
 -- Grant execute to authenticated users
 grant execute on function public.media_register_upload_v1(text, text, bigint, text, text, uuid) to authenticated;
 grant execute on function public.media_get_signed_url_v1(uuid, integer) to authenticated;
-
 -- Storage policies (Supabase storage bucket configuration)
 -- Note: These are declarative policies for the 'media' bucket
 -- Ensure bucket 'media' is private and requires authentication
@@ -198,4 +185,4 @@ grant execute on function public.media_get_signed_url_v1(uuid, integer) to authe
 -- Example:
 -- create policy "Users can upload to own folder"
 -- on storage.objects for insert
--- with check (auth.uid()::text = (storage.foldername(name))[1]);
+-- with check (auth.uid()::text = (storage.foldername(name))[1]);;

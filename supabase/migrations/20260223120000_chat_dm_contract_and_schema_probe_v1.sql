@@ -21,9 +21,7 @@ CREATE TABLE IF NOT EXISTS public.dm_pairs (
   CONSTRAINT dm_pairs_normalized_chk CHECK (user_a < user_b),
   CONSTRAINT dm_pairs_conversation_id_uidx UNIQUE (conversation_id)
 );
-
 CREATE INDEX IF NOT EXISTS dm_pairs_conversation_id_idx ON public.dm_pairs(conversation_id);
-
 -- Best-effort backfill for existing 1:1 conversations (exactly 2 participants).
 -- If duplicates exist historically, this will pick one per pair; the others remain but are not used.
 INSERT INTO public.dm_pairs (user_a, user_b, conversation_id)
@@ -45,7 +43,6 @@ FROM pairs p
 WHERE p.row_count = 2
   AND p.distinct_users = 2
 ON CONFLICT (user_a, user_b) DO NOTHING;
-
 -- 2) Race-free SECURITY DEFINER RPC: get_or_create_dm
 -- Uses an advisory xact lock + dm_pairs PK to guarantee uniqueness.
 CREATE OR REPLACE FUNCTION public.get_or_create_dm(target_user_id UUID)
@@ -112,10 +109,8 @@ BEGIN
   RETURN conv_id;
 END;
 $$;
-
 REVOKE ALL ON FUNCTION public.get_or_create_dm(UUID) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.get_or_create_dm(UUID) TO authenticated;
-
 -- 3) Schema probe (safe, no secrets). Authenticated-only (no anon grants by default).
 CREATE OR REPLACE FUNCTION public.chat_schema_probe_v1()
 RETURNS JSONB
@@ -192,9 +187,7 @@ BEGIN
   );
 END;
 $$;
-
 REVOKE ALL ON FUNCTION public.chat_schema_probe_v1() FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.chat_schema_probe_v1() TO authenticated;
-
 COMMENT ON FUNCTION public.chat_schema_probe_v1()
   IS 'Project B: schema health probe for env drift detection. Returns non-secret booleans (no secrets, no table contents).';

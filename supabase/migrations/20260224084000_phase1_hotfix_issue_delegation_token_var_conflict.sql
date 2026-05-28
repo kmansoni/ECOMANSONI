@@ -3,7 +3,6 @@
 -- Fix: use plpgsql directive to prefer columns when names conflict.
 
 DROP FUNCTION IF EXISTS issue_delegation_token_v1(JSONB, TEXT, TEXT[], INT);
-
 CREATE FUNCTION issue_delegation_token_v1(
   p_auth_context JSONB,
   p_service_id TEXT,

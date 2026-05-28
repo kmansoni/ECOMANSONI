@@ -30,13 +30,10 @@ CREATE TABLE IF NOT EXISTS public.trend_runs (
 
   CONSTRAINT trend_runs_idempotency_unique UNIQUE (idempotency_key)
 );
-
 CREATE INDEX IF NOT EXISTS idx_trend_runs_segment_started
   ON public.trend_runs(segment_id, started_at DESC);
-
 CREATE INDEX IF NOT EXISTS idx_trend_runs_status_started
   ON public.trend_runs(status, started_at DESC);
-
 -- ============================================================================
 -- 2) Enqueue helper (generic)
 -- ============================================================================
@@ -104,9 +101,7 @@ BEGIN
   RETURN QUERY SELECT v_job_id, v_status, TRUE;
 END;
 $$;
-
 GRANT EXECUTE ON FUNCTION public.enqueue_decision_job_v1 TO service_role;
-
 -- ============================================================================
 -- 3) Start trend run RPC (internal)
 -- ============================================================================
@@ -259,9 +254,7 @@ BEGIN
     v_run.notes;
 END;
 $$;
-
 REVOKE ALL ON FUNCTION public.start_trend_run_v1(TEXT, TEXT, INT, TEXT, TEXT) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.start_trend_run_v1(TEXT, TEXT, INT, TEXT, TEXT) TO service_role;
-
 COMMENT ON FUNCTION public.start_trend_run_v1 IS
   'Internal contract: creates a trend run record + enqueues a decision_jobs batch job + emits a decision_engine event.';

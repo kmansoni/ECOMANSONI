@@ -327,7 +327,7 @@ BEGIN
       ) AS final_score,
       'Exploration' AS recommendation_reason
     FROM scored s
-    WHERE s.id NOT IN (SELECT e.id FROM exploitation e)
+    WHERE s.id NOT IN (SELECT id FROM exploitation)
       AND (s.tiktok_quality_score + s.trend_boost_score) >= 20.0
     ORDER BY random()
     LIMIT v_exploration_limit
@@ -606,7 +606,7 @@ BEGIN
         ) AS final_score,
         'Exploration' AS recommendation_reason
       FROM scored s
-      WHERE s.id NOT IN (SELECT e.id FROM exploitation e)
+      WHERE s.id NOT IN (SELECT id FROM exploitation)
         AND (s.tiktok_quality_score + s.trend_boost_score) >= 20.0
       ORDER BY random()
       LIMIT v_exploration_limit
@@ -654,10 +654,7 @@ BEGIN
   END IF;
 END;
 $$;
-
 REVOKE ALL ON FUNCTION public.get_reels_feed_v2(INTEGER, INTEGER, TEXT, NUMERIC, INTEGER, INTEGER, TEXT) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.get_reels_feed_v2(INTEGER, INTEGER, TEXT, NUMERIC, INTEGER, INTEGER, TEXT) TO authenticated, anon;
-
 COMMENT ON FUNCTION public.get_reels_feed_v2 IS
   'Main Reels feed ranking RPC (v2) with fallback: if strict pass returns empty, rerun without freq-cap to avoid blank feed.';
-

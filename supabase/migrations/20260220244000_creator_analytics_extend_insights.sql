@@ -360,9 +360,7 @@ BEGIN
   );
 END;
 $$;
-
 REVOKE ALL ON FUNCTION public.get_creator_insights(INT) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.get_creator_insights(INT) TO authenticated;
-
 COMMENT ON FUNCTION public.get_creator_insights IS
   'Creator insights + analytics: adds hook score, completion/rewatch/skip rates, posting frequency, trend alignment (hashtags/topics/audio).';

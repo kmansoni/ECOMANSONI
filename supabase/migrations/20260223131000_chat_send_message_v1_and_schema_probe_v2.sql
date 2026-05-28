@@ -18,18 +18,15 @@
 ALTER TABLE public.conversations ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.conversation_participants ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.messages ENABLE ROW LEVEL SECURITY;
-
 -- 1) Ensure seq column exists and is NOT NULL for monotonic ordering.
 -- Existing deployments may already have seq from 20260219090000_chat_seq_idempotency.sql.
 ALTER TABLE public.messages
   ADD COLUMN IF NOT EXISTS seq BIGINT;
-
 -- Ensure rich message columns exist (used by the frontend already).
 ALTER TABLE public.messages
   ADD COLUMN IF NOT EXISTS media_url TEXT,
   ADD COLUMN IF NOT EXISTS media_type TEXT,
   ADD COLUMN IF NOT EXISTS duration_seconds INTEGER;
-
 -- Backfill seq for any historical NULL seq rows.
 -- Collision-safe: assigns after max(seq) per conversation.
 WITH base AS (
@@ -51,7 +48,6 @@ UPDATE public.messages m
 SET seq = r.base_seq + r.rn
 FROM ranked r
 WHERE m.id = r.id;
-
 -- Resync conversations.last_message_seq to max(seq) after backfill.
 UPDATE public.conversations c
 SET last_message_seq = COALESCE(x.max_seq, 0)
@@ -61,23 +57,18 @@ FROM (
   GROUP BY conversation_id
 ) x
 WHERE c.id = x.conversation_id;
-
 -- Ensure per-conversation uniqueness of seq.
 CREATE UNIQUE INDEX IF NOT EXISTS idx_messages_conv_seq_unique
   ON public.messages (conversation_id, seq);
-
 -- Ensure seq is required going forward.
 ALTER TABLE public.messages
   ALTER COLUMN seq SET NOT NULL;
-
 -- 2) Ensure idempotency index exists.
 ALTER TABLE public.messages
   ADD COLUMN IF NOT EXISTS client_msg_id UUID;
-
 CREATE UNIQUE INDEX IF NOT EXISTS idx_messages_conv_sender_client_msg
   ON public.messages (conversation_id, sender_id, client_msg_id)
   WHERE client_msg_id IS NOT NULL;
-
 -- 3) Tighten the seq assignment trigger function search_path.
 -- (The logic itself already exists in 20260219090000_chat_seq_idempotency.sql)
 CREATE OR REPLACE FUNCTION public.assign_message_seq_and_touch_conversation()
@@ -110,7 +101,6 @@ BEGIN
   RETURN NEW;
 END;
 $$;
-
 -- 4) Abuse-resistant rate limiting table (server-only; no grants).
 CREATE TABLE IF NOT EXISTS public.chat_rate_limits (
   user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
@@ -120,14 +110,11 @@ CREATE TABLE IF NOT EXISTS public.chat_rate_limits (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   PRIMARY KEY (user_id, action, bucket_start)
 );
-
 ALTER TABLE public.chat_rate_limits ENABLE ROW LEVEL SECURITY;
-
 -- No grants; only SECURITY DEFINER functions touch this.
 REVOKE ALL ON TABLE public.chat_rate_limits FROM PUBLIC;
 REVOKE ALL ON TABLE public.chat_rate_limits FROM anon;
 REVOKE ALL ON TABLE public.chat_rate_limits FROM authenticated;
-
 -- Helper: increment and enforce a fixed window limit.
 CREATE OR REPLACE FUNCTION public.chat_rate_limit_check_v1(
   p_action TEXT,
@@ -173,10 +160,8 @@ BEGIN
   END IF;
 END;
 $$;
-
 REVOKE ALL ON FUNCTION public.chat_rate_limit_check_v1(TEXT, INTEGER, INTEGER) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.chat_rate_limit_check_v1(TEXT, INTEGER, INTEGER) TO authenticated;
-
 -- 5) RPC-only message send: send_message_v1
 -- Contract:
 -- - initiator := auth.uid()
@@ -369,13 +354,10 @@ BEGIN
   RETURN NEXT;
 END;
 $$;
-
 REVOKE ALL ON FUNCTION public.send_message_v1(UUID, UUID, TEXT) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.send_message_v1(UUID, UUID, TEXT) TO authenticated;
-
 COMMENT ON FUNCTION public.send_message_v1(UUID, UUID, TEXT)
   IS 'Project B: RPC-only message send. Enforces membership, idempotency, server seq/time. Body may be plain text or a strict JSON envelope.';
-
 -- 6) Environment integrity gate: chat_schema_probe_v2()
 CREATE OR REPLACE FUNCTION public.chat_schema_probe_v2()
 RETURNS JSONB
@@ -465,9 +447,7 @@ BEGIN
   );
 END;
 $$;
-
 REVOKE ALL ON FUNCTION public.chat_schema_probe_v2() FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.chat_schema_probe_v2() TO authenticated;
-
 COMMENT ON FUNCTION public.chat_schema_probe_v2()
   IS 'Project B: env integrity gate v2. Validates required RPCs, uniqueness mechanism, seq column and RLS enabled. No secrets.';

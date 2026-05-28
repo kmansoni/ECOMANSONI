@@ -1,4 +1,3 @@
--- ALLOW_NON_IDEMPOTENT_POLICY_DDL: legacy migration already applied to production; non-idempotent policies are intentional here.
 -- Appearance/Energy backend RPC + audit log
 
 -- =====================================================
@@ -12,9 +11,7 @@ CREATE TABLE IF NOT EXISTS public.settings_change_audit (
   payload JSONB NOT NULL DEFAULT '{}'::jsonb,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
-
 ALTER TABLE public.settings_change_audit ENABLE ROW LEVEL SECURITY;
-
 DO $$
 BEGIN
   IF NOT EXISTS (
@@ -27,7 +24,6 @@ BEGIN
       USING (auth.uid() = user_id);
   END IF;
 END $$;
-
 -- =====================================================
 -- 2) RPC: update own appearance settings
 -- =====================================================
@@ -102,11 +98,9 @@ BEGIN
   RETURN v_row;
 END;
 $$;
-
 GRANT EXECUTE ON FUNCTION public.update_my_appearance_settings(
   TEXT, TEXT, TEXT, TEXT, BOOLEAN, TEXT, INTEGER, INTEGER, BOOLEAN, BOOLEAN, BOOLEAN
 ) TO authenticated;
-
 -- =====================================================
 -- 3) RPC: update own energy saver settings
 -- =====================================================
@@ -175,11 +169,9 @@ BEGIN
   RETURN v_row;
 END;
 $$;
-
 GRANT EXECUTE ON FUNCTION public.update_my_energy_saver_settings(
   TEXT, INTEGER, BOOLEAN, BOOLEAN, BOOLEAN, BOOLEAN, BOOLEAN, BOOLEAN, BOOLEAN
 ) TO authenticated;
-
 -- =====================================================
 -- 4) RPC: set own app icon
 -- =====================================================
@@ -218,6 +210,4 @@ BEGIN
   RETURN v_row;
 END;
 $$;
-
 GRANT EXECUTE ON FUNCTION public.set_my_app_icon_selection(TEXT) TO authenticated;
-

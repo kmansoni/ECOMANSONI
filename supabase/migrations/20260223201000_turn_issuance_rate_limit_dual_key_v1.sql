@@ -62,6 +62,5 @@ begin
   return next;
 end;
 $$;
-
 revoke all on function public.turn_issuance_rl_hit_v1(uuid, text, int) from public;
 grant execute on function public.turn_issuance_rl_hit_v1(uuid, text, int) to service_role;

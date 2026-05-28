@@ -209,6 +209,5 @@ BEGIN
   RETURN NEXT;
 END;
 $$;
-
 REVOKE ALL ON FUNCTION public.send_message_v1(UUID, UUID, TEXT) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.send_message_v1(UUID, UUID, TEXT) TO authenticated;

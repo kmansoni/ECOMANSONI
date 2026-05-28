@@ -100,5 +100,4 @@ BEGIN
     v_policy_name;
 END;
 $$ LANGUAGE plpgsql STABLE;
-
 GRANT EXECUTE ON FUNCTION public.compute_user_spam_score_v1 TO authenticated, service_role;

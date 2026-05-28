@@ -5,10 +5,8 @@ ALTER TABLE public.trend_runs
   ADD COLUMN IF NOT EXISTS claimed_by TEXT,
   ADD COLUMN IF NOT EXISTS claimed_at TIMESTAMPTZ,
   ADD COLUMN IF NOT EXISTS claim_expires_at TIMESTAMPTZ;
-
 CREATE INDEX IF NOT EXISTS idx_trend_runs_claim_expiry
   ON public.trend_runs(status, claim_expires_at, started_at);
-
 CREATE OR REPLACE FUNCTION public.claim_trend_runs_v1(
   p_limit INT DEFAULT 5,
   p_worker_id TEXT DEFAULT 'trends-worker',
@@ -52,6 +50,5 @@ BEGIN
   FROM claimed;
 END;
 $$;
-
 REVOKE ALL ON FUNCTION public.claim_trend_runs_v1(INT, TEXT, INT) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.claim_trend_runs_v1(INT, TEXT, INT) TO service_role;

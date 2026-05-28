@@ -10,34 +10,27 @@ CREATE TABLE IF NOT EXISTS public.internal_sms_messages (
   read_at TIMESTAMPTZ,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
-
 CREATE INDEX IF NOT EXISTS idx_internal_sms_messages_sender_created
   ON public.internal_sms_messages(sender_id, created_at DESC);
-
 CREATE INDEX IF NOT EXISTS idx_internal_sms_messages_recipient_created
   ON public.internal_sms_messages(recipient_id, created_at DESC);
-
 ALTER TABLE public.internal_sms_messages ENABLE ROW LEVEL SECURITY;
-
 DROP POLICY IF EXISTS "internal_sms_select_participants" ON public.internal_sms_messages;
 CREATE POLICY "internal_sms_select_participants"
   ON public.internal_sms_messages
   FOR SELECT
   USING (auth.uid() = sender_id OR auth.uid() = recipient_id);
-
 DROP POLICY IF EXISTS "internal_sms_insert_sender_only" ON public.internal_sms_messages;
 CREATE POLICY "internal_sms_insert_sender_only"
   ON public.internal_sms_messages
   FOR INSERT
   WITH CHECK (auth.uid() = sender_id);
-
 DROP POLICY IF EXISTS "internal_sms_update_recipient" ON public.internal_sms_messages;
 CREATE POLICY "internal_sms_update_recipient"
   ON public.internal_sms_messages
   FOR UPDATE
   USING (auth.uid() = recipient_id)
   WITH CHECK (auth.uid() = recipient_id);
-
 CREATE OR REPLACE FUNCTION public.send_internal_sms_v1(
   p_recipient_id UUID,
   p_body TEXT
@@ -122,7 +115,5 @@ BEGIN
   RETURN QUERY SELECT v_message_id, v_created_at;
 END;
 $$;
-
 REVOKE ALL ON FUNCTION public.send_internal_sms_v1(UUID, TEXT) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.send_internal_sms_v1(UUID, TEXT) TO authenticated;
-

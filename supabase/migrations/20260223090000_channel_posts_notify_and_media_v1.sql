@@ -4,10 +4,8 @@
 ALTER TABLE public.channel_messages
   ADD COLUMN IF NOT EXISTS silent BOOLEAN NOT NULL DEFAULT false,
   ADD COLUMN IF NOT EXISTS duration_seconds INTEGER;
-
 CREATE INDEX IF NOT EXISTS idx_channel_messages_channel_created_v2
   ON public.channel_messages(channel_id, created_at);
-
 -- 2) Enqueue notification events for channel posts (best-effort).
 -- Notes:
 -- - Uses notification_events (type='message') so the existing router can deliver.
@@ -33,9 +31,9 @@ BEGIN
   FROM public.channels c
   WHERE c.id = NEW.channel_id;
 
-  v_body := COALESCE(NULLIF(TRIM(NEW.content), ''), 'New post');
+  v_body := COALESCE(NULLIF(BTRIM(NEW.content), ''), 'Новая публикация');
   IF LENGTH(v_body) > 120 THEN
-    v_body := LEFT(v_body, 117) || '...';
+    v_body := LEFT(v_body, 117) || '…';
   END IF;
 
   INSERT INTO public.notification_events(
@@ -57,7 +55,7 @@ BEGIN
       'channelId', NEW.channel_id,
       'senderId', NEW.sender_id,
       'preview', jsonb_build_object(
-        'title', COALESCE(v_channel_name, 'Channel'),
+        'title', COALESCE(v_channel_name, 'Канал'),
         'body', v_body,
         'hasMedia', (NEW.media_url IS NOT NULL)
       ),
@@ -86,7 +84,6 @@ EXCEPTION
     RETURN NEW;
 END;
 $$;
-
 DROP TRIGGER IF EXISTS trg_channel_post_notifications_v1 ON public.channel_messages;
 CREATE TRIGGER trg_channel_post_notifications_v1
 AFTER INSERT ON public.channel_messages

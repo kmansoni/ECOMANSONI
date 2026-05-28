@@ -15,7 +15,7 @@ import type {
 import { fetchRoute, buildRouteProximityChecker } from '@/lib/navigation/routing';
 import { getManeuverInstruction, getVoiceInstruction, formatETA } from '@/lib/navigation/turnInstructions';
 import { getNearbyCamera, getCameraDistance } from '@/lib/navigation/speedCameras';
-import { calculateDistance } from '@/lib/taxi/calculations';
+import { calculateDistance } from '@/lib/navigation/distance';
 import { getSavedPlaces, getSearchHistory, saveSearchEntry } from '@/lib/navigation/places';
 import { supabase } from '@/lib/supabase';
 import { toast } from 'sonner';

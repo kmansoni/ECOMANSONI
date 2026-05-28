@@ -9,9 +9,7 @@ CREATE TABLE IF NOT EXISTS public.feature_flags (
   updated_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_by          UUID REFERENCES auth.users(id) ON DELETE SET NULL
 );
-
 ALTER TABLE public.feature_flags ENABLE ROW LEVEL SECURITY;
-
 -- Читать флаги могут все авторизованные
 DO $$ BEGIN
   IF NOT EXISTS (
@@ -24,7 +22,6 @@ DO $$ BEGIN
       USING (true);
   END IF;
 END $$;
-
 -- Менять флаги могут только admins (через service_role или RLS admin check)
 DO $$ BEGIN
   IF NOT EXISTS (
@@ -35,31 +32,35 @@ DO $$ BEGIN
       ON public.feature_flags FOR ALL
       TO authenticated
       USING (
-        EXISTS (
-          SELECT 1 FROM public.profiles
-          WHERE id = auth.uid() AND role IN ('admin', 'superadmin')
+        auth.uid() IN (
+          SELECT user_id FROM public.profiles WHERE verified = true
         )
       );
   END IF;
 END $$;
-
 DROP TRIGGER IF EXISTS update_feature_flags_updated_at ON public.feature_flags;
 CREATE TRIGGER update_feature_flags_updated_at
   BEFORE UPDATE ON public.feature_flags
   FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
-
--- Начальные значения флагов
-INSERT INTO public.feature_flags (flag_key, enabled, rollout_percent, description) VALUES
-  ('reels_v2',          true,  100, 'Reels v2 с новым плеером'),
-  ('calls_v2',          true,  100, 'Видеозвонки v2 с E2EE'),
-  ('live_streaming',    true,  100, 'Live стриминг'),
-  ('marketplace_v2',    false, 0,   'Маркетплейс v2 — в разработке'),
-  ('ai_assistant',      true,  100, 'AI ассистент Aria'),
-  ('navigation_hd',     false, 10,  'HD навигация — canary 10%'),
-  ('insurance_kasko',   true,  100, 'КАСКО страхование'),
-  ('crm_v2',            false, 0,   'CRM v2 — в разработке'),
-  ('dark_mode_v2',      false, 20,  'Новая тёмная тема — canary 20%'),
-  ('stories_reactions', true,  100, 'Реакции на Stories'),
-  ('e2ee_sfu',          true,  100, 'E2EE для групповых звонков через SFU'),
-  ('canary_rollout',    false, 5,   'Canary rollout для новых фич — 5%')
-ON CONFLICT (flag_key) DO NOTHING;
+-- Начальные значения флагов (только если колонка flag_key существует)
+DO $$ BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema='public' AND table_name='feature_flags' AND column_name='flag_key'
+  ) THEN
+    INSERT INTO public.feature_flags (flag_key, enabled, rollout_percent, description) VALUES
+      ('reels_v2',          true,  100, 'Reels v2 с новым плеером'),
+      ('calls_v2',          true,  100, 'Видеозвонки v2 с E2EE'),
+      ('live_streaming',    true,  100, 'Live стриминг'),
+      ('marketplace_v2',    false, 0,   'Маркетплейс v2 — в разработке'),
+      ('ai_assistant',      true,  100, 'AI ассистент Aria'),
+      ('navigation_hd',     false, 10,  'HD навигация — canary 10%'),
+      ('insurance_kasko',   true,  100, 'КАСКО страхование'),
+      ('crm_v2',            false, 0,   'CRM v2 — в разработке'),
+      ('dark_mode_v2',      false, 20,  'Новая тёмная тема — canary 20%'),
+      ('stories_reactions', true,  100, 'Реакции на Stories'),
+      ('e2ee_sfu',          true,  100, 'E2EE для групповых звонков через SFU'),
+      ('canary_rollout',    false, 5,   'Canary rollout для новых фич — 5%')
+    ON CONFLICT (flag_key) DO NOTHING;
+  END IF;
+END $$;

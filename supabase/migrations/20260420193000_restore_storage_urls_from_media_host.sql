@@ -3,7 +3,6 @@
 -- =============================================================================
 
 BEGIN;
-
 DO $$
 DECLARE
   v_old_prefix TEXT := 'https://media.mansoni.ru/';
@@ -150,5 +149,4 @@ BEGIN
 
   RAISE NOTICE '[restore_media_urls] done';
 END $$;
-
 COMMIT;

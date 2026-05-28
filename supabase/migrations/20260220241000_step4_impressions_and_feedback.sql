@@ -1,4 +1,3 @@
--- ALLOW_NON_IDEMPOTENT_POLICY_DDL: legacy migration already applied to production; non-idempotent policies are intentional here.
 -- ============================================================================
 -- STEP 4: Impressions + Explicit Feedback ("Interested" / "Not interested")
 -- Purpose:
@@ -8,7 +7,6 @@
 -- ============================================================================
 
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
-
 -- ============================================================================
 -- 1) reel_impressions: what we showed to the user (feed exposure)
 -- ============================================================================
@@ -27,20 +25,15 @@ CREATE TABLE IF NOT EXISTS public.reel_impressions (
 
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
-
 CREATE INDEX IF NOT EXISTS idx_reel_impressions_user_time
   ON public.reel_impressions(user_id, created_at DESC)
   WHERE user_id IS NOT NULL;
-
 CREATE INDEX IF NOT EXISTS idx_reel_impressions_session_time
   ON public.reel_impressions(session_id, created_at DESC)
   WHERE session_id IS NOT NULL;
-
 CREATE INDEX IF NOT EXISTS idx_reel_impressions_reel_time
   ON public.reel_impressions(reel_id, created_at DESC);
-
 ALTER TABLE public.reel_impressions ENABLE ROW LEVEL SECURITY;
-
 DO $$
 BEGIN
   BEGIN
@@ -63,10 +56,8 @@ BEGIN
   EXCEPTION WHEN duplicate_object THEN NULL;
   END;
 END $$;
-
 GRANT SELECT, INSERT ON public.reel_impressions TO authenticated;
 GRANT INSERT ON public.reel_impressions TO anon;
-
 -- ============================================================================
 -- 2) user_reel_feedback: explicit feedback separate from implicit interactions
 -- ============================================================================
@@ -81,25 +72,19 @@ CREATE TABLE IF NOT EXISTS public.user_reel_feedback (
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
-
 -- One feedback per (user,reel) OR (session,reel)
 CREATE UNIQUE INDEX IF NOT EXISTS ux_user_reel_feedback_user_reel
   ON public.user_reel_feedback(user_id, reel_id)
   WHERE user_id IS NOT NULL;
-
 CREATE UNIQUE INDEX IF NOT EXISTS ux_user_reel_feedback_session_reel
   ON public.user_reel_feedback(session_id, reel_id)
   WHERE user_id IS NULL AND session_id IS NOT NULL;
-
 CREATE INDEX IF NOT EXISTS idx_user_reel_feedback_user_time
   ON public.user_reel_feedback(user_id, updated_at DESC)
   WHERE user_id IS NOT NULL;
-
 CREATE INDEX IF NOT EXISTS idx_user_reel_feedback_reel_time
   ON public.user_reel_feedback(reel_id, updated_at DESC);
-
 ALTER TABLE public.user_reel_feedback ENABLE ROW LEVEL SECURITY;
-
 DO $$
 BEGIN
   BEGIN
@@ -127,10 +112,8 @@ BEGIN
   EXCEPTION WHEN duplicate_object THEN NULL;
   END;
 END $$;
-
 GRANT SELECT, INSERT, UPDATE, DELETE ON public.user_reel_feedback TO authenticated;
 GRANT INSERT, UPDATE ON public.user_reel_feedback TO anon;
-
 -- ============================================================================
 -- 3) RPC: record impression (writes user_id from auth.uid when available)
 -- ============================================================================
@@ -176,10 +159,8 @@ BEGIN
   );
 END;
 $$;
-
 GRANT EXECUTE ON FUNCTION public.record_reel_impression(UUID, TEXT, UUID, INTEGER, TEXT, TEXT, NUMERIC) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.record_reel_impression(UUID, TEXT, UUID, INTEGER, TEXT, TEXT, NUMERIC) TO anon;
-
 -- ============================================================================
 -- 4) RPC: set explicit feedback (upsert)
 -- ============================================================================
@@ -216,6 +197,5 @@ BEGIN
   END IF;
 END;
 $$;
-
 GRANT EXECUTE ON FUNCTION public.set_reel_feedback(UUID, TEXT, TEXT) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.set_reel_feedback(UUID, TEXT, TEXT) TO anon;

@@ -10,10 +10,8 @@ EXCEPTION
     -- ignore
     NULL;
 END $$;
-
 -- Drop if exists to keep migration idempotent
 DROP POLICY IF EXISTS "Participants can mark incoming messages read" ON public.messages;
-
 CREATE POLICY "Participants can mark incoming messages read"
 ON public.messages
 FOR UPDATE

@@ -42,7 +42,6 @@ CREATE TABLE IF NOT EXISTS public.navigator_settings (
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
-
 -- Updated_at trigger
 CREATE OR REPLACE FUNCTION public.navigator_settings_updated_at()
 RETURNS TRIGGER AS $$
@@ -51,28 +50,22 @@ BEGIN
   RETURN NEW;
 END;
 $$ LANGUAGE plpgsql;
-
 CREATE TRIGGER trg_navigator_settings_updated_at
   BEFORE UPDATE ON public.navigator_settings
   FOR EACH ROW
   EXECUTE FUNCTION public.navigator_settings_updated_at();
-
 -- RLS
 ALTER TABLE public.navigator_settings ENABLE ROW LEVEL SECURITY;
-
 CREATE POLICY "Users can read own navigator settings"
   ON public.navigator_settings FOR SELECT
   USING (auth.uid() = user_id);
-
 CREATE POLICY "Users can insert own navigator settings"
   ON public.navigator_settings FOR INSERT
   WITH CHECK (auth.uid() = user_id);
-
 CREATE POLICY "Users can update own navigator settings"
   ON public.navigator_settings FOR UPDATE
   USING (auth.uid() = user_id)
   WITH CHECK (auth.uid() = user_id);
-
 -- Upsert RPC for atomic create-or-update
 CREATE OR REPLACE FUNCTION public.upsert_navigator_settings(
   p_user_id UUID,

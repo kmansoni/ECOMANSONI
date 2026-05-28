@@ -57,6 +57,4 @@ AS $$
     END AS rollout_decision
   FROM eval e;
 $$;
-
 GRANT EXECUTE ON FUNCTION public.chat_get_v11_release_gates(DOUBLE PRECISION, DOUBLE PRECISION, DOUBLE PRECISION, BIGINT) TO authenticated;
-

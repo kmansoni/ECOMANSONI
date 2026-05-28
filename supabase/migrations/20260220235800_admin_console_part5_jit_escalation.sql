@@ -10,7 +10,6 @@ VALUES
   ('security.jit.approve', 'security', 'jit.approve', 'Approve JIT escalation requests', 'critical', true),
   ('security.jit.read', 'security', 'jit.read', 'Read active JIT escalations', 'high', true)
 ON CONFLICT (scope) DO NOTHING;
-
 -- Grant permissions: only security_admin can request JIT, only owner can approve
 WITH roles AS (
   SELECT id, name FROM public.admin_roles WHERE name IN ('security_admin', 'owner')
@@ -26,5 +25,4 @@ JOIN perms p ON (
   OR (p.scope = 'security.jit.read' AND r.name = 'owner')
 )
 ON CONFLICT (role_id, permission_id) DO NOTHING;
-
 COMMENT ON TABLE public.owner_escalation_requests IS 'JIT escalation requests: Security Admin requests, Owner approves';

@@ -55,6 +55,4 @@ AS $$
   CROSS JOIN policy_15m
   LEFT JOIN policy_latest ON true;
 $$;
-
 GRANT EXECUTE ON FUNCTION public.chat_get_v11_health_extended() TO authenticated;
-

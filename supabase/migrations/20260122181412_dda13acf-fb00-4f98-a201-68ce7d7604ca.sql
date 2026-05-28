@@ -1,10 +1,8 @@
-
 -- Drop the problematic policies
 DROP POLICY IF EXISTS "Users can view participants of their conversations" ON public.conversation_participants;
 DROP POLICY IF EXISTS "Users can view their conversations" ON public.conversations;
 DROP POLICY IF EXISTS "Users can view messages in their conversations" ON public.messages;
 DROP POLICY IF EXISTS "Users can send messages to their conversations" ON public.messages;
-
 -- Recreate conversation_participants SELECT policy without recursion
 -- Users can view participants if they are also a participant (using direct check)
 CREATE POLICY "Users can view participants of their conversations" 
@@ -19,7 +17,6 @@ USING (
     WHERE cp2.user_id = auth.uid()
   )
 );
-
 -- Recreate conversations SELECT policy - check if user is participant
 CREATE POLICY "Users can view their conversations" 
 ON public.conversations 
@@ -31,7 +28,6 @@ USING (
     WHERE cp.user_id = auth.uid()
   )
 );
-
 -- Recreate messages SELECT policy
 CREATE POLICY "Users can view messages in their conversations" 
 ON public.messages 
@@ -43,7 +39,6 @@ USING (
     WHERE cp.user_id = auth.uid()
   )
 );
-
 -- Recreate messages INSERT policy
 CREATE POLICY "Users can send messages to their conversations" 
 ON public.messages 

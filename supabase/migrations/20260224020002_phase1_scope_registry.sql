@@ -1,4 +1,3 @@
--- ALLOW_NON_IDEMPOTENT_POLICY_DDL: legacy migration already applied to production; non-idempotent policies are intentional here.
 -- Phase 1: L1.2 - Scope registry with validation
 -- Telegram-grade scope enforcement: NO wildcards, SSOT validation
 
@@ -9,7 +8,6 @@ CREATE TABLE scope_definitions (
   risk_level TEXT NOT NULL DEFAULT 'medium' CHECK (risk_level IN ('low','medium','high','critical')),
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
-
 CREATE OR REPLACE FUNCTION validate_scopes_v1(p_scopes TEXT[])
 RETURNS VOID
 LANGUAGE plpgsql STABLE
@@ -41,11 +39,9 @@ BEGIN
   END LOOP;
 END;
 $$;
-
 ALTER TABLE scope_definitions ENABLE ROW LEVEL SECURITY;
 GRANT SELECT ON scope_definitions TO anon, authenticated;
 REVOKE INSERT, UPDATE, DELETE ON scope_definitions FROM anon, authenticated;
-
 CREATE POLICY scope_definitions_read_all ON scope_definitions
   FOR SELECT TO anon, authenticated
   USING (true);

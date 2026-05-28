@@ -1,4 +1,3 @@
--- ALLOW_NON_IDEMPOTENT_POLICY_DDL: legacy migration already applied to production; non-idempotent policies are intentional here.
 -- =============================================
 -- COMMENTS SYSTEM
 -- =============================================
@@ -13,7 +12,6 @@ CREATE TABLE public.comments (
     likes_count INTEGER NOT NULL DEFAULT 0,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
-
 -- Таблица лайков на комментарии
 CREATE TABLE public.comment_likes (
     id UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
@@ -22,11 +20,9 @@ CREATE TABLE public.comment_likes (
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     UNIQUE(comment_id, user_id)
 );
-
 -- Включаем RLS
 ALTER TABLE public.comments ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.comment_likes ENABLE ROW LEVEL SECURITY;
-
 -- =============================================
 -- RLS POLICIES FOR COMMENTS
 -- =============================================
@@ -35,22 +31,18 @@ ALTER TABLE public.comment_likes ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "Anyone can view comments"
 ON public.comments FOR SELECT
 USING (true);
-
 -- Авторизованные пользователи могут создавать комментарии
 CREATE POLICY "Users can create comments"
 ON public.comments FOR INSERT
 WITH CHECK (auth.uid() = author_id);
-
 -- Авторы могут обновлять свои комментарии
 CREATE POLICY "Authors can update own comments"
 ON public.comments FOR UPDATE
 USING (auth.uid() = author_id);
-
 -- Авторы могут удалять свои комментарии
 CREATE POLICY "Authors can delete own comments"
 ON public.comments FOR DELETE
 USING (auth.uid() = author_id);
-
 -- =============================================
 -- RLS POLICIES FOR COMMENT_LIKES
 -- =============================================
@@ -59,17 +51,14 @@ USING (auth.uid() = author_id);
 CREATE POLICY "Anyone can view comment likes"
 ON public.comment_likes FOR SELECT
 USING (true);
-
 -- Пользователи могут лайкать
 CREATE POLICY "Users can like comments"
 ON public.comment_likes FOR INSERT
 WITH CHECK (auth.uid() = user_id);
-
 -- Пользователи могут убирать свои лайки
 CREATE POLICY "Users can unlike comments"
 ON public.comment_likes FOR DELETE
 USING (auth.uid() = user_id);
-
 -- =============================================
 -- TRIGGERS FOR LIKES COUNT
 -- =============================================
@@ -88,13 +77,11 @@ BEGIN
     RETURN NULL;
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
-
 -- Триггер для автоматического обновления счётчика
 CREATE TRIGGER update_comment_likes_count_trigger
 AFTER INSERT OR DELETE ON public.comment_likes
 FOR EACH ROW
 EXECUTE FUNCTION public.update_comment_likes_count();
-
 -- Функция для обновления счётчика комментариев на посте
 CREATE OR REPLACE FUNCTION public.update_post_comments_count()
 RETURNS TRIGGER AS $$
@@ -109,13 +96,11 @@ BEGIN
     RETURN NULL;
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
-
 -- Триггер для автоматического обновления счётчика комментариев
 CREATE TRIGGER update_post_comments_count_trigger
 AFTER INSERT OR DELETE ON public.comments
 FOR EACH ROW
 EXECUTE FUNCTION public.update_post_comments_count();
-
 -- =============================================
 -- INDEXES FOR PERFORMANCE
 -- =============================================

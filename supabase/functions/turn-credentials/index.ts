@@ -2,17 +2,18 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { enforceCors, getCorsHeaders, handleCors } from "../_shared/utils.ts";
 
+// Scale-ready defaults for 1B users
 const DEFAULT_TURN_TTL_SECONDS = 3600;
 const MIN_TURN_TTL_SECONDS = 3600;
-const MAX_TURN_TTL_SECONDS = 24 * 3600;
+const MAX_TURN_TTL_SECONDS = 4 * 3600; // 4 hours max (security reduction)
 
 const TURN_RATE_MAX_PER_WINDOW = Math.max(
   1,
-  Number(Deno.env.get("TURN_RATE_MAX_PER_MINUTE") ?? "20"),
+  Number(Deno.env.get("TURN_RATE_MAX_PER_MINUTE") ?? "200"), // Increased for 1B scale
 );
 const TURN_RATE_HARD_CAP_PER_WINDOW = Math.max(
   1,
-  Number(Deno.env.get("TURN_RATE_HARD_CAP_PER_MINUTE") ?? "200"),
+  Number(Deno.env.get("TURN_RATE_HARD_CAP_PER_MINUTE") ?? "2000"), // 2K RPS per region
 );
 const TURN_LOCAL_RL_WINDOW_MS = 60_000;
 
@@ -247,12 +248,18 @@ async function enforceReplayProtection(
   const replayKey = `${userKey}:${nonce}`;
   const now = nowMs();
 
-  // Atomically check-and-set for local replay cache
+  // Atomic set-BEFORE-check: occupy the slot immediately to prevent race condition
+  // Any concurrent request will see this entry and be rejected
   const existingEntry = replayNonceBuckets.get(replayKey);
+  
   if (existingEntry && existingEntry > now) {
+    // Slot is occupied — this is a replay attack
     metrics.replayRejected += 1;
     return makeJsonResponse(corsHeaders, 409, { error: "replay_detected" });
   }
+  
+  // Occupy the slot atomically before any async operations
+  replayNonceBuckets.set(replayKey, now + TURN_REPLAY_WINDOW_MS);
 
   const supabaseUrl = Deno.env.get("SUPABASE_URL") ?? "";
   const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
@@ -260,7 +267,7 @@ async function enforceReplayProtection(
     if (shouldFailHardOnReplayMisconfig()) {
       return makeJsonResponse(corsHeaders, 500, { error: "misconfigured" });
     }
-    replayNonceBuckets.set(replayKey, now + TURN_REPLAY_WINDOW_MS);
+    // Slot already occupied atomically above
     logEvent("turn.replay.local_fallback", {});
     return null;
   }
@@ -288,39 +295,28 @@ async function enforceReplayProtection(
       if (shouldFailHardOnReplayMisconfig()) {
         return makeJsonResponse(corsHeaders, 500, { error: "misconfigured" });
       }
-      // Only set if not already set by concurrent request
-      if (!replayNonceBuckets.has(replayKey)) {
-        replayNonceBuckets.set(replayKey, now + TURN_REPLAY_WINDOW_MS);
-      }
+      // Slot already occupied atomically above
       logEvent("turn.replay.local_fallback", { reason: "rpc_error" });
       return null;
     }
 
     const row = Array.isArray(data) ? data[0] : data;
     if (row && row.allowed === false) {
+      // Slot already occupied atomically above - this is a double confirmation
+      // The RPC says rejected, but we already rejected any concurrent requests
       metrics.replayRejected += 1;
-      // Only set if not already set by concurrent request
-      if (!replayNonceBuckets.has(replayKey)) {
-        replayNonceBuckets.set(replayKey, now + TURN_REPLAY_WINDOW_MS);
-      }
       return makeJsonResponse(corsHeaders, 409, { error: "replay_detected" });
     }
   } catch {
     if (shouldFailHardOnReplayMisconfig()) {
       return makeJsonResponse(corsHeaders, 500, { error: "misconfigured" });
     }
-    // Only set if not already set by concurrent request
-    if (!replayNonceBuckets.has(replayKey)) {
-      replayNonceBuckets.set(replayKey, now + TURN_REPLAY_WINDOW_MS);
-    }
+    // Slot already occupied atomically above
     logEvent("turn.replay.local_fallback", { reason: "exception" });
     return null;
   }
 
-  // Only set if not already set by concurrent request
-  if (!replayNonceBuckets.has(replayKey)) {
-    replayNonceBuckets.set(replayKey, now + TURN_REPLAY_WINDOW_MS);
-  }
+  // Slot already occupied atomically above - this is the valid path
   return null;
 }
 
@@ -492,6 +488,47 @@ function getTurnUrls(): string[] {
   const v4 = parseUrls(Deno.env.get("TURN_URLS"));
   const v6 = parseUrls(Deno.env.get("TURN_URLS_V6"));
   return [...new Set([...v4, ...v6])];
+}
+
+// Region-based TURN routing for 1B scale
+// Returns TURN URLs for the closest region based on client IP
+async function getTurnUrlsForRegion(clientIp: string): Promise<{ region: string; urls: string[] }> {
+  // Default to global region
+  const defaultRegion = "global";
+  
+  // Check if region selection is enabled
+  const useRegionRouting = parseBool(Deno.env.get("TURN_USE_REGION_ROUTING"), false);
+  if (!useRegionRouting) {
+    return { region: defaultRegion, urls: getTurnUrls() };
+  }
+
+  const supabaseUrl = Deno.env.get("SUPABASE_URL") ?? "";
+  const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
+  
+  if (!supabaseUrl || !serviceKey) {
+    return { region: defaultRegion, urls: getTurnUrls() };
+  }
+
+  try {
+    const admin = createClient(supabaseUrl, serviceKey, { auth: { persistSession: false } });
+    
+    // Parse IP for geo lookup - requires inet extension
+    const { data, error } = await (admin as any).rpc("select_turn_region", {
+      p_client_ip: clientIp,
+    });
+
+    if (!error && data && data.length > 0) {
+      const result = Array.isArray(data) ? data[0] : data;
+      return {
+        region: result.region || defaultRegion,
+        urls: Array.isArray(result.turn_urls) ? result.turn_urls : getTurnUrls(),
+      };
+    }
+  } catch {
+    // Fall back to global
+  }
+
+  return { region: defaultRegion, urls: getTurnUrls() };
 }
 
 function getStunUrls(): string[] {

@@ -1,4 +1,3 @@
--- ALLOW_NON_IDEMPOTENT_POLICY_DDL: legacy migration already applied to production; non-idempotent policies are intentional here.
 -- ============================================================
 -- E2EE Messaging: таблицы ключей и поля для шифрования сообщений
 -- ============================================================
@@ -15,7 +14,6 @@ CREATE TABLE IF NOT EXISTS chat_encryption_keys (
   revoked_at TIMESTAMPTZ,
   UNIQUE(conversation_id, key_version)
 );
-
 -- Ключи пользователей: групповой ключ, зашифрованный мастер-ключом каждого участника
 CREATE TABLE IF NOT EXISTS user_encryption_keys (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -26,20 +24,16 @@ CREATE TABLE IF NOT EXISTS user_encryption_keys (
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   UNIQUE(user_id, conversation_id, key_version)
 );
-
 -- Добавить поля шифрования в таблицу messages
 ALTER TABLE messages ADD COLUMN IF NOT EXISTS is_encrypted BOOLEAN DEFAULT false;
 ALTER TABLE messages ADD COLUMN IF NOT EXISTS encryption_key_version INTEGER;
 ALTER TABLE messages ADD COLUMN IF NOT EXISTS encryption_iv TEXT;
-
 -- Добавить признак включённого шифрования в conversations
 ALTER TABLE conversations ADD COLUMN IF NOT EXISTS encryption_enabled BOOLEAN DEFAULT false;
-
 -- ─── Row Level Security ──────────────────────────────────────────────────────
 
 ALTER TABLE chat_encryption_keys ENABLE ROW LEVEL SECURITY;
 ALTER TABLE user_encryption_keys ENABLE ROW LEVEL SECURITY;
-
 -- Участники беседы могут читать ключи своей беседы
 CREATE POLICY "Users can read keys for their conversations"
   ON chat_encryption_keys
@@ -51,7 +45,6 @@ CREATE POLICY "Users can read keys for their conversations"
         AND user_id = auth.uid()
     )
   );
-
 -- Создатель может вставлять новый ключ беседы
 CREATE POLICY "Conversation creator can insert encryption keys"
   ON chat_encryption_keys
@@ -64,13 +57,11 @@ CREATE POLICY "Conversation creator can insert encryption keys"
         AND user_id = auth.uid()
     )
   );
-
 -- Пользователи видят только свои пользовательские ключи
 CREATE POLICY "Users can read their own encryption keys"
   ON user_encryption_keys
   FOR SELECT
   USING (user_id = auth.uid());
-
 -- Пользователи могут добавлять свои ключи
 CREATE POLICY "Users can insert their own encryption keys"
   ON user_encryption_keys

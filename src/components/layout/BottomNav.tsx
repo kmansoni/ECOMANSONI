@@ -28,7 +28,6 @@ import {
   LikeIcon,
   MessageIcon,
   ReelsIcon,
-  SearchIcon,
   UserIcon,
   type AppIconProps,
 } from "@/components/ui/app-icons";
@@ -52,21 +51,6 @@ const defaultNavItems: NavItem[] = [
   { to: "/chats", icon: MessageIcon, label: "Чаты", hasBadge: true },
   { to: "/profile", icon: UserIcon, label: "Профиль", hasLongPress: true },
   { to: "/ar", icon: CameraIcon, label: "AR" },
-];
-
-// Real estate service nav items
-const realEstateNavItems: NavItem[] = [
-  { to: "/", icon: HomeIcon, label: "Главная" },
-  { to: "#search", icon: SearchIcon, label: "Поиск", isAction: true },
-  { to: "/chats", icon: MessageIcon, label: "Чаты", hasBadge: true },
-  { to: "#favorites", icon: LikeIcon, label: "Избранное", isAction: true },
-];
-
-// Insurance service nav items
-const insuranceNavItems: NavItem[] = [
-  { to: "/", icon: HomeIcon, label: "Главная" },
-  { to: "/chats", icon: MessageIcon, label: "Чаты", hasBadge: true },
-  { to: "/insurance/policies", icon: BookmarkIcon, label: "Полисы" },
 ];
 
 const BOTTOM_NAV_BAR_HEIGHT_PX = 56;
@@ -133,12 +117,6 @@ export const BottomNav = forwardRef<HTMLElement, BottomNavProps>(function Bottom
   
   // Determine which nav items to show based on route
   const getNavItems = (): NavItem[] => {
-    if (location.pathname.startsWith("/realestate")) {
-      return realEstateNavItems;
-    }
-    if (location.pathname.startsWith("/insurance")) {
-      return insuranceNavItems;
-    }
     return defaultNavItems;
   };
 
@@ -405,9 +383,7 @@ export const BottomNav = forwardRef<HTMLElement, BottomNavProps>(function Bottom
                       touchAction: 'manipulation',
                     }}
                     onClick={() => {
-                      if (location.pathname.startsWith("/realestate")) {
-                        navigate(`/realestate${item.to}`);
-                      }
+                      navigate(item.to);
                     }}
                   >
                     <div className="relative flex items-center justify-center">

@@ -20,10 +20,10 @@ services:
       - "3478:3478/udp"
       - "3478:3478/tcp"
       - "5349:5349/tcp"
-      - "49160-49200:49160-49200/udp"
+       - "50000-51000:50000-51000/udp"
     volumes:
       - ./coturn/turnserver.conf:/etc/coturn/turnserver.conf:ro
-    command: ["-c", "/etc/coturn/turnserver.conf", "-n", "--log-file=stdout"]
+     command: ["-c", "/etc/coturn/turnserver.conf", "-n", "--no-cli", "--log-file=stdout"]
 
 # Usage:
 #   docker compose -f infra/calls/docker-compose.yml up -d

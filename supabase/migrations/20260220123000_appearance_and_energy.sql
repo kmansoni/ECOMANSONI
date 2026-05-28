@@ -1,4 +1,3 @@
--- ALLOW_NON_IDEMPOTENT_POLICY_DDL: legacy migration already applied to production; non-idempotent policies are intentional here.
 -- Appearance + energy saver baseline (Telegram-like settings)
 
 -- =====================================================
@@ -21,9 +20,7 @@ CREATE TABLE IF NOT EXISTS public.user_appearance_settings (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
-
 ALTER TABLE public.user_appearance_settings ENABLE ROW LEVEL SECURITY;
-
 DO $$
 BEGIN
   IF NOT EXISTS (
@@ -57,12 +54,10 @@ BEGIN
       WITH CHECK (auth.uid() = user_id);
   END IF;
 END $$;
-
 DROP TRIGGER IF EXISTS update_user_appearance_settings_updated_at ON public.user_appearance_settings;
 CREATE TRIGGER update_user_appearance_settings_updated_at
 BEFORE UPDATE ON public.user_appearance_settings
 FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
-
 -- =====================================================
 -- 2) App icon catalog + user icon selection
 -- =====================================================
@@ -77,17 +72,14 @@ CREATE TABLE IF NOT EXISTS public.app_icon_catalog (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
-
 CREATE TABLE IF NOT EXISTS public.user_app_icon_selection (
   user_id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
   icon_id TEXT NOT NULL REFERENCES public.app_icon_catalog(id) ON DELETE RESTRICT,
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
-
 ALTER TABLE public.app_icon_catalog ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.user_app_icon_selection ENABLE ROW LEVEL SECURITY;
-
 DO $$
 BEGIN
   IF NOT EXISTS (
@@ -131,12 +123,10 @@ BEGIN
       WITH CHECK (auth.uid() = user_id);
   END IF;
 END $$;
-
 DROP TRIGGER IF EXISTS update_user_app_icon_selection_updated_at ON public.user_app_icon_selection;
 CREATE TRIGGER update_user_app_icon_selection_updated_at
 BEFORE UPDATE ON public.user_app_icon_selection
 FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
-
 INSERT INTO public.app_icon_catalog(id, name, is_premium, is_active, sort_order)
 VALUES
   ('main', 'Основная', false, true, 10),
@@ -156,7 +146,6 @@ SET
   is_premium = EXCLUDED.is_premium,
   is_active = EXCLUDED.is_active,
   sort_order = EXCLUDED.sort_order;
-
 -- =====================================================
 -- 3) Energy saver settings
 -- =====================================================
@@ -175,9 +164,7 @@ CREATE TABLE IF NOT EXISTS public.user_energy_saver_settings (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
-
 ALTER TABLE public.user_energy_saver_settings ENABLE ROW LEVEL SECURITY;
-
 DO $$
 BEGIN
   IF NOT EXISTS (
@@ -211,12 +198,10 @@ BEGIN
       WITH CHECK (auth.uid() = user_id);
   END IF;
 END $$;
-
 DROP TRIGGER IF EXISTS update_user_energy_saver_settings_updated_at ON public.user_energy_saver_settings;
 CREATE TRIGGER update_user_energy_saver_settings_updated_at
 BEFORE UPDATE ON public.user_energy_saver_settings
 FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
-
 -- =====================================================
 -- 4) Realtime publications
 -- =====================================================
@@ -236,4 +221,3 @@ BEGIN
   EXCEPTION WHEN duplicate_object THEN NULL;
   END;
 END $$;
-

@@ -173,12 +173,9 @@ BEGIN
   END IF;
 END;
 $$;
-
 REVOKE ALL ON FUNCTION public.get_hashtag_feed_v1(TEXT, TEXT, INTEGER, INTEGER, UUID) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.get_hashtag_feed_v1(TEXT, TEXT, INTEGER, INTEGER, UUID) TO authenticated, anon;
-
 COMMENT ON FUNCTION public.get_hashtag_feed_v1 IS 'Phase 1 EPIC H: Get hashtag feed with Top/Recent/Trending surfaces';
-
 -- ============================================================================
 -- 2. Get Related Hashtags
 -- ============================================================================
@@ -230,12 +227,9 @@ BEGIN
   LIMIT p_limit;
 END;
 $$;
-
 REVOKE ALL ON FUNCTION public.get_related_hashtags_v1(TEXT, INTEGER) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.get_related_hashtags_v1(TEXT, INTEGER) TO authenticated, anon;
-
 COMMENT ON FUNCTION public.get_related_hashtags_v1 IS 'Phase 1 EPIC H: Get related hashtags based on co-occurrence';
-
 -- ============================================================================
 -- 3. Calculate Hashtag Relevance (Anti-hijack)
 -- ============================================================================
@@ -294,9 +288,7 @@ BEGIN
   RETURN v_relevance_score;
 END;
 $$;
-
 COMMENT ON FUNCTION public.calculate_hashtag_relevance_v1 IS 'Phase 1 EPIC H: Calculate hashtag relevance score to detect off-topic usage (anti-hijack)';
-
 -- ============================================================================
 -- 4. Detect Coordinated Hashtag Attack
 -- ============================================================================
@@ -383,9 +375,7 @@ BEGIN
     v_velocity_spike AS velocity_spike_detected;
 END;
 $$;
-
 COMMENT ON FUNCTION public.detect_coordinated_hashtag_attack_v1 IS 'Phase 1 EPIC H: Detect coordinated manipulation attacks on hashtags';
-
 -- ============================================================================
 -- 5. Hashtag Search Rate Limit (Phase 1 EPIC L Integration)
 -- ============================================================================
@@ -434,9 +424,7 @@ BEGIN
   RETURN TRUE; -- allowed
 END;
 $$;
-
 COMMENT ON FUNCTION public.check_hashtag_search_rate_limit_v1 IS 'Phase 1 EPIC H: Rate limit hashtag searches (20/minute)';
-
 -- ============================================================================
 -- 6. Search Hashtags (with rate limiting)
 -- ============================================================================
@@ -489,12 +477,9 @@ BEGIN
   LIMIT p_limit;
 END;
 $$;
-
 REVOKE ALL ON FUNCTION public.search_hashtags_v1(TEXT, INTEGER, TEXT) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.search_hashtags_v1(TEXT, INTEGER, TEXT) TO authenticated, anon;
-
 COMMENT ON FUNCTION public.search_hashtags_v1 IS 'Phase 1 EPIC H: Search hashtags with rate limiting';
-
 -- ============================================================================
 -- Summary
 -- ============================================================================
@@ -519,4 +504,4 @@ COMMENT ON FUNCTION public.search_hashtags_v1 IS 'Phase 1 EPIC H: Search hashtag
 --  2. Frontend: Hashtag page UI (Top/Recent/Trending tabs)
 --  3. Frontend: Related hashtags widget
 --  4. Frontend: Hashtag search autocomplete
--- ============================================================================
+-- ============================================================================;

@@ -12,12 +12,9 @@ CREATE TABLE IF NOT EXISTS public.chat_recovery_throttle (
   last_called_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   PRIMARY KEY (user_id, device_id, dialog_id, op_name)
 );
-
 CREATE INDEX IF NOT EXISTS idx_chat_recovery_throttle_called
   ON public.chat_recovery_throttle (last_called_at DESC);
-
 ALTER TABLE public.chat_recovery_throttle ENABLE ROW LEVEL SECURITY;
-
 CREATE OR REPLACE FUNCTION public.chat_resync_stream_v11(
   p_stream_id TEXT,
   p_since_event_seq BIGINT DEFAULT 0,
@@ -122,7 +119,6 @@ BEGIN
   LIMIT v_limit;
 END;
 $$;
-
 CREATE OR REPLACE FUNCTION public.chat_full_state_dialog_v11(
   p_dialog_id UUID,
   p_device_id TEXT,
@@ -262,7 +258,5 @@ BEGIN
     now();
 END;
 $$;
-
 GRANT EXECUTE ON FUNCTION public.chat_resync_stream_v11(TEXT, BIGINT, INTEGER) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.chat_full_state_dialog_v11(UUID, TEXT, INTEGER) TO authenticated;
-

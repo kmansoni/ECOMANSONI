@@ -7,7 +7,6 @@
 --    все агрегации идут через h3_index.
 -- ═══════════════════════════════════════════════════════════
 DROP INDEX IF EXISTS public.idx_traffic_probes_geo_time;
-
 -- ═══════════════════════════════════════════════════════════
 -- 2. CHECK-constraint на формат h3_index
 --    Фронтенд генерирует ключи вида "55.752:37.616".
@@ -16,7 +15,6 @@ DROP INDEX IF EXISTS public.idx_traffic_probes_geo_time;
 ALTER TABLE public.traffic_gps_probes
     ADD CONSTRAINT chk_h3_index_format
     CHECK (h3_index ~ '^-?\d+\.\d{3}:-?\d+\.\d{3}$');
-
 -- ═══════════════════════════════════════════════════════════
 -- 3. RLS: INSERT policy на traffic_gps_probes (defense-in-depth)
 --    SECURITY DEFINER обходит RLS, но если функцию удалят —
@@ -26,14 +24,12 @@ CREATE POLICY "traffic_probes_insert_authenticated"
     ON public.traffic_gps_probes
     FOR INSERT TO authenticated
     WITH CHECK (true);
-
 -- ═══════════════════════════════════════════════════════════
 -- 4. Убрать дублирующую RLS policy
 --    "traffic_live_read" без TO = все роли (включая anon),
 --    "traffic_live_anon_read" — избыточна.
 -- ═══════════════════════════════════════════════════════════
 DROP POLICY IF EXISTS "traffic_live_anon_read" ON public.traffic_segments_live;
-
 -- ═══════════════════════════════════════════════════════════
 -- 5. get_traffic_in_bbox: добавить LIMIT
 -- ═══════════════════════════════════════════════════════════
@@ -56,7 +52,6 @@ AS $$
     ORDER BY updated_at DESC
     LIMIT limit_cnt;
 $$;
-
 -- ═══════════════════════════════════════════════════════════
 -- 6. aggregate_traffic: advisory lock + input validation
 --    - pg_advisory_xact_lock предотвращает параллельный запуск
@@ -139,7 +134,6 @@ BEGIN
     RETURN jsonb_build_object('aggregated', agg_count);
 END;
 $$;
-
 -- ═══════════════════════════════════════════════════════════
 -- 7. submit_gps_probes: валидация входных данных
 -- ═══════════════════════════════════════════════════════════
@@ -179,7 +173,6 @@ BEGIN
     RETURN jsonb_build_object('inserted', inserted_count, 'skipped', skipped_count);
 END;
 $$;
-
 -- ═══════════════════════════════════════════════════════════
 -- 8. COMMENT ON TABLE
 -- ═══════════════════════════════════════════════════════════

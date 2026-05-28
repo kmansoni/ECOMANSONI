@@ -6,43 +6,38 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
-// ─── Minimal mediasoup-client mock ───────────────────────────────────────────
-const mockTransportEvents: Record<string, ((...args: unknown[]) => void)[]> = {};
-
-function createMockTransport(id = 'transport-1') {
-  const t = {
-    id,
-    closed: false,
-    _events: {} as Record<string, ((...args: unknown[]) => void)[]>,
-    on(event: string, handler: (...args: unknown[]) => void) {
-      if (!this._events[event]) this._events[event] = [];
-      this._events[event].push(handler);
-      mockTransportEvents[`${id}:${event}`] = this._events[event];
-    },
-    emit(event: string, ...args: unknown[]) {
-      (this._events[event] ?? []).forEach(h => h(...args));
-    },
-    close() { this.closed = true; },
-    getStats: vi.fn().mockResolvedValue(new Map()),
-    produce: vi.fn(),
-    consume: vi.fn(),
-  };
-  return t;
-}
-
-const mockSendTransport = createMockTransport('send-transport-1');
-const mockRecvTransport = createMockTransport('recv-transport-1');
-const mockDevice = {
-  loaded: false,
-  load: vi.fn().mockImplementation(async () => { mockDevice.loaded = true; }),
-  createSendTransport: vi.fn().mockReturnValue(mockSendTransport),
-  createRecvTransport: vi.fn().mockReturnValue(mockRecvTransport),
-  rtpCapabilities: {},
+// ─── Mock state shared across tests ───────────────────────────────────────────
+const mockTransportState = {
+  events: {} as Record<string, ((...args: unknown[]) => void)[]>,
+  closed: false,
 };
 
-vi.mock('mediasoup-client', () => ({
-  Device: vi.fn().mockImplementation(() => mockDevice),
-}));
+// ─── Minimal mediasoup-client mock ───────────────────────────────────────────
+vi.mock('mediasoup-client', () => {
+  function createMockTransport() {
+    const t = {
+      id: 'send-transport-1',
+      closed: false,
+      getStats: vi.fn().mockResolvedValue(new Map()),
+      produce: vi.fn(),
+      consume: vi.fn(),
+    };
+    return t;
+  }
+
+  const mockTransport = createMockTransport();
+  const mockDevice = {
+    loaded: false,
+    load: vi.fn().mockImplementation(async () => { mockDevice.loaded = true; }),
+    createSendTransport: vi.fn().mockReturnValue(mockTransport),
+    createRecvTransport: vi.fn().mockReturnValue(mockTransport),
+    rtpCapabilities: {},
+  };
+
+  const MockDevice = vi.fn().mockImplementation(() => mockDevice) as new () => typeof mockDevice;
+
+  return { Device: MockDevice };
+});
 
 vi.mock('@/lib/logger', () => ({
   logger: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() },

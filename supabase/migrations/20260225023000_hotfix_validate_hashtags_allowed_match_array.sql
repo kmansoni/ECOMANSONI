@@ -31,6 +31,5 @@ BEGIN
   END IF;
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
-
 REVOKE ALL ON FUNCTION public.validate_hashtags_allowed_v1(TEXT) FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.validate_hashtags_allowed_v1(TEXT) TO service_role;

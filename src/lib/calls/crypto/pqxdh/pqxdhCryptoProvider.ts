@@ -1,6 +1,6 @@
-import type { KeyPackageData, EpochKeyMaterial, CallIdentity } from '@/calls-v2';
+import type { KeyPackageData, EpochKeyMaterial, CallIdentity } from '../../../calls-v2';
 import { CryptoProvider } from '../cryptoProvider';
-// В реальной реализации здесь будет использование библиотек post‑квантовой криптографии (например, liboqs‑wasm) для ML‑KEM и X3DH.
+// В реальной реализации здесь будет использование библиотек пост‑квантовой криптографии (например, liboqs‑wasm) для ML‑KEM и X3DH.
 
 export class PQXDHCryptoProvider implements CryptoProvider {
   private identity: CallIdentity;
@@ -81,8 +81,9 @@ export class PQXDHCryptoProvider implements CryptoProvider {
     return Promise.resolve();
   }
 
-  destroy(): void {
+  async destroy(): Promise<void> {
     // Очистка ресурсов
+    return Promise.resolve();
   }
 
   getCurrentEpochKey(): EpochKeyMaterial | null {

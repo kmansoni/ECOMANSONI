@@ -46,12 +46,19 @@ services:
       - "3478:3478/udp"
       - "3478:3478/tcp"
       - "5349:5349/tcp"
-      - "49160-49200:49160-49200/udp"
+      - "5349:5349/udp"
+      - "49152-65535:49152-65535/udp"
     volumes:
       - ./coturn/turnserver.prod.conf:/etc/coturn/turnserver.conf:ro
       # Mount host Let's Encrypt certs into the container (read-only)
       - /etc/letsencrypt:/etc/letsencrypt:ro
-    command: ["-c", "/etc/coturn/turnserver.conf", "-n", "--log-file=stdout"]
+    command: ["-c", "/etc/coturn/turnserver.conf", "-n", "--no-cli", "--log-file=stdout"]
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z 127.0.0.1 3478 || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
   sfu:
     # mediasoup SFU — production SFU-only mode
     # Build: docker build -t mansoni-sfu -f server/sfu/Dockerfile .

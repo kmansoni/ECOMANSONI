@@ -43,14 +43,12 @@ CREATE TABLE IF NOT EXISTS public.user_reel_interactions (
   
   UNIQUE(user_id, reel_id)
 );
-
 -- Индексы/политики/функции нормализуются idempotent-патчем
 -- 20260220231500_step1_ml_foundation_patch.sql (чтобы миграция не падала при
 -- частично созданной схеме из других миграций).
 
 COMMENT ON TABLE public.user_reel_interactions IS 
   'Детальная история взаимодействий: completion rate, re-watch, skips - основа ML персонализации';
-
 -- ============================================================================
 -- 2. User-Author Affinity Score (долгосрочные предпочтения)
 -- ============================================================================
@@ -88,10 +86,8 @@ CREATE TABLE IF NOT EXISTS public.user_author_affinity (
   PRIMARY KEY (user_id, author_id),
   CHECK (user_id != author_id) -- Не храним self-affinity
 );
-
 COMMENT ON TABLE public.user_author_affinity IS 
   'Долгосрочная аффинити пользователя к авторам: 10% веса в итоговом скоринге';
-
 -- ============================================================================
 -- 3. Session Context (для real-time адаптации)
 -- ============================================================================
@@ -129,16 +125,13 @@ CREATE TABLE IF NOT EXISTS public.user_session_context (
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
-
 CREATE INDEX IF NOT EXISTS idx_session_context_user 
   ON public.user_session_context(user_id, session_started_at DESC);
 CREATE INDEX IF NOT EXISTS idx_session_context_session_id 
   ON public.user_session_context(session_id);
 CREATE INDEX IF NOT EXISTS idx_session_context_active 
   ON public.user_session_context(user_id) WHERE session_ended_at IS NULL;
-
 COMMENT ON TABLE public.user_session_context IS 
   'Контекст текущей сессии для real-time адаптации (5% веса)';
-
 -- NOTE: Функции/триггеры/RLS/индексы создаются и нормализуются в
--- 20260220231500_step1_ml_foundation_patch.sql (idempotent).
+-- 20260220231500_step1_ml_foundation_patch.sql (idempotent).;

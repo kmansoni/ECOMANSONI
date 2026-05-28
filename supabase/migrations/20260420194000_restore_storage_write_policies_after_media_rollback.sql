@@ -3,7 +3,6 @@
 -- =============================================================================
 
 BEGIN;
-
 DO $$
 DECLARE
   v_bucket TEXT;
@@ -95,5 +94,4 @@ BEGIN
     WHERE id = ANY(v_buckets);
   END IF;
 END $$;
-
 COMMIT;

@@ -15,18 +15,38 @@ const CALLS_V2_WS_URLS_RAW = (import.meta.env.VITE_CALLS_V2_WS_URLS ?? "")
 
 const DEFAULT_PROD_SFU_ENDPOINTS = [
   "wss://sfu-ru.mansoni.ru/ws",
-  "wss://sfu-tr.mansoni.ru/ws",
-  "wss://sfu-ae.mansoni.ru/ws",
 ] as const;
 
-export const SHOULD_USE_PROD_SFU_DEFAULTS =
-  CALLS_V2_WS_URLS_RAW.length === 0 &&
+const INSECURE_WS_PREFIX = "ws" + "://";
+
+const IS_LOCALHOST_RUNTIME =
+  typeof window !== "undefined" &&
+  /^(localhost|127\.0\.0\.1)$/i.test(window.location.hostname);
+
+const IS_MANSONI_RU_RUNTIME =
   typeof window !== "undefined" &&
   /(^|\.)mansoni\.ru$/i.test(window.location.hostname);
 
-const CALLS_V2_ENDPOINTS_RAW = SHOULD_USE_PROD_SFU_DEFAULTS
+export const SHOULD_USE_PROD_SFU_DEFAULTS =
+  CALLS_V2_WS_URLS_RAW.length === 0 &&
+  IS_MANSONI_RU_RUNTIME;
+
+function enforceRuOnlyEndpoints(rawEndpoints: string[]): string[] {
+  if (!IS_MANSONI_RU_RUNTIME) return rawEndpoints;
+
+  const ruOnly = rawEndpoints.filter((endpoint) => /sfu-ru\.mansoni\.ru/i.test(endpoint));
+  if (ruOnly.length > 0) return ruOnly;
+  return [...DEFAULT_PROD_SFU_ENDPOINTS];
+}
+
+const CALLS_V2_ENDPOINTS_RAW_UNFILTERED = SHOULD_USE_PROD_SFU_DEFAULTS
   ? [...DEFAULT_PROD_SFU_ENDPOINTS]
-  : CALLS_V2_WS_URLS_RAW;
+  : [
+      ...(IS_LOCALHOST_RUNTIME ? ["ws://127.0.0.1:8787"] : []),
+      ...CALLS_V2_WS_URLS_RAW,
+    ];
+
+const CALLS_V2_ENDPOINTS_RAW = enforceRuOnlyEndpoints(CALLS_V2_ENDPOINTS_RAW_UNFILTERED);
 
 export const CALLS_V2_ENDPOINTS = expandWsEndpoints(CALLS_V2_ENDPOINTS_RAW);
 
@@ -43,24 +63,43 @@ export const CALLS_V2_WS_URLS = CALLS_V2_ENDPOINTS;
 
 export const REKEY_INTERVAL_MS = Math.max(30_000, Number(import.meta.env.VITE_CALLS_V2_REKEY_INTERVAL_MS ?? "120000"));
 export const FRAME_E2EE_ADVERTISE_SFRAME = import.meta.env.VITE_CALLS_FRAME_E2EE_ADVERTISE_SFRAME === "true";
-export const REQUIRE_SFRAME = import.meta.env.PROD || import.meta.env.VITE_CALLS_REQUIRE_SFRAME === "true";
+
+const REQUIRE_SFRAME_OVERRIDE = String(import.meta.env.VITE_CALLS_REQUIRE_SFRAME ?? "").trim().toLowerCase();
+const REQUIRE_SFRAME_FOR_LOCAL_RUNTIME = REQUIRE_SFRAME_OVERRIDE === "true";
+
+// Localhost/127.0.0.1 is used for smoke/e2e runs where strict SFrame can be disabled
+// unless it is explicitly forced via VITE_CALLS_REQUIRE_SFRAME=true.
+export const REQUIRE_SFRAME =
+  REQUIRE_SFRAME_OVERRIDE === "true"
+    ? true
+    : REQUIRE_SFRAME_OVERRIDE === "false"
+      ? false
+      : (import.meta.env.PROD && !IS_LOCALHOST_RUNTIME) || REQUIRE_SFRAME_FOR_LOCAL_RUNTIME;
+
 export const MEDIA_BOOTSTRAP_RETRY_BACKOFF_MS = 10_000;
 export const MEDIA_BOOTSTRAP_MAX_RETRIES = 15;
-const INSECURE_WS_PREFIX = "ws" + "://";
 
 function normalizeWsEndpoint(raw: string): string {
   const value = String(raw || "").trim();
   if (!value) return "";
 
+  const requireSecureTransport =
+    typeof window === "undefined" ? true : window.location.protocol === "https:";
+  const wsScheme = requireSecureTransport ? "wss://" : "ws://";
+
   if (value.startsWith("wss://")) return value;
-  if (value.startsWith(INSECURE_WS_PREFIX)) return `wss://${value.slice(INSECURE_WS_PREFIX.length)}`;
-  if (value.startsWith("http://")) return `wss://${value.slice("http://".length)}`;
-  if (value.startsWith("https://")) return `wss://${value.slice("https://".length)}`;
+  if (value.startsWith(INSECURE_WS_PREFIX)) {
+    return requireSecureTransport
+      ? `wss://${value.slice(INSECURE_WS_PREFIX.length)}`
+      : value;
+  }
+  if (value.startsWith("http://")) return `${wsScheme}${value.slice("http://".length)}`;
+  if (value.startsWith("https://")) return `${wsScheme}${value.slice("https://".length)}`;
   if (value.startsWith("/")) {
-    return `wss://${window.location.host}${value}`;
+    return `${wsScheme}${window.location.host}${value}`;
   }
 
-  return `wss://${value}`;
+  return `${wsScheme}${value}`;
 }
 
 function canonicalizeSfuHost(endpoint: string): string {

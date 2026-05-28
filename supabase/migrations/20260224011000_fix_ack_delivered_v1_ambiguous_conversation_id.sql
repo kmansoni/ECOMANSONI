@@ -66,6 +66,5 @@ BEGIN
   RETURN NEXT;
 END;
 $$;
-
 REVOKE ALL ON FUNCTION public.ack_delivered_v1(UUID, BIGINT) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.ack_delivered_v1(UUID, BIGINT) TO authenticated;

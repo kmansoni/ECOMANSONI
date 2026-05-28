@@ -1,4 +1,3 @@
--- ALLOW_NON_IDEMPOTENT_POLICY_DDL: legacy migration already applied to production; non-idempotent policies are intentional here.
 -- Phase 1 EPIC M: Observability v1 - Schema
 -- Purpose: SLO/Guardrails registry + metrics samples + kill-switch expansion
 -- Dependencies: 20260224130000_phase1_l_feature_flags.sql (feature_flags table)
@@ -21,13 +20,10 @@ CREATE TABLE IF NOT EXISTS public.metrics_registry (
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
-
 CREATE INDEX idx_metrics_registry_domain_enabled ON metrics_registry(domain, enabled);
 CREATE INDEX idx_metrics_registry_phase_epic ON metrics_registry(phase, epic);
-
 COMMENT ON TABLE metrics_registry IS 'Phase 1 EPIC M: Source of truth for all observable metrics with SLO targets';
 COMMENT ON COLUMN metrics_registry.slo_target IS 'JSON: {"p95": 800} for latency, {"threshold": 0.01} for error_rate, {"max": 0.20} for hit_rate';
-
 -- ============================================================================
 -- 2) Seed Metrics (Phase 0 + Phase 1 EPIC L)
 -- ============================================================================
@@ -54,7 +50,6 @@ INSERT INTO metrics_registry (metric_name, metric_type, description, unit, phase
   ('guardrail_auto_rollback', 'counter', 'Guardrail auto-rollback events', 'count', 'phase1', 'M', 'observability', NULL),
   ('slo_breach_count', 'counter', 'SLO breach events', 'count', 'phase1', 'M', 'observability', NULL)
 ON CONFLICT (metric_name) DO NOTHING;
-
 -- ============================================================================
 -- 3) Guardrails Config (thresholds that trigger auto-rollback)
 -- ============================================================================
@@ -73,13 +68,10 @@ CREATE TABLE IF NOT EXISTS public.guardrails_config (
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
-
 CREATE INDEX idx_guardrails_enabled ON guardrails_config(enabled, severity);
 CREATE INDEX idx_guardrails_metric ON guardrails_config(metric_name);
-
 COMMENT ON TABLE guardrails_config IS 'Phase 1 EPIC M: Thresholds that trigger alerts or auto-rollback';
 COMMENT ON COLUMN guardrails_config.action IS 'alert = notify only, rollback = disable feature flag, kill_switch = hard disable';
-
 -- ============================================================================
 -- 4) Seed Guardrails (Phase 0 + Phase 1)
 -- ============================================================================
@@ -95,7 +87,6 @@ INSERT INTO guardrails_config (guardrail_name, metric_name, condition, threshold
   ('rate_limit_spike', 'rate_limit_trigger_rate', 'gt', 0.10, 5, 'P1', 'rollback', 'rate_limit_enforcement'),
   ('bot_session_anomaly', 'suspected_bot_session_rate', 'gt', 0.20, 10, 'P1', 'alert', NULL)
 ON CONFLICT (guardrail_name) DO NOTHING;
-
 -- ============================================================================
 -- 5) Metrics Samples (time-series storage)
 -- ============================================================================
@@ -110,14 +101,11 @@ CREATE TABLE IF NOT EXISTS public.metrics_samples (
   window_minutes INT, -- aggregation window
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
-
 CREATE INDEX idx_metrics_samples_metric_ts ON metrics_samples(metric_name, ts DESC);
 CREATE INDEX idx_metrics_samples_ts ON metrics_samples(ts DESC);
 CREATE INDEX idx_metrics_samples_labels_gin ON metrics_samples USING GIN (labels);
-
 COMMENT ON TABLE metrics_samples IS 'Phase 1 EPIC M: Time-series storage for metrics (simple, no external TSDB yet)';
 COMMENT ON COLUMN metrics_samples.labels IS 'JSONB labels for filtering: {"tier": "B", "action": "send_message", "region": "us-east"}';
-
 -- ============================================================================
 -- 6) Feature Flags Expansion (Phase 1 kill-switches)
 -- ============================================================================
@@ -135,7 +123,6 @@ INSERT INTO feature_flags (flag_name, enabled, rollout_percentage, config) VALUE
   -- Strict safety mode (fallback)
   ('strict_safety_mode', false, 0, '{"description": "Enable strict safety mode (disable UGC, read-only)"}'::jsonb)
 ON CONFLICT (flag_name) DO NOTHING;
-
 -- ============================================================================
 -- 7) Row Level Security
 -- ============================================================================
@@ -143,20 +130,16 @@ ON CONFLICT (flag_name) DO NOTHING;
 ALTER TABLE metrics_registry ENABLE ROW LEVEL SECURITY;
 ALTER TABLE guardrails_config ENABLE ROW LEVEL SECURITY;
 ALTER TABLE metrics_samples ENABLE ROW LEVEL SECURITY;
-
 -- RLS: service_role can read/write, authenticated can read registry only
 CREATE POLICY metrics_registry_read ON metrics_registry FOR SELECT USING (true);
 CREATE POLICY metrics_registry_service_write ON metrics_registry FOR ALL USING (auth.role() = 'service_role');
-
 CREATE POLICY guardrails_config_read ON guardrails_config FOR SELECT USING (true);
 CREATE POLICY guardrails_config_service_write ON guardrails_config FOR ALL USING (auth.role() = 'service_role');
-
 CREATE POLICY metrics_samples_service_only ON metrics_samples FOR ALL USING (auth.role() = 'service_role');
-
 -- ============================================================================
 -- 8) Grants
 -- ============================================================================
 
 GRANT SELECT ON metrics_registry TO authenticated, anon;
 GRANT SELECT ON guardrails_config TO authenticated, anon;
--- metrics_samples: service_role only (via RLS)
+-- metrics_samples: service_role only (via RLS);

@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
-import { Car, ShoppingBag, Home, Shield, Briefcase, Building2, TrendingUp, Plane, Hotel, Film, Dumbbell, GraduationCap, Music, Truck, Users, Mail, Bot, Map, Bug, Radio, Clapperboard, Siren } from "lucide-react";
+import { Briefcase, Building2, TrendingUp, Plane, Hotel, Film, Dumbbell, GraduationCap, Music, Radio, Siren, Users, Car } from "lucide-react";
 import logoImage from "@/assets/logo.png";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { cn } from "@/lib/utils";
@@ -42,21 +42,11 @@ function validateServiceConfig(items: ServiceItem[]): void {
 }
 
 const services: ServiceItem[] = [
-  { id: "ai-assistant", name: "ИИ-ассистент", icon: Bot, route: "/ai-assistant", available: true },
   { id: "live", name: "Прямой эфир", icon: Radio, route: "/live/explore", available: true },
-  { id: "amap", name: "Amap", icon: Map, route: "/amap", available: true },
-  { id: "taxi", name: "Такси", icon: Car, route: "/taxi", available: true },
+  { id: "amap", name: "Amap", icon: Radio, route: "/amap", available: true },
   { id: "crisis-mesh", name: "Crisis Mesh", icon: Siren, route: "/crisis-mesh", available: true },
   // Not routed yet: keep in "Coming Soon" to avoid dead-click UX.
-  { id: "carsharing", name: "Каршеринг", icon: Car, available: false },
-  { id: "delivery", name: "Доставка", icon: Truck, available: false },
-  { id: "marketplace", name: "Маркетплейс", icon: ShoppingBag, route: "/shop/discover", available: true },
-  { id: "realestate", name: "Недвижимость", icon: Home, route: "/realestate", available: true },
-  { id: "insurance", name: "Страхование", icon: Shield, route: "/insurance", available: true },
   { id: "crm", name: "CRM", icon: Users, route: "/crm", available: true },
-  { id: "email", name: "Почта", icon: Mail, route: "/email", available: true },
-  { id: "service-bugs", name: "Баги сервисов", icon: Bug, route: "/services/bugs", available: true },
-  { id: "video-editor", name: "Видеоредактор", icon: Clapperboard, route: "/editor", available: true },
   { id: "jobs", name: "Работа", icon: Briefcase, available: false },
   { id: "banking", name: "Банк", icon: Building2, available: false },
   { id: "investments", name: "Инвестиции", icon: TrendingUp, available: false },

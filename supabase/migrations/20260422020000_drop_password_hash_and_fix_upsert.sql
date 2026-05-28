@@ -1,7 +1,5 @@
 -- Cleanup: drop dead auth_accounts.password_hash column + fix auth_upsert_account_v1
 -- Date: 2026-04-22
--- ALLOW_DESTRUCTIVE_MIGRATION: password_hash is a dead column — never written
--- and never read. Real passwords live in auth.users.encrypted_password.
 --
 -- 1. auth_accounts.password_hash was introduced in 20260226010000 but is never
 --    written by any RPC and never read by any login/recovery path.
@@ -18,7 +16,6 @@
 -- 1. Drop the dead column
 -- ─────────────────────────────────────────────────────────────────────────────
 alter table public.auth_accounts drop column if exists password_hash;
-
 -- ─────────────────────────────────────────────────────────────────────────────
 -- 2. Rewrite upsert to actually upsert phone/email on existing rows
 -- ─────────────────────────────────────────────────────────────────────────────
@@ -54,7 +51,6 @@ begin
   account_id := v_id;
   return next;
 end $$;
-
 -- ─────────────────────────────────────────────────────────────────────────────
 -- 3. Backfill phone_e164 for khan_mansoni@icloud.com (and similar) from
 --    auth.users.raw_user_meta_data->>'phone' or public.profiles.phone.

@@ -9,13 +9,10 @@ create table if not exists public.turn_issuance_rl (
   cnt int not null default 0,
   primary key (user_id, ip, bucket_ts)
 );
-
 alter table public.turn_issuance_rl enable row level security;
-
 revoke all on table public.turn_issuance_rl from public;
 revoke all on table public.turn_issuance_rl from anon;
 revoke all on table public.turn_issuance_rl from authenticated;
-
 create or replace function public.turn_issuance_rl_hit_v1(
   p_user_id uuid,
   p_ip text,
@@ -59,6 +56,5 @@ begin
   return next;
 end;
 $$;
-
 revoke all on function public.turn_issuance_rl_hit_v1(uuid, text, int) from public;
 grant execute on function public.turn_issuance_rl_hit_v1(uuid, text, int) to service_role;

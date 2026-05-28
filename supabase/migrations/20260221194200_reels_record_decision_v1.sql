@@ -170,10 +170,8 @@ BEGIN
   SELECT v_existing_id, p_status, v_message;
 END;
 $$;
-
 ALTER FUNCTION public.reels_engine_record_decision_v1(TEXT, TEXT, TEXT, public.reels_engine_action_status, TEXT, TEXT, JSONB, INTEGER, BOOLEAN, TEXT, TEXT)
   SET search_path = public, pg_catalog;
-
 REVOKE EXECUTE ON FUNCTION public.reels_engine_record_decision_v1(TEXT, TEXT, TEXT, public.reels_engine_action_status, TEXT, TEXT, JSONB, INTEGER, BOOLEAN, TEXT, TEXT)
   FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.reels_engine_record_decision_v1(TEXT, TEXT, TEXT, public.reels_engine_action_status, TEXT, TEXT, JSONB, INTEGER, BOOLEAN, TEXT, TEXT)

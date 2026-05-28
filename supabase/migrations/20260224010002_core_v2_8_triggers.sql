@@ -19,13 +19,11 @@ BEGIN
   RAISE EXCEPTION 'core_events is append-only; UPDATE and DELETE are forbidden';
 END;
 $$ LANGUAGE plpgsql;
-
 DROP TRIGGER IF EXISTS trg_core_events_immutable ON public.core_events;
 CREATE TRIGGER trg_core_events_immutable
   BEFORE UPDATE OR DELETE ON public.core_events
   FOR EACH ROW
   EXECUTE FUNCTION public.fn_core_events_immutable();
-
 -- ============================================================================
 -- Trigger: Enforce DM uniqueness with canonical ordering
 -- INV-DM-01: Ensure dm_user_low < dm_user_high (canonical pair)
@@ -59,13 +57,11 @@ BEGIN
   RETURN NEW;
 END;
 $$ LANGUAGE plpgsql;
-
 DROP TRIGGER IF EXISTS trg_dm_canonical_ordering ON public.core_scopes;
 CREATE TRIGGER trg_dm_canonical_ordering
   BEFORE INSERT OR UPDATE ON public.core_scopes
   FOR EACH ROW
   EXECUTE FUNCTION public.fn_dm_canonical_ordering();
-
 -- ============================================================================
 -- Trigger: Update updated_at timestamp
 -- ============================================================================
@@ -77,31 +73,26 @@ BEGIN
   RETURN NEW;
 END;
 $$ LANGUAGE plpgsql;
-
 DROP TRIGGER IF EXISTS trg_core_scopes_updated_at ON public.core_scopes;
 CREATE TRIGGER trg_core_scopes_updated_at
   BEFORE UPDATE ON public.core_scopes
   FOR EACH ROW
   EXECUTE FUNCTION public.fn_update_timestamp();
-
 DROP TRIGGER IF EXISTS trg_core_scope_members_updated_at ON public.core_scope_members;
 CREATE TRIGGER trg_core_scope_members_updated_at
   BEFORE UPDATE ON public.core_scope_members
   FOR EACH ROW
   EXECUTE FUNCTION public.fn_update_timestamp();
-
 DROP TRIGGER IF EXISTS trg_scope_invites_updated_at ON public.scope_invites;
 CREATE TRIGGER trg_scope_invites_updated_at
   BEFORE UPDATE ON public.scope_invites
   FOR EACH ROW
   EXECUTE FUNCTION public.fn_update_timestamp();
-
 DROP TRIGGER IF EXISTS trg_projection_watermarks_updated_at ON public.projection_watermarks;
 CREATE TRIGGER trg_projection_watermarks_updated_at
   BEFORE UPDATE ON public.projection_watermarks
   FOR EACH ROW
   EXECUTE FUNCTION public.fn_update_timestamp();
-
 -- ============================================================================
 -- Trigger: Enforce projection watermark monotonicity
 -- INV-PROJ-01: dialogs_watermark_seq and unread_watermark_seq only increase
@@ -127,13 +118,11 @@ BEGIN
   RETURN NEW;
 END;
 $$ LANGUAGE plpgsql;
-
 DROP TRIGGER IF EXISTS trg_projection_watermark_monotonic ON public.projection_watermarks;
 CREATE TRIGGER trg_projection_watermark_monotonic
   BEFORE UPDATE ON public.projection_watermarks
   FOR EACH ROW
   EXECUTE FUNCTION public.fn_watermark_monotonic();
-
 -- ============================================================================
 -- Trigger: Enforce receipt monotonicity
 -- Core receipts: last_read_seq <= last_delivered_seq, only increase
@@ -170,20 +159,17 @@ BEGIN
   RETURN NEW;
 END;
 $$ LANGUAGE plpgsql;
-
 DROP TRIGGER IF EXISTS trg_core_receipts_monotonic ON public.core_receipts;
 CREATE TRIGGER trg_core_receipts_monotonic
   BEFORE INSERT OR UPDATE ON public.core_receipts
   FOR EACH ROW
   EXECUTE FUNCTION public.fn_receipts_monotonic();
-
 -- Similar trigger for core_scope_members receipts
 DROP TRIGGER IF EXISTS trg_core_scope_members_monotonic ON public.core_scope_members;
 CREATE TRIGGER trg_core_scope_members_monotonic
   BEFORE INSERT OR UPDATE ON public.core_scope_members
   FOR EACH ROW
   EXECUTE FUNCTION public.fn_receipts_monotonic();
-
 -- ============================================================================
 -- Trigger: Enforce event sequence uniqueness per scope
 -- INV-SEQ-01: No gaps without server validation
@@ -214,13 +200,11 @@ BEGIN
   RETURN NEW;
 END;
 $$ LANGUAGE plpgsql;
-
 DROP TRIGGER IF EXISTS trg_core_events_seq_valid ON public.core_events;
 CREATE TRIGGER trg_core_events_seq_valid
   BEFORE INSERT ON public.core_events
   FOR EACH ROW
   EXECUTE FUNCTION public.fn_event_seq_valid();
-
 -- ============================================================================
 -- Trigger: Prevent membership state inconsistencies
 -- INV-MEM-01: removed members cannot rejoin without explicit re-invite
@@ -239,13 +223,11 @@ BEGIN
   RETURN NEW;
 END;
 $$ LANGUAGE plpgsql;
-
 DROP TRIGGER IF EXISTS trg_core_scope_members_state_guard ON public.core_scope_members;
 CREATE TRIGGER trg_core_scope_members_state_guard
   BEFORE UPDATE ON public.core_scope_members
   FOR EACH ROW
   EXECUTE FUNCTION public.fn_membership_state_guard();
-
 -- ============================================================================
 -- Function: Delete idempotency hot outcomes older than retention
 -- Run periodically (e.g., daily)
@@ -263,7 +245,6 @@ BEGIN
   RETURN v_deleted;
 END;
 $$ LANGUAGE plpgsql;
-
 -- ============================================================================
 -- Function: Validate idempotency identity before accept
 -- Called by SECURITY DEFINER RPC
@@ -325,7 +306,6 @@ BEGIN
   RETURN QUERY SELECT 'not_found'::TEXT, NULL::JSONB, NULL::TEXT;
 END;
 $$ LANGUAGE plpgsql;
-
 -- ============================================================================
 -- Function: Validate maintenance mode transitions
 -- INV-MAINT-01: Enforce allowed + forbidden transitions
@@ -352,7 +332,6 @@ BEGIN
   RETURN v_allowed;
 END;
 $$ LANGUAGE plpgsql;
-
 -- ============================================================================
 -- Function: Cleanup expired invites
 -- Run periodically (e.g., hourly)
@@ -371,7 +350,6 @@ BEGIN
   RETURN v_updated;
 END;
 $$ LANGUAGE plpgsql;
-
 -- ============================================================================
 -- Function: Validate policy hash consistency
 -- Called by update_policy RPC

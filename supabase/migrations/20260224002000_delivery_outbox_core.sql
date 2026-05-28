@@ -18,16 +18,12 @@ create table if not exists public.delivery_outbox (
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
-
 create index if not exists delivery_outbox_pending_idx
   on public.delivery_outbox(state, next_attempt_at, created_at);
-
 create index if not exists delivery_outbox_aggregate_idx
   on public.delivery_outbox(topic, aggregate_id, created_at desc);
-
 create index if not exists delivery_outbox_created_idx
   on public.delivery_outbox(created_at desc);
-
 create or replace function public.set_delivery_outbox_updated_at()
 returns trigger
 language plpgsql
@@ -37,15 +33,12 @@ begin
   return new;
 end;
 $$;
-
 drop trigger if exists trg_delivery_outbox_updated_at on public.delivery_outbox;
 create trigger trg_delivery_outbox_updated_at
 before update on public.delivery_outbox
 for each row
 execute function public.set_delivery_outbox_updated_at();
-
 alter table public.delivery_outbox enable row level security;
-
 -- No direct RLS policies: access via service-role RPC only.
 
 create or replace function public.delivery_claim_batch_v1(
@@ -93,7 +86,6 @@ begin
   returning o.id, o.topic, o.aggregate_id, o.event_type, o.payload, o.attempts;
 end;
 $$;
-
 create or replace function public.delivery_mark_done_v1(
   p_id uuid
 )
@@ -110,7 +102,6 @@ as $$
    where id = p_id
      and state in ('processing', 'pending');
 $$;
-
 create or replace function public.delivery_mark_fail_v1(
   p_id uuid,
   p_error text,
@@ -131,11 +122,9 @@ as $$
    where id = p_id
      and state in ('processing', 'pending');
 $$;
-
 revoke all on function public.delivery_claim_batch_v1(text, integer) from public;
 revoke all on function public.delivery_mark_done_v1(uuid) from public;
 revoke all on function public.delivery_mark_fail_v1(uuid, text, integer, integer) from public;
-
 grant execute on function public.delivery_claim_batch_v1(text, integer) to service_role;
 grant execute on function public.delivery_mark_done_v1(uuid) to service_role;
 grant execute on function public.delivery_mark_fail_v1(uuid, text, integer, integer) to service_role;

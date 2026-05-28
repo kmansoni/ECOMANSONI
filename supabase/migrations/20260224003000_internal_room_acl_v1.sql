@@ -100,6 +100,5 @@ begin
   return false;
 end;
 $$;
-
 revoke all on function public.internal_can_join_room_v1(uuid, text) from public;
 grant execute on function public.internal_can_join_room_v1(uuid, text) to service_role;

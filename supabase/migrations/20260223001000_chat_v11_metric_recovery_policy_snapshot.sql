@@ -62,6 +62,4 @@ BEGIN
   RETURN QUERY SELECT true, now();
 END;
 $$;
-
 GRANT EXECUTE ON FUNCTION public.chat_ingest_client_metric_v11(TEXT, DOUBLE PRECISION, JSONB) TO authenticated;
-

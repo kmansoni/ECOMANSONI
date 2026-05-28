@@ -15,7 +15,6 @@ LEFT JOIN public.channel_members cm
   ON cm.channel_id = c.id
  AND cm.user_id = c.owner_id
 WHERE cm.user_id IS NULL;
-
 -- 2) Owner-aware capability resolver.
 CREATE OR REPLACE FUNCTION public.channel_has_capability(
   _channel_id uuid,
@@ -68,6 +67,4 @@ AS $$
       else (select allowed from role_allow)
     end;
 $$;
-
 GRANT EXECUTE ON FUNCTION public.channel_has_capability(uuid, uuid, text) TO authenticated;
-

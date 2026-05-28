@@ -1,4 +1,3 @@
--- ALLOW_NON_IDEMPOTENT_POLICY_DDL: legacy migration already applied to production; non-idempotent policies are intentional here.
 -- Баланс звёзд пользователя
 CREATE TABLE IF NOT EXISTS user_stars (
   user_id UUID PRIMARY KEY,
@@ -7,7 +6,6 @@ CREATE TABLE IF NOT EXISTS user_stars (
   total_spent INTEGER NOT NULL DEFAULT 0,
   updated_at TIMESTAMPTZ DEFAULT now()
 );
-
 -- Каталог подарков
 CREATE TABLE IF NOT EXISTS gift_catalog (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -22,7 +20,6 @@ CREATE TABLE IF NOT EXISTS gift_catalog (
   sort_order INTEGER DEFAULT 0,
   created_at TIMESTAMPTZ DEFAULT now()
 );
-
 -- Транзакции звёзд
 CREATE TABLE IF NOT EXISTS star_transactions (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -35,7 +32,6 @@ CREATE TABLE IF NOT EXISTS star_transactions (
   description TEXT,
   created_at TIMESTAMPTZ DEFAULT now()
 );
-
 -- Отправленные подарки
 CREATE TABLE IF NOT EXISTS sent_gifts (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -50,27 +46,22 @@ CREATE TABLE IF NOT EXISTS sent_gifts (
   opened_at TIMESTAMPTZ,
   created_at TIMESTAMPTZ DEFAULT now()
 );
-
 -- Добавить поле для подарков в messages
 ALTER TABLE messages ADD COLUMN IF NOT EXISTS gift_id UUID;
-
 -- Индексы
 CREATE INDEX IF NOT EXISTS idx_star_transactions_user ON star_transactions(user_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_sent_gifts_recipient ON sent_gifts(recipient_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_sent_gifts_sender ON sent_gifts(sender_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_gift_catalog_category ON gift_catalog(category, sort_order);
-
 -- RLS
 ALTER TABLE user_stars ENABLE ROW LEVEL SECURITY;
 ALTER TABLE gift_catalog ENABLE ROW LEVEL SECURITY;
 ALTER TABLE star_transactions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE sent_gifts ENABLE ROW LEVEL SECURITY;
-
 CREATE POLICY "Users read own stars" ON user_stars FOR SELECT USING (user_id = auth.uid());
 CREATE POLICY "Gift catalog readable by all" ON gift_catalog FOR SELECT USING (true);
 CREATE POLICY "Users read own transactions" ON star_transactions FOR SELECT USING (user_id = auth.uid());
 CREATE POLICY "Users read own gifts" ON sent_gifts FOR SELECT USING (sender_id = auth.uid() OR recipient_id = auth.uid());
-
 -- Функция отправки подарка
 CREATE OR REPLACE FUNCTION send_gift_v1(
   p_sender_id UUID,
@@ -122,7 +113,6 @@ BEGIN
   );
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-
 -- Seed каталог подарков
 INSERT INTO gift_catalog (name, emoji, description, price_stars, category, rarity, sort_order) VALUES
   ('Роза', '🌹', 'Красивая роза для особенного человека', 10, 'general', 'common', 1),

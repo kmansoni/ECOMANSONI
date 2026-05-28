@@ -14,10 +14,8 @@ ALTER TABLE public.reels_engine_action_journal
   ADD COLUMN IF NOT EXISTS active_config_version_id UUID,
   ADD COLUMN IF NOT EXISTS pipeline_suppressed_until TIMESTAMPTZ,
   ADD COLUMN IF NOT EXISTS pipeline_suppression_reason TEXT;
-
 CREATE INDEX IF NOT EXISTS idx_reels_engine_action_journal_cfg
   ON public.reels_engine_action_journal(environment, active_config_version_id, decided_at DESC);
-
 -- ---------------------------------------------------------------------------
 -- 2) Stronger segment lock key (64-bit)
 -- ---------------------------------------------------------------------------
@@ -35,7 +33,6 @@ BEGIN
   PERFORM pg_advisory_xact_lock(hashtextextended(v_key, 0));
 END;
 $$;
-
 -- ---------------------------------------------------------------------------
 -- 3) Default suppression TTL (avoid "forever incident")
 -- ---------------------------------------------------------------------------
@@ -90,10 +87,8 @@ BEGIN
     updated_at = v_now;
 END;
 $$;
-
 ALTER FUNCTION public.reels_engine_set_pipeline_suppression(TEXT, TEXT, TIMESTAMPTZ, TEXT)
   SET search_path = public, pg_catalog;
-
 -- ---------------------------------------------------------------------------
 -- 4) apply_action: store active config + suppression snapshot in journal
 -- ---------------------------------------------------------------------------
@@ -279,6 +274,5 @@ BEGIN
   SELECT v_existing_id, v_status, v_message;
 END;
 $$;
-
 ALTER FUNCTION public.reels_engine_apply_action(TEXT, TEXT, TEXT, TEXT, JSONB, INTEGER, BOOLEAN, TEXT)
   SET search_path = public, pg_catalog;

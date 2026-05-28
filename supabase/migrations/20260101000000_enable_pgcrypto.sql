@@ -1,5 +1,4 @@
 -- Ensure required extensions exist
 
 CREATE SCHEMA IF NOT EXISTS extensions;
-
 CREATE EXTENSION IF NOT EXISTS pgcrypto WITH SCHEMA extensions;

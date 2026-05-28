@@ -21,7 +21,6 @@ BEGIN
     NULL;
   END;
 END $$;
-
 -- =====================================================
 -- Extend get_creator_insights
 -- Adds: likes_total, comments_total, views_non_followers, top_reels, followers_gender
@@ -207,6 +206,5 @@ BEGIN
   );
 END;
 $$;
-
 REVOKE ALL ON FUNCTION public.get_creator_insights(INT) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.get_creator_insights(INT) TO authenticated;

@@ -7,7 +7,6 @@
 -- 1) Channel: auto-delete timer (seconds; 0 = never)
 ALTER TABLE public.channels
   ADD COLUMN IF NOT EXISTS auto_delete_seconds INTEGER NOT NULL DEFAULT 0;
-
 DO $$
 BEGIN
   IF NOT EXISTS (
@@ -21,17 +20,13 @@ BEGIN
   END IF;
 END
 $$;
-
 -- 2) Channel messages: expires_at + trigger to set from channel setting
 ALTER TABLE public.channel_messages
   ADD COLUMN IF NOT EXISTS expires_at TIMESTAMPTZ;
-
 CREATE INDEX IF NOT EXISTS idx_channel_messages_channel_created
   ON public.channel_messages(channel_id, created_at);
-
 CREATE INDEX IF NOT EXISTS idx_channel_messages_expires_at
   ON public.channel_messages(expires_at);
-
 CREATE OR REPLACE FUNCTION public.set_channel_message_expires_at_v1()
 RETURNS TRIGGER
 LANGUAGE plpgsql
@@ -58,14 +53,11 @@ BEGIN
   RETURN NEW;
 END;
 $$;
-
 DROP TRIGGER IF EXISTS trg_channel_messages_expires_at_v1 ON public.channel_messages;
 CREATE TRIGGER trg_channel_messages_expires_at_v1
 BEFORE INSERT ON public.channel_messages
 FOR EACH ROW EXECUTE FUNCTION public.set_channel_message_expires_at_v1();
-
 REVOKE ALL ON FUNCTION public.set_channel_message_expires_at_v1() FROM PUBLIC;
-
 -- 3) Per-user channel notification prefs
 CREATE TABLE IF NOT EXISTS public.channel_user_settings (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -80,23 +72,19 @@ CREATE TABLE IF NOT EXISTS public.channel_user_settings (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   UNIQUE(channel_id, user_id)
 );
-
 ALTER TABLE public.channel_user_settings ENABLE ROW LEVEL SECURITY;
-
 DROP POLICY IF EXISTS "channel_user_settings_select_own" ON public.channel_user_settings;
 CREATE POLICY "channel_user_settings_select_own"
 ON public.channel_user_settings
 FOR SELECT
 TO authenticated
 USING (user_id = auth.uid());
-
 DROP POLICY IF EXISTS "channel_user_settings_upsert_own" ON public.channel_user_settings;
 CREATE POLICY "channel_user_settings_upsert_own"
 ON public.channel_user_settings
 FOR INSERT
 TO authenticated
 WITH CHECK (user_id = auth.uid());
-
 DROP POLICY IF EXISTS "channel_user_settings_update_own" ON public.channel_user_settings;
 CREATE POLICY "channel_user_settings_update_own"
 ON public.channel_user_settings
@@ -104,7 +92,6 @@ FOR UPDATE
 TO authenticated
 USING (user_id = auth.uid())
 WITH CHECK (user_id = auth.uid());
-
 CREATE OR REPLACE FUNCTION public.touch_channel_user_settings_updated_at_v1()
 RETURNS TRIGGER
 LANGUAGE plpgsql
@@ -114,30 +101,25 @@ BEGIN
   RETURN NEW;
 END;
 $$;
-
 DROP TRIGGER IF EXISTS trg_touch_channel_user_settings_updated_at_v1 ON public.channel_user_settings;
 CREATE TRIGGER trg_touch_channel_user_settings_updated_at_v1
 BEFORE UPDATE ON public.channel_user_settings
 FOR EACH ROW EXECUTE FUNCTION public.touch_channel_user_settings_updated_at_v1();
-
 -- 4) Align channel update policy with capability engine/admin role
 -- NOTE: policies are additive; we drop known older ones by name and recreate.
 DROP POLICY IF EXISTS "Channel owner can update their channel" ON public.channels;
 DROP POLICY IF EXISTS "Channel admin can update channel" ON public.channels;
-
 CREATE POLICY "Channel admin can update channel"
 ON public.channels
 FOR UPDATE
 TO authenticated
 USING (public.is_channel_admin(id, auth.uid()))
 WITH CHECK (public.is_channel_admin(id, auth.uid()));
-
 -- 5) Enforce channel_messages write permissions via channel capability engine
 -- Drop older policies by name if present.
 DROP POLICY IF EXISTS "Members can send messages to channels" ON public.channel_messages;
 DROP POLICY IF EXISTS "Members can view messages in their channels" ON public.channel_messages;
 DROP POLICY IF EXISTS "Anyone can view messages in public channels" ON public.channel_messages;
-
 -- View: public channels (not expired)
 CREATE POLICY "Anyone can view messages in public channels"
 ON public.channel_messages
@@ -150,7 +132,6 @@ USING (
   )
   AND (channel_messages.expires_at IS NULL OR channel_messages.expires_at > now())
 );
-
 -- View: members (not expired)
 CREATE POLICY "Members can view messages in their channels"
 ON public.channel_messages
@@ -159,7 +140,6 @@ USING (
   public.is_channel_member(channel_id, auth.uid())
   AND (channel_messages.expires_at IS NULL OR channel_messages.expires_at > now())
 );
-
 -- Insert: must be member + capability
 CREATE POLICY "Members can send messages to channels"
 ON public.channel_messages
@@ -170,7 +150,6 @@ WITH CHECK (
   AND public.is_channel_member(channel_id, auth.uid())
   AND public.channel_has_capability(channel_id, auth.uid(), 'channel.posts.create')
 );
-
 -- Delete: sender OR capability
 DROP POLICY IF EXISTS "Channel posts delete" ON public.channel_messages;
 CREATE POLICY "Channel posts delete"

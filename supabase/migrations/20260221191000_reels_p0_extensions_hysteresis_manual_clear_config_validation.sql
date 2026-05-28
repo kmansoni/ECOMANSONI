@@ -24,7 +24,6 @@ SET suppression = jsonb_set(
 )
 WHERE (suppression ? 'pipeline')
   AND NULLIF((suppression #>> '{pipeline,suppressed_at}')::TEXT, '') IS NULL;
-
 -- ---------------------------------------------------------------------------
 -- 1) Extend pipeline suppression status RPC (v2)
 -- ---------------------------------------------------------------------------
@@ -58,13 +57,10 @@ AS $$
     AND s.segment_key = p_segment_key
   LIMIT 1;
 $$;
-
 ALTER FUNCTION public.reels_engine_get_pipeline_suppression_v2(TEXT, TEXT)
   SET search_path = public, pg_catalog;
-
 REVOKE EXECUTE ON FUNCTION public.reels_engine_get_pipeline_suppression_v2(TEXT, TEXT) FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.reels_engine_get_pipeline_suppression_v2(TEXT, TEXT) TO service_role;
-
 -- ---------------------------------------------------------------------------
 -- 2) Config validation RPC + activation gate
 -- ---------------------------------------------------------------------------
@@ -113,10 +109,8 @@ BEGIN
   );
 END;
 $$;
-
 ALTER FUNCTION public.reels_engine_validate_config_v1(JSONB)
   SET search_path = public, pg_catalog;
-
 CREATE OR REPLACE FUNCTION public.reels_engine_validate_config_version_v1(
   p_version_id UUID
 )
@@ -141,15 +135,12 @@ BEGIN
   RETURN public.reels_engine_validate_config_v1(v_config);
 END;
 $$;
-
 ALTER FUNCTION public.reels_engine_validate_config_version_v1(UUID)
   SET search_path = public, pg_catalog;
-
 REVOKE EXECUTE ON FUNCTION public.reels_engine_validate_config_v1(JSONB) FROM PUBLIC, anon, authenticated;
 REVOKE EXECUTE ON FUNCTION public.reels_engine_validate_config_version_v1(UUID) FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.reels_engine_validate_config_v1(JSONB) TO service_role;
 GRANT EXECUTE ON FUNCTION public.reels_engine_validate_config_version_v1(UUID) TO service_role;
-
 CREATE OR REPLACE FUNCTION public.reels_engine_activate_config(
   p_version_id UUID
 )
@@ -188,13 +179,10 @@ BEGIN
   WHERE id = p_version_id;
 END;
 $$;
-
 ALTER FUNCTION public.reels_engine_activate_config(UUID)
   SET search_path = public, pg_catalog;
-
 REVOKE EXECUTE ON FUNCTION public.reels_engine_activate_config(UUID) FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.reels_engine_activate_config(UUID) TO service_role;
-
 -- ---------------------------------------------------------------------------
 -- 3) Apply-action: manual clear + hysteresis gate
 -- ---------------------------------------------------------------------------
@@ -438,10 +426,10 @@ BEGIN
         AND segment_key = p_segment_key;
     END IF;
 
-    UPDATE public.reels_engine_action_journal j
-    SET j.status = 'executed',
-        j.executed_at = v_now
-    WHERE j.id = v_existing_id;
+    UPDATE public.reels_engine_action_journal
+    SET status = 'executed',
+        executed_at = v_now
+    WHERE id = v_existing_id;
 
     v_status := 'executed';
     v_message := 'executed';
@@ -451,9 +439,7 @@ BEGIN
   SELECT v_existing_id, v_status, v_message;
 END;
 $$;
-
 ALTER FUNCTION public.reels_engine_apply_action(TEXT, TEXT, TEXT, TEXT, JSONB, INTEGER, BOOLEAN, TEXT)
   SET search_path = public, pg_catalog;
-
 REVOKE EXECUTE ON FUNCTION public.reels_engine_apply_action(TEXT, TEXT, TEXT, TEXT, JSONB, INTEGER, BOOLEAN, TEXT) FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.reels_engine_apply_action(TEXT, TEXT, TEXT, TEXT, JSONB, INTEGER, BOOLEAN, TEXT) TO service_role;

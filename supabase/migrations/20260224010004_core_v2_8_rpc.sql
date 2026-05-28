@@ -125,7 +125,6 @@ BEGIN
   RETURN QUERY SELECT v_scope_id, 'created'::TEXT, NULL::TEXT;
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-
 -- ============================================================================
 -- RPC: send_command(scope_id, command_type, payload, idempotency_key_norm, trace_id, device_id)
 -- Send a command to a scope (polymorphic: message, edit, delete, etc.)
@@ -251,7 +250,6 @@ BEGIN
   RETURN QUERY SELECT 'found_hot'::TEXT, v_outcome_code, v_outcome;
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-
 -- ============================================================================
 -- RPC: accept_invite(invite_id, device_id, trace_id)
 -- Accept an invite to a scope
@@ -335,7 +333,6 @@ BEGIN
   RETURN QUERY SELECT 'accepted'::TEXT, v_scope_id, NULL::TEXT;
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-
 -- ============================================================================
 -- RPC: record_receipt(scope_id, last_read_seq, last_delivered_seq, device_id, trace_id)
 -- Record read/delivered pointers (monotonic)
@@ -402,7 +399,6 @@ BEGIN
   RETURN QUERY SELECT 'recorded'::TEXT, NULL::TEXT;
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-
 -- ============================================================================
 -- RPC: /cmd/status (read-only) - get idempotency outcome
 -- Section 10: Privacy-gated (requester actor_id must match)

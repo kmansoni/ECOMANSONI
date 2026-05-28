@@ -85,14 +85,11 @@ BEGIN
   END IF;
 END;
 $$;
-
 REVOKE EXECUTE ON FUNCTION public.record_reel_impression_v2(UUID, TEXT, UUID, INTEGER, TEXT, TEXT, NUMERIC) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.record_reel_impression_v2(UUID, TEXT, UUID, INTEGER, TEXT, TEXT, NUMERIC) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.record_reel_impression_v2(UUID, TEXT, UUID, INTEGER, TEXT, TEXT, NUMERIC) TO anon;
-
 COMMENT ON FUNCTION public.record_reel_impression_v2 IS
   'Idempotent impression tracking using partial unique-index inference (request_id,user_id,reel_id) / (request_id,session_id,reel_id).';
-
 -- ---------------------------------------------------------------------------
 -- 2) Fix: get_user_reels_v1 must respect viewer blocks (auth only)
 -- ---------------------------------------------------------------------------
@@ -183,13 +180,10 @@ BEGIN
   OFFSET GREATEST(0, COALESCE(p_offset, 0));
 END;
 $$;
-
 REVOKE EXECUTE ON FUNCTION public.get_user_reels_v1(UUID, INTEGER, INTEGER) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.get_user_reels_v1(UUID, INTEGER, INTEGER) TO authenticated, anon;
-
 COMMENT ON FUNCTION public.get_user_reels_v1 IS
   'Profile RPC: returns author reels with moderation/channel gating; excludes viewer not_interested blocks for authenticated viewers.';
-
 -- ---------------------------------------------------------------------------
 -- 3) Enforce single decision point: revoke direct pipeline mutator EXECUTE
 -- ---------------------------------------------------------------------------
@@ -202,9 +196,7 @@ COMMENT ON FUNCTION public.get_user_reels_v1 IS
 
 REVOKE EXECUTE ON FUNCTION public.reels_engine_set_pipeline_suppression(TEXT, TEXT, TIMESTAMPTZ, TEXT) FROM service_role;
 REVOKE EXECUTE ON FUNCTION public.reels_engine_clear_pipeline_suppression(TEXT, TEXT, TEXT) FROM service_role;
-
 COMMENT ON FUNCTION public.reels_engine_set_pipeline_suppression IS
   'DEPRECATED: Use reels_engine_apply_action(action_type=''set_pipeline_suppression'') for idempotent journaling. This function is callable from apply_action only (not directly).';
-
 COMMENT ON FUNCTION public.reels_engine_clear_pipeline_suppression IS
   'DEPRECATED: Use reels_engine_apply_action(action_type=''clear_pipeline_suppression'') for idempotent journaling. This function is callable from apply_action only (not directly).';

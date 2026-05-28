@@ -7,7 +7,7 @@ set -euo pipefail
 # - Run as root (or with sudo)
 # - DNS A record already set: TURN_DOMAIN -> VPS public IP
 # - Port 80 reachable for Let's Encrypt HTTP-01 (standalone)
-# - Firewall open: 3478/udp, 3478/tcp, 5349/tcp, 49160-49200/udp
+# - Firewall open: 3478/udp, 3478/tcp, 5349/tcp+udp, 49152-65535/udp (full range)
 #
 # Usage:
 #   sudo bash bootstrap-turn-ubuntu.sh \
@@ -53,15 +53,15 @@ if ! command -v docker >/dev/null 2>&1; then
 fi
 
 # Firewall (UFW)
-ufw --force enable
-ufw allow 22/tcp
-ufw allow 80/tcp
-ufw allow 443/tcp
-ufw allow 3478/udp
-ufw allow 3478/tcp
-ufw allow 5349/udp
-ufw allow 5349/tcp
-ufw allow 49160:49200/udp
+  ufw --force enable
+  ufw allow 22/tcp
+  ufw allow 80/tcp
+  ufw allow 443/tcp
+  ufw allow 3478/udp
+  ufw allow 3478/tcp
+  ufw allow 5349/udp
+  ufw allow 5349/tcp
+  ufw allow 49152:65535/udp comment "TURN relay range (full port range)"
 
 mkdir -p /opt/turn
 
@@ -73,9 +73,9 @@ echo "$TURN_SHARED_SECRET"
 # TLS cert (standalone)
 echo "[TURN] Requesting Let's Encrypt certificate..."
 certbot certonly --standalone \
-  --non-interactive --agree-tos \
-  -m "$LE_EMAIL" \
-  -d "$TURN_DOMAIN"
+   --non-interactive --agree-tos \
+   -m "$LE_EMAIL" \
+   -d "$TURN_DOMAIN"
 
 cat > /opt/turn/turnserver.conf <<EOF
 # coturn production config (self-hosted TURN, shared-secret REST auth, TLS)
@@ -83,8 +83,10 @@ listening-ip=0.0.0.0
 listening-port=3478
 tls-listening-port=5349
 
-min-port=49160
-max-port=49200
+# Relay port range (keep narrow in dev)
+# For better scalability, use: min-port=49152, max-port=65535
+min-port=49152
+max-port=65535
 
 external-ip=${PUBLIC_IP}
 
@@ -113,7 +115,7 @@ services:
       - "3478:3478/tcp"
       - "5349:5349/tcp"
       - "5349:5349/udp"
-      - "49160-49200:49160-49200/udp"
+      - "49152-65535:49152-65535/udp"
     volumes:
       - ./turnserver.conf:/etc/coturn/turnserver.conf:ro
       - /etc/letsencrypt:/etc/letsencrypt:ro

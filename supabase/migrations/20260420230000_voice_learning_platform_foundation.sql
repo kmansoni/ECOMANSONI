@@ -22,17 +22,13 @@ CREATE TABLE IF NOT EXISTS public.nav_voice_utterances (
     metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
-
 COMMENT ON TABLE public.nav_voice_utterances IS 'Raw and normalized voice/search utterances used for multilingual ASR, address parsing, and self-learning.';
-
 CREATE INDEX IF NOT EXISTS idx_nav_voice_utterances_user_created
     ON public.nav_voice_utterances(user_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_nav_voice_utterances_source_created
     ON public.nav_voice_utterances(source, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_nav_voice_utterances_validation_status
     ON public.nav_voice_utterances(validation_status, created_at DESC);
-
-
 CREATE TABLE IF NOT EXISTS public.nav_voice_training_samples (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     utterance_id UUID REFERENCES public.nav_voice_utterances(id) ON DELETE CASCADE,
@@ -47,15 +43,11 @@ CREATE TABLE IF NOT EXISTS public.nav_voice_training_samples (
         CHECK (sample_source IN ('voice', 'search_text', 'synthetic', 'user_correction', 'voice_hotspot')),
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
-
 COMMENT ON TABLE public.nav_voice_training_samples IS 'Curated training set promoted from raw voice/search data after validation or user correction.';
-
 CREATE INDEX IF NOT EXISTS idx_nav_voice_training_samples_user_created
     ON public.nav_voice_training_samples(user_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_nav_voice_training_samples_valid_conf
     ON public.nav_voice_training_samples(is_valid, confidence DESC, created_at DESC);
-
-
 CREATE TABLE IF NOT EXISTS public.nav_voice_feedback (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
@@ -68,16 +60,12 @@ CREATE TABLE IF NOT EXISTS public.nav_voice_feedback (
     metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
-
 COMMENT ON TABLE public.nav_voice_feedback IS 'User supervision loop for ASR, address parsing, and hotspot confirmation.';
-
 CREATE INDEX IF NOT EXISTS idx_nav_voice_feedback_user_created
     ON public.nav_voice_feedback(user_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_nav_voice_feedback_utterance
     ON public.nav_voice_feedback(utterance_id, created_at DESC)
     WHERE utterance_id IS NOT NULL;
-
-
 CREATE TABLE IF NOT EXISTS public.nav_address_patterns (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     country_code TEXT,
@@ -96,15 +84,11 @@ CREATE TABLE IF NOT EXISTS public.nav_address_patterns (
     metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
     CONSTRAINT nav_address_patterns_unique UNIQUE (country_code, city, street, house_number, corpus, building, structure)
 );
-
 COMMENT ON TABLE public.nav_address_patterns IS 'Canonical and provisional address-pattern memory, including rare house-corpus structures and new-building variants.';
-
 CREATE INDEX IF NOT EXISTS idx_nav_address_patterns_city_street
     ON public.nav_address_patterns(city, street, last_seen DESC);
 CREATE INDEX IF NOT EXISTS idx_nav_address_patterns_confirmed_freq
     ON public.nav_address_patterns(is_confirmed, frequency DESC, last_seen DESC);
-
-
 CREATE TABLE IF NOT EXISTS public.nav_address_hotspots (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     utterance_id UUID REFERENCES public.nav_voice_utterances(id) ON DELETE CASCADE,
@@ -120,15 +104,11 @@ CREATE TABLE IF NOT EXISTS public.nav_address_hotspots (
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
-
 COMMENT ON TABLE public.nav_address_hotspots IS 'Rare-address and novelty-learning queue for targeted synthetic augmentation and rapid fine-tuning.';
-
 CREATE INDEX IF NOT EXISTS idx_nav_address_hotspots_status_created
     ON public.nav_address_hotspots(status, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_nav_address_hotspots_novelty
     ON public.nav_address_hotspots(novelty_score DESC, created_at DESC);
-
-
 CREATE TABLE IF NOT EXISTS public.nav_voice_model_versions (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     model_type TEXT NOT NULL CHECK (model_type IN ('acoustic', 'language', 'ner', 'accent', 'voice_platform')),
@@ -140,130 +120,103 @@ CREATE TABLE IF NOT EXISTS public.nav_voice_model_versions (
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     deployed_at TIMESTAMPTZ
 );
-
 COMMENT ON TABLE public.nav_voice_model_versions IS 'Registry of ASR, address NER, accent, and voice-learning platform versions with rollout metadata.';
-
 CREATE INDEX IF NOT EXISTS idx_nav_voice_model_versions_type_created
     ON public.nav_voice_model_versions(model_type, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_nav_voice_model_versions_state
     ON public.nav_voice_model_versions(deployment_state, created_at DESC);
-
-
 ALTER TABLE public.nav_voice_utterances ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.nav_voice_training_samples ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.nav_voice_feedback ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.nav_address_patterns ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.nav_address_hotspots ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.nav_voice_model_versions ENABLE ROW LEVEL SECURITY;
-
 DROP POLICY IF EXISTS "nav_voice_utterances_select_own" ON public.nav_voice_utterances;
 CREATE POLICY "nav_voice_utterances_select_own"
     ON public.nav_voice_utterances FOR SELECT
     TO authenticated
     USING (user_id = auth.uid());
-
 DROP POLICY IF EXISTS "nav_voice_utterances_insert_own" ON public.nav_voice_utterances;
 CREATE POLICY "nav_voice_utterances_insert_own"
     ON public.nav_voice_utterances FOR INSERT
     TO authenticated
     WITH CHECK (user_id = auth.uid());
-
 DROP POLICY IF EXISTS "nav_voice_utterances_service_all" ON public.nav_voice_utterances;
 CREATE POLICY "nav_voice_utterances_service_all"
     ON public.nav_voice_utterances FOR ALL
     TO service_role
     USING (true)
     WITH CHECK (true);
-
-
 DROP POLICY IF EXISTS "nav_voice_training_samples_select_own" ON public.nav_voice_training_samples;
 CREATE POLICY "nav_voice_training_samples_select_own"
     ON public.nav_voice_training_samples FOR SELECT
     TO authenticated
     USING (user_id = auth.uid());
-
 DROP POLICY IF EXISTS "nav_voice_training_samples_insert_own" ON public.nav_voice_training_samples;
 CREATE POLICY "nav_voice_training_samples_insert_own"
     ON public.nav_voice_training_samples FOR INSERT
     TO authenticated
     WITH CHECK (user_id = auth.uid());
-
 DROP POLICY IF EXISTS "nav_voice_training_samples_service_all" ON public.nav_voice_training_samples;
 CREATE POLICY "nav_voice_training_samples_service_all"
     ON public.nav_voice_training_samples FOR ALL
     TO service_role
     USING (true)
     WITH CHECK (true);
-
-
 DROP POLICY IF EXISTS "nav_voice_feedback_select_own" ON public.nav_voice_feedback;
 CREATE POLICY "nav_voice_feedback_select_own"
     ON public.nav_voice_feedback FOR SELECT
     TO authenticated
     USING (user_id = auth.uid());
-
 DROP POLICY IF EXISTS "nav_voice_feedback_insert_own" ON public.nav_voice_feedback;
 CREATE POLICY "nav_voice_feedback_insert_own"
     ON public.nav_voice_feedback FOR INSERT
     TO authenticated
     WITH CHECK (user_id = auth.uid());
-
 DROP POLICY IF EXISTS "nav_voice_feedback_service_all" ON public.nav_voice_feedback;
 CREATE POLICY "nav_voice_feedback_service_all"
     ON public.nav_voice_feedback FOR ALL
     TO service_role
     USING (true)
     WITH CHECK (true);
-
-
 DROP POLICY IF EXISTS "nav_address_patterns_read_authenticated" ON public.nav_address_patterns;
 CREATE POLICY "nav_address_patterns_read_authenticated"
     ON public.nav_address_patterns FOR SELECT
     TO authenticated
     USING (true);
-
 DROP POLICY IF EXISTS "nav_address_patterns_service_all" ON public.nav_address_patterns;
 CREATE POLICY "nav_address_patterns_service_all"
     ON public.nav_address_patterns FOR ALL
     TO service_role
     USING (true)
     WITH CHECK (true);
-
-
 DROP POLICY IF EXISTS "nav_address_hotspots_select_own_or_service" ON public.nav_address_hotspots;
 CREATE POLICY "nav_address_hotspots_select_own_or_service"
     ON public.nav_address_hotspots FOR SELECT
     TO authenticated
     USING (user_id = auth.uid());
-
 DROP POLICY IF EXISTS "nav_address_hotspots_insert_own" ON public.nav_address_hotspots;
 CREATE POLICY "nav_address_hotspots_insert_own"
     ON public.nav_address_hotspots FOR INSERT
     TO authenticated
     WITH CHECK (user_id = auth.uid());
-
 DROP POLICY IF EXISTS "nav_address_hotspots_service_all" ON public.nav_address_hotspots;
 CREATE POLICY "nav_address_hotspots_service_all"
     ON public.nav_address_hotspots FOR ALL
     TO service_role
     USING (true)
     WITH CHECK (true);
-
-
 DROP POLICY IF EXISTS "nav_voice_model_versions_read_authenticated" ON public.nav_voice_model_versions;
 CREATE POLICY "nav_voice_model_versions_read_authenticated"
     ON public.nav_voice_model_versions FOR SELECT
     TO authenticated
     USING (true);
-
 DROP POLICY IF EXISTS "nav_voice_model_versions_service_all" ON public.nav_voice_model_versions;
 CREATE POLICY "nav_voice_model_versions_service_all"
     ON public.nav_voice_model_versions FOR ALL
     TO service_role
     USING (true)
     WITH CHECK (true);
-
-
 INSERT INTO public.nav_voice_model_versions (model_type, version_tag, deployment_state, metrics, training_data_hash)
 SELECT
     'voice_platform',

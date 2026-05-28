@@ -24,7 +24,7 @@ SELECT
     THEN (de.payload->>'spam_score')::numeric 
     ELSE NULL 
   END as spam_score,
-  de.payload->'reason_codes' as reason_codes,
+  ARRAY(SELECT jsonb_array_elements_text(de.payload->'reason_codes')) as reason_codes,
   de.payload->>'surface_policy' as surface_policy,
   de.algorithm_version
 FROM decision_engine_events de
@@ -32,10 +32,8 @@ WHERE de.event_type = 'moderation_action'
   AND de.subject_type = 'hashtag'
   AND de.created_at >= CURRENT_TIMESTAMP - INTERVAL '7 days'
 ORDER BY de.created_at DESC;
-
 CREATE INDEX idx_v_moderation_decisions_hashtag 
 ON v_moderation_decisions_recent(hashtag, created_at DESC);
-
 -- ============================================================================
 -- 2. HASHTAG MODERATION DECISION RECORD
 -- ============================================================================
@@ -79,7 +77,6 @@ BEGIN
     'Moderation decision logged for hashtag ' || p_hashtag;
 END;
 $$ LANGUAGE plpgsql STRICT;
-
 -- ============================================================================
 -- 3. ANTI-ABUSE AUTHOR WEIGHT UPDATE
 -- Triggered when moderation action is taken against content of specific author
@@ -131,7 +128,6 @@ BEGIN
   RETURN QUERY SELECT p_user_id, v_new_weight, v_violation_count;
 END;
 $$ LANGUAGE plpgsql STRICT;
-
 -- ============================================================================
 -- 4. EVALUATE HASHTAG ROLLBACK ELIGIBILITY
 -- ============================================================================
@@ -156,7 +152,6 @@ BEGIN
     0.95::NUMERIC;
 END;
 $$ LANGUAGE plpgsql;
-
 -- ============================================================================
 -- 5. ENQUEUE HASHTAG CACHE REBUILD JOB
 -- Async job to invalidate explore cache after moderation decision
@@ -181,7 +176,6 @@ BEGIN
     p_rebuild_scope;
 END;
 $$ LANGUAGE plpgsql;
-
 -- ============================================================================
 -- 6. COMPOSITE: Full Moderation + Event Emission + Cache Invalidation
 -- ============================================================================
@@ -242,10 +236,8 @@ BEGIN
     'Moderation decision applied and queued for cache rebuild';
 END;
 $$ LANGUAGE plpgsql STRICT;
-
 COMMENT ON FUNCTION apply_hashtag_moderation_decision_v1 IS
   'Full moderation decision flow: emit event, record decision, queue cache rebuild, evaluate rollback. Idempotent via idempotency_key.';
-
 -- ============================================================================
 -- 7. GRANT PERMISSIONS
 -- ============================================================================
@@ -255,5 +247,4 @@ GRANT EXECUTE ON FUNCTION update_author_trust_weight_v1 TO service_role;
 GRANT EXECUTE ON FUNCTION evaluate_hashtag_rollback_eligibility_v1 TO authenticated, service_role;
 GRANT EXECUTE ON FUNCTION enqueue_hashtag_cache_rebuild_v1 TO service_role;
 GRANT EXECUTE ON FUNCTION apply_hashtag_moderation_decision_v1 TO service_role;
-
 GRANT SELECT ON v_moderation_decisions_recent TO authenticated, service_role;

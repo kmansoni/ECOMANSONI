@@ -10,15 +10,11 @@ CREATE TABLE IF NOT EXISTS public.chat_client_metrics (
   labels JSONB NOT NULL DEFAULT '{}'::jsonb,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
-
 CREATE INDEX IF NOT EXISTS idx_chat_client_metrics_name_time
   ON public.chat_client_metrics (metric_name, created_at DESC);
-
 CREATE INDEX IF NOT EXISTS idx_chat_client_metrics_actor_time
   ON public.chat_client_metrics (actor_id, created_at DESC);
-
 ALTER TABLE public.chat_client_metrics ENABLE ROW LEVEL SECURITY;
-
 CREATE OR REPLACE FUNCTION public.chat_ingest_client_metric_v11(
   p_name TEXT,
   p_value DOUBLE PRECISION,
@@ -52,6 +48,4 @@ BEGIN
   RETURN QUERY SELECT true, now();
 END;
 $$;
-
 GRANT EXECUTE ON FUNCTION public.chat_ingest_client_metric_v11(TEXT, DOUBLE PRECISION, JSONB) TO authenticated;
-

@@ -1,9 +1,5 @@
 import { useNavigate } from "react-router-dom";
 import {
-  Car,
-  ShoppingBag,
-  Home,
-  Shield,
   Camera,
   BarChart3,
   Music,
@@ -17,10 +13,6 @@ interface ServicesSheetProps {
 }
 
 const SERVICES = [
-  { label: "Такси",         path: "/taxi",           icon: Car,         accent: "from-yellow-400 to-amber-500" },
-  { label: "Магазин",       path: "/shop",           icon: ShoppingBag, accent: "from-blue-400 to-blue-600" },
-  { label: "Недвижимость",  path: "/realestate",     icon: Home,        accent: "from-emerald-400 to-green-600" },
-  { label: "Страхование",   path: "/insurance",      icon: Shield,      accent: "from-violet-400 to-purple-600" },
   { label: "AR",            path: "/ar",             icon: Camera,      accent: "from-pink-400 to-rose-500" },
   { label: "CRM",           path: "/crm",            icon: BarChart3,   accent: "from-orange-400 to-orange-600" },
   { label: "Музыка",        path: "/services/music", icon: Music,       accent: "from-red-400 to-rose-600" },

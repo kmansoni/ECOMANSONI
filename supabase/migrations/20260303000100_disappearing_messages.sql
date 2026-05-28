@@ -5,9 +5,9 @@
 ALTER TABLE messages ADD COLUMN IF NOT EXISTS disappear_in_seconds INTEGER;
 ALTER TABLE messages ADD COLUMN IF NOT EXISTS disappear_at TIMESTAMPTZ;
 ALTER TABLE messages ADD COLUMN IF NOT EXISTS disappeared BOOLEAN DEFAULT false;
-
 -- Добавить настройку по-умолчанию на разговор
-ALTER TABLE conversations ADD COLUMN IF NOT EXISTS default_disappear_timer INTEGER; -- null = off
+ALTER TABLE conversations ADD COLUMN IF NOT EXISTS default_disappear_timer INTEGER;
+-- null = off
 
 -- Функция для обработки исчезающих сообщений
 CREATE OR REPLACE FUNCTION process_disappearing_messages()
@@ -24,7 +24,6 @@ BEGIN
   RETURN affected_count;
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-
 -- Индекс для быстрого поиска истекших сообщений
 CREATE INDEX IF NOT EXISTS idx_messages_disappear_at 
   ON messages (disappear_at) 

@@ -1,4 +1,3 @@
--- ALLOW_NON_IDEMPOTENT_POLICY_DDL: legacy migration already applied to production; non-idempotent policies are intentional here.
 -- =====================================================
 -- Story Highlights (Актуальное) и Рекомендации
 -- =====================================================
@@ -15,7 +14,6 @@ CREATE TABLE public.story_highlights (
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
-
 -- Связь между highlights и stories
 CREATE TABLE public.highlight_stories (
     id UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
@@ -25,7 +23,6 @@ CREATE TABLE public.highlight_stories (
     added_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     UNIQUE(highlight_id, story_id)
 );
-
 -- Таблица рекомендуемых пользователей
 CREATE TABLE public.recommended_users (
     id UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
@@ -36,7 +33,6 @@ CREATE TABLE public.recommended_users (
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     UNIQUE(user_id)
 );
-
 -- =====================================================
 -- Индексы
 -- =====================================================
@@ -46,14 +42,12 @@ CREATE INDEX idx_story_highlights_visible ON public.story_highlights(user_id, is
 CREATE INDEX idx_highlight_stories_highlight ON public.highlight_stories(highlight_id);
 CREATE INDEX idx_highlight_stories_story ON public.highlight_stories(story_id);
 CREATE INDEX idx_recommended_users_active ON public.recommended_users(is_active, priority DESC);
-
 -- =====================================================
 -- RLS Policies
 -- =====================================================
 
 -- story_highlights RLS
 ALTER TABLE public.story_highlights ENABLE ROW LEVEL SECURITY;
-
 -- Просмотр highlights с учетом приватности
 CREATE POLICY "Users can view public highlights"
 ON public.story_highlights FOR SELECT
@@ -69,25 +63,20 @@ USING (
         )
     )
 );
-
 -- Создание своих highlights
 CREATE POLICY "Users can create own highlights"
 ON public.story_highlights FOR INSERT
 WITH CHECK (auth.uid() = user_id);
-
 -- Обновление своих highlights
 CREATE POLICY "Users can update own highlights"
 ON public.story_highlights FOR UPDATE
 USING (auth.uid() = user_id);
-
 -- Удаление своих highlights
 CREATE POLICY "Users can delete own highlights"
 ON public.story_highlights FOR DELETE
 USING (auth.uid() = user_id);
-
 -- highlight_stories RLS
 ALTER TABLE public.highlight_stories ENABLE ROW LEVEL SECURITY;
-
 -- Просмотр stories в highlights (с учетом приватности highlight)
 CREATE POLICY "Users can view highlight stories"
 ON public.highlight_stories FOR SELECT
@@ -109,7 +98,6 @@ USING (
         )
     )
 );
-
 -- Добавление stories в свои highlights
 CREATE POLICY "Users can add stories to own highlights"
 ON public.highlight_stories FOR INSERT
@@ -120,7 +108,6 @@ WITH CHECK (
         AND user_id = auth.uid()
     )
 );
-
 -- Удаление stories из своих highlights
 CREATE POLICY "Users can remove stories from own highlights"
 ON public.highlight_stories FOR DELETE
@@ -131,15 +118,12 @@ USING (
         AND user_id = auth.uid()
     )
 );
-
 -- recommended_users RLS
 ALTER TABLE public.recommended_users ENABLE ROW LEVEL SECURITY;
-
 -- Любой может видеть активные рекомендации
 CREATE POLICY "Anyone can view active recommendations"
 ON public.recommended_users FOR SELECT
 USING (is_active = true);
-
 -- =====================================================
 -- Функции
 -- =====================================================
@@ -152,12 +136,10 @@ BEGIN
     RETURN NEW;
 END;
 $$ LANGUAGE plpgsql;
-
 CREATE TRIGGER update_story_highlights_updated_at
     BEFORE UPDATE ON public.story_highlights
     FOR EACH ROW
     EXECUTE FUNCTION public.update_highlight_updated_at();
-
 -- Функция для получения рекомендаций для нового пользователя
 CREATE OR REPLACE FUNCTION public.get_recommended_users_for_new_user(limit_count INTEGER DEFAULT 10)
 RETURNS TABLE (
@@ -186,7 +168,6 @@ BEGIN
     LIMIT limit_count;
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-
 -- Функция для создания highlight из expired story
 CREATE OR REPLACE FUNCTION public.create_highlight_from_story(
     p_story_id UUID,
@@ -223,7 +204,6 @@ BEGIN
     RETURN v_highlight_id;
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-
 COMMENT ON TABLE public.story_highlights IS 'Папки для группировки stories (Актуальное, как highlights в Instagram)';
 COMMENT ON TABLE public.highlight_stories IS 'Связь между highlights и stories';
 COMMENT ON TABLE public.recommended_users IS 'Рекомендуемые пользователи для новых юзеров';

@@ -1,4 +1,3 @@
--- ALLOW_NON_IDEMPOTENT_POLICY_DDL: legacy migration already applied to production; non-idempotent policies are intentional here.
 -- ============================================================================
 -- SUPER ADVANCED ML-BASED RECOMMENDATIONS SYSTEM FOR REELS
 -- Includes: Collaborative Filtering, Content-Based, Session Analysis,
@@ -36,15 +35,12 @@ CREATE TABLE IF NOT EXISTS public.user_reel_interactions (
   
   UNIQUE(user_id, reel_id)
 );
-
 CREATE INDEX IF NOT EXISTS idx_user_interactions_user 
   ON public.user_reel_interactions(user_id, last_interaction_at DESC);
 CREATE INDEX IF NOT EXISTS idx_user_interactions_reel 
   ON public.user_reel_interactions(reel_id);
-
 COMMENT ON TABLE public.user_reel_interactions IS 
   'Детальная история взаимодействий пользователя с Reels для ML';
-
 -- ============================================================================
 -- 2. Author Affinity Scores (предпочтения авторов)
 -- ============================================================================
@@ -62,13 +58,10 @@ CREATE TABLE IF NOT EXISTS public.user_author_affinity (
   
   PRIMARY KEY (user_id, author_id)
 );
-
 CREATE INDEX IF NOT EXISTS idx_user_author_affinity_score 
   ON public.user_author_affinity(user_id, affinity_score DESC);
-
 COMMENT ON TABLE public.user_author_affinity IS 
   'Аффинити пользователя к авторам (learned preferences)';
-
 -- ============================================================================
 -- 3. Content Features (для content-based filtering)
 -- ============================================================================
@@ -93,13 +86,10 @@ CREATE TABLE IF NOT EXISTS public.reel_content_features (
   
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
-
 CREATE INDEX IF NOT EXISTS idx_reel_features_music ON public.reel_content_features(music_genre);
 CREATE INDEX IF NOT EXISTS idx_reel_features_tokens ON public.reel_content_features USING GIN(description_tokens);
-
 COMMENT ON TABLE public.reel_content_features IS 
   'Извлечённые фичи контента для content-based recommendations';
-
 -- ============================================================================
 -- 4. Virality Signals (ранние сигналы популярности)
 -- ============================================================================
@@ -121,13 +111,10 @@ CREATE TABLE IF NOT EXISTS public.reel_virality_metrics (
   
   last_calculated_at TIMESTAMPTZ DEFAULT NOW()
 );
-
 CREATE INDEX IF NOT EXISTS idx_virality_trending 
   ON public.reel_virality_metrics(is_trending, predicted_viral_score DESC);
-
 COMMENT ON TABLE public.reel_virality_metrics IS 
   'Метрики virality для раннего обнаружения популярного контента';
-
 -- ============================================================================
 -- 5. User Similarity Graph (для collaborative filtering)
 -- ============================================================================
@@ -144,13 +131,10 @@ CREATE TABLE IF NOT EXISTS public.user_similarity_scores (
   PRIMARY KEY (user_id_a, user_id_b),
   CHECK (user_id_a < user_id_b) -- Avoid duplicates (symmetric)
 );
-
 CREATE INDEX IF NOT EXISTS idx_user_similarity_scores 
   ON public.user_similarity_scores(user_id_a, similarity_score DESC);
-
 COMMENT ON TABLE public.user_similarity_scores IS 
   'Similarity scores между пользователями (collaborative filtering)';
-
 -- ============================================================================
 -- 6. Функция: Update Author Affinity (триггер на взаимодействия)
 -- ============================================================================
@@ -200,12 +184,10 @@ BEGIN
   RETURN NEW;
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-
 DROP TRIGGER IF EXISTS trg_update_author_affinity ON user_reel_interactions;
 CREATE TRIGGER trg_update_author_affinity
   AFTER INSERT OR UPDATE ON user_reel_interactions
   FOR EACH ROW EXECUTE FUNCTION update_author_affinity();
-
 -- ============================================================================
 -- 7. Функция: Calculate Engagement Score (продвинутая версия)
 -- ============================================================================
@@ -231,7 +213,6 @@ BEGIN
   );
 END;
 $$ LANGUAGE plpgsql IMMUTABLE;
-
 -- ============================================================================
 -- 8. Функция: Calculate Virality Score
 -- ============================================================================
@@ -272,7 +253,6 @@ BEGIN
   ));
 END;
 $$ LANGUAGE plpgsql STABLE;
-
 -- ============================================================================
 -- 9. ГЛАВНАЯ ФУНКЦИЯ: ML-Based Personalized Feed
 -- ============================================================================
@@ -461,10 +441,8 @@ BEGIN
   ORDER BY final_score DESC;
 END;
 $$ LANGUAGE plpgsql STABLE SECURITY DEFINER;
-
 COMMENT ON FUNCTION get_ml_personalized_reels_feed IS 
   'ML-based персонализированная лента с коллаборативной фильтрацией, virality detection, multi-armed bandit';
-
 -- ============================================================================
 -- 10. Функция: Simple Trending Feed (для не авторизованных)
 -- ============================================================================
@@ -501,7 +479,6 @@ BEGIN
   LIMIT p_limit;
 END;
 $$ LANGUAGE plpgsql STABLE SECURITY DEFINER;
-
 -- ============================================================================
 -- 11. Функция: Update User Similarity (периодический расчёт)
 -- ============================================================================
@@ -567,7 +544,6 @@ BEGIN
   END LOOP;
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-
 -- ============================================================================
 -- 12. Helper: Record Interaction (клиент вызывает это)
 -- ============================================================================
@@ -604,7 +580,6 @@ BEGIN
     last_interaction_at = NOW();
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-
 -- ============================================================================
 -- 13. Permissions
 -- ============================================================================
@@ -613,30 +588,24 @@ GRANT SELECT, INSERT, UPDATE ON public.user_author_affinity TO authenticated;
 GRANT SELECT ON public.reel_content_features TO authenticated;
 GRANT SELECT ON public.reel_virality_metrics TO authenticated;
 GRANT SELECT ON public.user_similarity_scores TO authenticated;
-
 GRANT EXECUTE ON FUNCTION public.get_ml_personalized_reels_feed TO authenticated;
 GRANT EXECUTE ON FUNCTION public.get_trending_reels_simple TO authenticated;
 GRANT EXECUTE ON FUNCTION public.record_reel_interaction TO authenticated;
 GRANT EXECUTE ON FUNCTION public.calculate_user_similarities TO authenticated;
 GRANT EXECUTE ON FUNCTION public.calculate_advanced_engagement_score TO authenticated;
 GRANT EXECUTE ON FUNCTION public.calculate_virality_score TO authenticated;
-
 -- RLS Policies
 ALTER TABLE public.user_reel_interactions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.user_author_affinity ENABLE ROW LEVEL SECURITY;
-
 CREATE POLICY "Users view own interactions"
   ON public.user_reel_interactions FOR SELECT
   USING (auth.uid() = user_id);
-
 CREATE POLICY "Users manage own interactions"
   ON public.user_reel_interactions FOR ALL
   USING (auth.uid() = user_id);
-
 CREATE POLICY "Users view own affinity"
   ON public.user_author_affinity FOR SELECT
   USING (auth.uid() = user_id);
-
 -- ============================================================================
 -- 14. Индексы для производительности
 -- ============================================================================
@@ -646,6 +615,5 @@ CREATE INDEX IF NOT EXISTS idx_reels_author_created
   ON public.reels(author_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_reels_engagement 
   ON public.reels((likes_count + comments_count * 2 + saves_count * 3) DESC);
-
 COMMENT ON SCHEMA public IS 
   'Super Advanced ML-based Recommendations System for Reels - Feb 2026';

@@ -1,10 +1,8 @@
--- ALLOW_NON_IDEMPOTENT_POLICY_DDL: legacy migration already applied to production; non-idempotent policies are intentional here.
 -- Phase 1: L1.3 - Service identities with ENCRYPTED keys (P0 FIX)
 -- Telegram-grade: Multi-tenant isolation + key rotation + pgcrypto encryption
 
 -- Enable pgcrypto for encryption
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
-
 CREATE TABLE service_identities (
   tenant_id UUID NOT NULL REFERENCES tenants(tenant_id) ON DELETE CASCADE,
   service_id TEXT NOT NULL,
@@ -13,9 +11,7 @@ CREATE TABLE service_identities (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   PRIMARY KEY (tenant_id, service_id)
 );
-
 CREATE INDEX service_identities_tenant_idx ON service_identities(tenant_id);
-
 CREATE TABLE service_keys (
   tenant_id UUID NOT NULL,
   service_id TEXT NOT NULL,
@@ -35,17 +31,13 @@ CREATE TABLE service_keys (
   PRIMARY KEY (tenant_id, service_id, key_id),
   FOREIGN KEY (tenant_id, service_id) REFERENCES service_identities(tenant_id, service_id) ON DELETE CASCADE
 );
-
 CREATE INDEX service_keys_tenant_service_idx ON service_keys(tenant_id, service_id);
 CREATE INDEX service_keys_revoked_idx ON service_keys(revoked_at) WHERE revoked_at IS NOT NULL;
-
 ALTER TABLE service_identities ENABLE ROW LEVEL SECURITY;
 ALTER TABLE service_keys ENABLE ROW LEVEL SECURITY;
-
 REVOKE ALL ON service_identities FROM anon, authenticated;
 REVOKE ALL ON service_keys FROM anon, authenticated;
 GRANT SELECT ON service_identities TO authenticated;
-
 CREATE POLICY service_identities_admin_read ON service_identities
   FOR SELECT TO authenticated
   USING (
@@ -56,7 +48,6 @@ CREATE POLICY service_identities_admin_read ON service_identities
          AND tm.role IN ('owner', 'admin')
     )
   );
-
 -- Encryption/decryption helpers (uses ENV var for key)
 CREATE OR REPLACE FUNCTION encrypt_service_key_v1(p_plaintext TEXT)
 RETURNS BYTEA
@@ -75,7 +66,6 @@ BEGIN
   RETURN pgp_sym_encrypt(p_plaintext, v_encryption_key);
 END;
 $$;
-
 CREATE OR REPLACE FUNCTION decrypt_service_key_v1(p_encrypted BYTEA)
 RETURNS TEXT
 LANGUAGE plpgsql SECURITY DEFINER
@@ -92,7 +82,6 @@ BEGIN
   RETURN pgp_sym_decrypt(p_encrypted, v_encryption_key);
 END;
 $$;
-
 CREATE OR REPLACE FUNCTION assert_service_active_v1(p_tenant_id UUID, p_service_id TEXT)
 RETURNS VOID
 LANGUAGE plpgsql STABLE SECURITY DEFINER
@@ -114,7 +103,6 @@ BEGIN
   END IF;
 END;
 $$;
-
 CREATE OR REPLACE FUNCTION get_service_key_v1(p_tenant_id UUID, p_service_id TEXT, p_key_id TEXT)
 RETURNS TABLE (
   algorithm TEXT,
@@ -140,6 +128,5 @@ BEGIN
     AND (sk.expires_at IS NULL OR sk.expires_at > now());
 END;
 $$;
-
 CREATE TRIGGER service_identities_updated_at BEFORE UPDATE ON service_identities
   FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();

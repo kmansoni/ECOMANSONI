@@ -1,4 +1,3 @@
--- ALLOW_NON_IDEMPOTENT_POLICY_DDL: legacy migration already applied to production; non-idempotent policies are intentional here.
 -- Fix infinite recursion in group_chat_members policies
 -- Drop all existing problematic policies
 DROP POLICY IF EXISTS "Members can view members" ON public.group_chat_members;
@@ -6,13 +5,11 @@ DROP POLICY IF EXISTS "Group admins can add members" ON public.group_chat_member
 DROP POLICY IF EXISTS "Users can view group members" ON public.group_chat_members;
 DROP POLICY IF EXISTS "Group members can view other members" ON public.group_chat_members;
 DROP POLICY IF EXISTS "Owners can manage members" ON public.group_chat_members;
-
 -- Create new non-recursive policies using the security definer function
 CREATE POLICY "Members can view group members"
 ON public.group_chat_members
 FOR SELECT
 USING (public.is_group_member(group_id, auth.uid()));
-
 CREATE POLICY "Owners and admins can add members"
 ON public.group_chat_members
 FOR INSERT
@@ -29,7 +26,6 @@ WITH CHECK (
     AND gc.owner_id = auth.uid()
   ))
 );
-
 CREATE POLICY "Owners can delete members"
 ON public.group_chat_members
 FOR DELETE

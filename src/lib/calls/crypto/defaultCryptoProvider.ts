@@ -58,7 +58,7 @@ export class DefaultCryptoProvider implements CryptoProvider {
     }
   }
 
-  destroy(): void {
+  async destroy(): Promise<void> {
     this.keyExchange.destroy();
     this.mediaEncryption.destroy();
   }

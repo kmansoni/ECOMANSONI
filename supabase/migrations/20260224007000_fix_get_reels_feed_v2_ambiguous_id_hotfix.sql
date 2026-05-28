@@ -4,7 +4,6 @@
 -- but uses fully-qualified aliases and a simpler read path.
 
 DROP FUNCTION IF EXISTS public.get_reels_feed_v2(INTEGER, INTEGER, TEXT, NUMERIC, INTEGER, INTEGER, TEXT);
-
 CREATE OR REPLACE FUNCTION public.get_reels_feed_v2(
   p_limit INTEGER DEFAULT 50,
   p_offset INTEGER DEFAULT 0,
@@ -88,10 +87,7 @@ BEGIN
   ORDER BY b.reel_created_at DESC;
 END;
 $$;
-
 REVOKE ALL ON FUNCTION public.get_reels_feed_v2(INTEGER, INTEGER, TEXT, NUMERIC, INTEGER, INTEGER, TEXT) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.get_reels_feed_v2(INTEGER, INTEGER, TEXT, NUMERIC, INTEGER, INTEGER, TEXT) TO authenticated, anon;
-
 COMMENT ON FUNCTION public.get_reels_feed_v2(INTEGER, INTEGER, TEXT, NUMERIC, INTEGER, INTEGER, TEXT)
   IS 'Hotfix: deterministic recent-reels feed with stable signature and no ambiguous column references.';
-

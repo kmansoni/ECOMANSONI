@@ -70,13 +70,13 @@ fi
 log "Проверяю shared secret..."
 CURRENT_SECRET=$(grep -E '^static-auth-secret=' "$CONF_FILE" | head -1 | cut -d= -f2-)
 
-if [[ "$CURRENT_SECRET" == "CHANGE_ME_USE_OPENSSL_RAND_HEX_32" || -z "$CURRENT_SECRET" ]]; then
-  NEW_SECRET=$(openssl rand -hex 32)
-  sed -i "s/^static-auth-secret=.*/static-auth-secret=$NEW_SECRET/" "$CONF_FILE"
-  log "Сгенерирован новый shared secret"
-  CURRENT_SECRET="$NEW_SECRET"
+if [[ "$CURRENT_SECRET" == "CHANGE_ME_USE_OPENSSL_RAND_HEX_32" || "$CURRENT_SECRET" == "CHANGE_ME_LONG_RANDOM_SECRET" || -z "$CURRENT_SECRET" ]]; then
+   NEW_SECRET=$(openssl rand -hex 32)
+   sed -i "s/^static-auth-secret=.*/static-auth-secret=$NEW_SECRET/" "$CONF_FILE"
+   log "Сгенерирован новый shared secret"
+   CURRENT_SECRET="$NEW_SECRET"
 else
-  log "Shared secret уже задан (пропускаю)"
+   log "Shared secret уже задан (пропускаю)"
 fi
 
 # ── 3. TLS-сертификат (Let's Encrypt) ───────────────────────────────────────
@@ -153,9 +153,10 @@ fi
 if command -v ufw &>/dev/null && ufw status | grep -q "active"; then
   log "Открываю порты в ufw..."
   ufw allow 3478/udp comment "STUN/TURN UDP"
-  ufw allow 3478/tcp comment "TURN TCP"
-  ufw allow 5349/tcp comment "TURNS TLS"
-  ufw allow 49160:49200/udp comment "TURN relay range"
+  ufw allow 3478/tcp comment "STUN/TURN TCP"
+  ufw allow 5349/udp comment "TURNS UDP"
+  ufw allow 5349/tcp comment "TURNS TCP"
+  ufw allow 49152:65535/udp comment "TURN relay range"
   log "Порты открыты"
 fi
 

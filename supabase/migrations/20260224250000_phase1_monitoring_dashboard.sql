@@ -39,9 +39,7 @@ create table if not exists public.kpi_daily_snapshots (
   
   unique(snapshot_date)
 );
-
 grant select on public.kpi_daily_snapshots to authenticated, anon, service_role;
-
 -- Guardrails alerts (breaches of thresholds)
 create table if not exists public.guardrail_alerts (
   id bigserial primary key,
@@ -63,10 +61,8 @@ create table if not exists public.guardrail_alerts (
   
   unique(metric_name, created_at)
 );
-
 grant select, insert on public.guardrail_alerts to authenticated, service_role;
 grant update on public.guardrail_alerts to authenticated, service_role;
-
 -- Incident log (for post-mortem analysis)
 create table if not exists public.incidents (
   id bigserial primary key,
@@ -88,9 +84,7 @@ create table if not exists public.incidents (
   
   post_mortem_url text
 );
-
 grant select, insert on public.incidents to authenticated, service_role;
-
 -- ============================================
 -- PART 2: KPI Calculation RPCs
 -- ============================================
@@ -111,7 +105,6 @@ begin
   return query select 1500::bigint, 5000::bigint, 8000::bigint, 38.5::numeric, 25.3::numeric;
 end;
 $$ language plpgsql security definer;
-
 -- Calculate engagement metrics (mock data)
 create or replace function public.get_engagement_metrics_v1()
 returns table (
@@ -123,7 +116,6 @@ begin
   return query select 480::integer, ​3200::bigint, 72.5::numeric;
 end;
 $$ language plpgsql security definer;
-
 -- Calculate safety metrics (mock data)
 create or replace function public.get_safety_metrics_v1()
 returns table (
@@ -137,7 +129,6 @@ begin
   return query select 3.2::numeric, 12::bigint, 8.5::numeric, 18.3::numeric, 45::bigint;
 end;
 $$ language plpgsql security definer;
-
 -- Get creator metrics
 create or replace function public.get_creator_metrics_v1()
 returns table (
@@ -197,7 +188,6 @@ begin
   return query select v_return_rate, v_new_creators, v_active_creators, coalesce(v_avg_reels, 0);
 end;
 $$ language plpgsql security definer;
-
 -- ============================================
 -- PART 3: Snapshot Function (run daily)
 -- ============================================
@@ -279,7 +269,6 @@ begin
   return query select true::boolean, 'KPI snapshot created for ' || p_date::text;
 end;
 $$ language plpgsql security definer;
-
 -- ============================================
 -- PART 4: Guardrails Checking
 -- ============================================
@@ -353,7 +342,6 @@ begin
   return query select v_record.name::text, v_record.current_value::numeric, v_record.threshold::numeric, v_violated, v_severity;
 end;
 $$ language plpgsql security definer;
-
 -- Get all active guardrail breaches
 create or replace function public.get_active_guardrail_breaches_v1()
 returns table (
@@ -378,7 +366,6 @@ begin
   order by g.created_at desc;
 end;
 $$ language plpgsql security definer;
-
 -- ============================================
 -- PART 5: Admin API
 -- ============================================
@@ -451,7 +438,6 @@ begin
     v_status;
 end;
 $$ language plpgsql security definer;
-
 -- Index for performance
 create index idx_kpi_daily_snapshots_date on public.kpi_daily_snapshots(snapshot_date desc);
 create index idx_guardrail_alerts_status on public.guardrail_alerts(status, created_at desc);

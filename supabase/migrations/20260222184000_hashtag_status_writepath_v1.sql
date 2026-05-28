@@ -16,7 +16,6 @@ INSERT INTO public.admin_permissions (scope, resource, action, description, risk
 VALUES
   ('hashtag.status.write', 'hashtag', 'status.write', 'Change hashtag status (normal/restricted/hidden)', 'high', true)
 ON CONFLICT (scope) DO NOTHING;
-
 WITH roles AS (
   SELECT id, name FROM public.admin_roles WHERE name IN ('owner', 'security_admin')
 ), perms AS (
@@ -27,7 +26,6 @@ SELECT r.id, p.id
 FROM roles r
 JOIN perms p ON p.scope = 'hashtag.status.write'
 ON CONFLICT (role_id, permission_id) DO NOTHING;
-
 -- 2) Helper: check admin scope (service_role only)
 CREATE OR REPLACE FUNCTION public.admin_has_scope_v1(
   p_admin_user_id UUID,
@@ -51,13 +49,10 @@ AS $$
       AND (aur.expires_at IS NULL OR aur.expires_at > now())
   );
 $$;
-
 REVOKE ALL ON FUNCTION public.admin_has_scope_v1(UUID, TEXT) FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.admin_has_scope_v1(UUID, TEXT) TO service_role;
-
 COMMENT ON FUNCTION public.admin_has_scope_v1 IS
   'Service-only helper: checks whether an admin_user has the given scope via active role assignments.';
-
 -- 3) Service RPC: set hashtag status + audit row + minimal explore cache invalidation
 CREATE OR REPLACE FUNCTION public.set_hashtag_status_v1(
   p_hashtag TEXT,
@@ -177,9 +172,7 @@ BEGIN
   RETURN NEXT;
 END;
 $$;
-
 REVOKE ALL ON FUNCTION public.set_hashtag_status_v1(TEXT, TEXT, TEXT[], JSONB, TEXT, UUID) FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.set_hashtag_status_v1(TEXT, TEXT, TEXT[], JSONB, TEXT, UUID) TO service_role;
-
 COMMENT ON FUNCTION public.set_hashtag_status_v1 IS
   'Service-only: changes hashtag status with audit row + explore cache invalidation. Actor is an admin_user_id validated via admin_has_scope_v1.';

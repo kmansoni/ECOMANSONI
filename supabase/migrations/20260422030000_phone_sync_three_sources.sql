@@ -44,7 +44,6 @@ begin
   return '+' || v_digits;
 end;
 $$;
-
 -- ─────────────────────────────────────────────────────────────────────────────
 -- 2. Trigger function on auth.users — now reads 3 sources and normalizes.
 -- ─────────────────────────────────────────────────────────────────────────────
@@ -91,13 +90,11 @@ begin
   return new;
 end;
 $$;
-
 -- Re-install trigger (definition may have been updated).
 drop trigger if exists on_auth_user_sync_account on auth.users;
 create trigger on_auth_user_sync_account
   after insert or update of email, phone, raw_user_meta_data on auth.users
   for each row execute function public.sync_auth_account_from_user();
-
 -- ─────────────────────────────────────────────────────────────────────────────
 -- 3. Trigger on profiles — mirror profiles.phone changes into auth_accounts.
 -- ─────────────────────────────────────────────────────────────────────────────
@@ -132,12 +129,10 @@ begin
   return new;
 end;
 $$;
-
 drop trigger if exists on_profile_sync_auth_account on public.profiles;
 create trigger on_profile_sync_auth_account
   after insert or update of phone on public.profiles
   for each row execute function public.sync_auth_account_from_profile();
-
 -- ─────────────────────────────────────────────────────────────────────────────
 -- 4. get_email_by_phone_v1 with profiles fallback (digits-only match).
 -- ─────────────────────────────────────────────────────────────────────────────
@@ -193,9 +188,7 @@ begin
   return v_email;
 end;
 $$;
-
 grant execute on function public.get_email_by_phone_v1(text) to anon, authenticated;
-
 -- Same extension for check_recovery_phone_email_v1.
 create or replace function public.check_recovery_phone_email_v1(p_phone text, p_email text)
 returns boolean
@@ -240,9 +233,7 @@ begin
   return coalesce(v_found, false);
 end;
 $$;
-
 grant execute on function public.check_recovery_phone_email_v1(text, text) to anon, authenticated;
-
 -- ─────────────────────────────────────────────────────────────────────────────
 -- 5. Normalize existing profiles.phone to E.164 ('+<digits>').
 --    Skip rows that are already normalized or empty.

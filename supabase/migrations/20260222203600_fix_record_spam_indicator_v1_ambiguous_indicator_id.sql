@@ -57,5 +57,4 @@ BEGIN
   RETURN QUERY SELECT v_indicator_id, v_spam_score, v_trust_weight, v_action;
 END;
 $$ LANGUAGE plpgsql;
-
 GRANT EXECUTE ON FUNCTION public.record_spam_indicator_v1 TO service_role;

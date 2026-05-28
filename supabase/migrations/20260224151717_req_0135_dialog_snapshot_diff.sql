@@ -2,45 +2,38 @@
 -- REQ-0135: Dialog Snapshot Diff Recovery Contract
 --
 -- Acceptance criteria:
--- - ✅ Client recovers from stale cursor without data loss
--- - ✅ No full-history fetch required  
--- - ✅ Diff stream remains monotonic
+-- - dialog_get_updates_v2 need_snapshot flag
+-- - dialog_get_snapshot_v1 contract
+-- - min_msg_seq_available maintenance
 --
--- Phase 0 implementation:
--- - fetch_messages_v1 already supports p_before_seq (backward pagination)
--- - Add conversation_state.min_seq_available for retention tracking
--- - Add get_conversation_snapshot_v1 for full snapshot fallback
+-- Phase 0 MVP implementation:
+-- - Add min_seq column to conversation_state (tracks oldest available message seq)
+-- - Simple snapshot RPC returns full message history (paginated)
+-- - Diff stream remains monotonic via fetch_messages_v1 (before_seq pagination)
+-- - Client recovers from stale cursor without data loss
 -- =============================================================================
 
--- 1. Add min_seq_available to conversation_state (tracks oldest available message)
-DO $$
-BEGIN
-  IF NOT EXISTS (
-    SELECT 1 FROM information_schema.columns
-    WHERE table_schema = 'public'
-      AND table_name = 'conversation_state'
-      AND column_name = 'min_seq_available'
-  ) THEN
-    ALTER TABLE public.conversation_state
-      ADD COLUMN min_seq_available BIGINT DEFAULT 1;
-  END IF;
-END $$;
-
-COMMENT ON COLUMN public.conversation_state.min_seq_available
-  IS 'REQ-0135: Oldest message seq still available (for detecting cursor drift). Updated by retention policies.';
-
--- 2. RPC: get_conversation_snapshot_v1 (full snapshot fallback)
--- Returns conversation metadata + initial page of messages for recovery.
-CREATE OR REPLACE FUNCTION public.get_conversation_snapshot_v1(
+-- 1. Add min_seq column to conversation_state
+ALTER TABLE public.conversation_state
+  ADD COLUMN IF NOT EXISTS min_seq BIGINT DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS retention_mode TEXT DEFAULT 'full' CHECK (retention_mode IN ('full', 'windowed'));
+COMMENT ON COLUMN public.conversation_state.min_seq
+  IS 'REQ-0135: Oldest message seq still available in database (for drift detection)';
+COMMENT ON COLUMN public.conversation_state.retention_mode 
+  IS 'REQ-0135: full=all messages kept, windowed=old messages pruned (not implemented in Phase 0)';
+-- 2. RPC: dialog_get_snapshot_v1
+-- Returns full conversation snapshot (paginated, oldest-first)
+CREATE OR REPLACE FUNCTION public.dialog_get_snapshot_v1(
   p_conversation_id UUID,
-  p_limit INTEGER DEFAULT 50
+  p_page_size INTEGER DEFAULT 100,
+  p_page_offset INTEGER DEFAULT 0
 )
 RETURNS TABLE (
-  conversation_id UUID,
-  last_seq BIGINT,
-  min_seq_available BIGINT,
-  participant_count INTEGER,
-  message_count BIGINT,
+  min_seq BIGINT,
+  max_seq BIGINT,
+  total_messages BIGINT,
+  page_size INTEGER,
+  page_offset INTEGER,
   messages JSONB
 )
 LANGUAGE plpgsql
@@ -49,19 +42,15 @@ SET search_path = public, pg_temp
 AS $$
 DECLARE
   v_user UUID := auth.uid();
-  v_lim INTEGER := LEAST(GREATEST(COALESCE(p_limit, 50), 1), 200);
-  v_last_seq BIGINT;
   v_min_seq BIGINT;
-  v_participant_count INTEGER;
-  v_message_count BIGINT;
-  v_messages JSONB;
+  v_max_seq BIGINT;
+  v_total BIGINT;
+  v_page_size INTEGER;
 BEGIN
-  -- 1. Authentication check
   IF v_user IS NULL THEN
     RAISE EXCEPTION 'not_authenticated' USING ERRCODE = '28000';
   END IF;
 
-  -- 2. Participant check
   IF NOT EXISTS (
     SELECT 1
     FROM public.conversation_participants cp
@@ -71,93 +60,95 @@ BEGIN
     RAISE EXCEPTION 'not_participant' USING ERRCODE = '42501';
   END IF;
 
-  -- 3. Get conversation metadata
+  -- Get conversation bounds
+  SELECT 
+    COALESCE(cs.min_seq, 0),
+    COALESCE(cs.last_seq, 0)
+  INTO v_min_seq, v_max_seq
+  FROM public.conversation_state cs
+  WHERE cs.conversation_id = p_conversation_id;
+
+  -- Count total messages
+  SELECT COUNT(*) INTO v_total
+  FROM public.messages m
+  WHERE m.conversation_id = p_conversation_id;
+
+  v_page_size := LEAST(GREATEST(COALESCE(p_page_size, 100), 1), 500);
+
+  RETURN QUERY
   SELECT
-    COALESCE(cs.last_seq, 0),
-    COALESCE(cs.min_seq_available, 1),
-    COUNT(DISTINCT cp2.user_id)::INTEGER,
-    COUNT(m.id)
-  INTO v_last_seq, v_min_seq, v_participant_count, v_message_count
-  FROM public.conversations c
-  LEFT JOIN public.conversation_state cs ON cs.conversation_id = c.id
-  LEFT JOIN public.conversation_participants cp2 ON cp2.conversation_id = c.id
-  LEFT JOIN public.messages m ON m.conversation_id = c.id
-  WHERE c.id = p_conversation_id
-  GROUP BY c.id, cs.last_seq, cs.min_seq_available;
-
-  -- 4. Get recent messages (descending order, client reverses)
-  SELECT COALESCE(jsonb_agg(
-    jsonb_build_object(
-      'id', m.id,
-      'conversation_id', m.conversation_id,
-      'sender_id', m.sender_id,
-      'content', m.content,
-      'created_at', m.created_at,
-      'seq', m.seq,
-      'client_msg_id', m.client_msg_id,
-      'media_url', m.media_url,
-      'media_type', m.media_type,
-      'duration_seconds', m.duration_seconds,
-      'shared_post_id', m.shared_post_id,
-      'shared_reel_id', m.shared_reel_id
-    ) ORDER BY m.seq DESC
-  ), '[]'::jsonb)
-  INTO v_messages
-  FROM (
-    SELECT *
-    FROM public.messages m2
-    WHERE m2.conversation_id = p_conversation_id
-    ORDER BY m2.seq DESC
-    LIMIT v_lim
-  ) m;
-
-  -- 5. Return snapshot
-  RETURN QUERY SELECT
-    p_conversation_id,
-    v_last_seq,
     v_min_seq,
-    v_participant_count,
-    v_message_count,
-    v_messages;
+    v_max_seq,
+    v_total,
+    v_page_size,
+    p_page_offset,
+    (
+      SELECT jsonb_agg(
+        jsonb_build_object(
+          'id', m.id,
+          'conversation_id', m.conversation_id,
+          'sender_id', m.sender_id,
+          'content', m.content,
+          'created_at', m.created_at,
+          'seq', m.seq,
+          'client_msg_id', m.client_msg_id,
+          'media_url', m.media_url,
+          'media_type', m.media_type,
+          'duration_seconds', m.duration_seconds,
+          'shared_post_id', m.shared_post_id,
+          'shared_reel_id', m.shared_reel_id
+        ) ORDER BY m.seq ASC
+      )
+      FROM (
+        SELECT *
+        FROM public.messages m
+        WHERE m.conversation_id = p_conversation_id
+        ORDER BY m.seq ASC
+        LIMIT v_page_size
+        OFFSET p_page_offset
+      ) m
+    );
 END;
 $$;
-
-REVOKE ALL ON FUNCTION public.get_conversation_snapshot_v1(UUID, INTEGER) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION public.get_conversation_snapshot_v1(UUID, INTEGER) TO authenticated;
-
-COMMENT ON FUNCTION public.get_conversation_snapshot_v1(UUID, INTEGER)
-  IS 'REQ-0135: Full conversation snapshot for cursor drift recovery. Returns metadata + recent messages.';
-
--- 3. Update conversation_state trigger to maintain min_seq_available
--- (In Phase 0, we set it to 1 by default. Future: retention worker updates it)
-CREATE OR REPLACE FUNCTION public.update_conversation_state_min_seq()
+REVOKE ALL ON FUNCTION public.dialog_get_snapshot_v1(UUID, INTEGER, INTEGER) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.dialog_get_snapshot_v1(UUID, INTEGER, INTEGER) TO authenticated;
+COMMENT ON FUNCTION public.dialog_get_snapshot_v1(UUID, INTEGER, INTEGER)
+  IS 'REQ-0135: Full conversation snapshot for cursor drift recovery. Returns oldest-to-newest messages in pages.';
+-- 3. Trigger: maintain min_seq on message INSERT
+CREATE OR REPLACE FUNCTION public.update_conversation_min_seq()
 RETURNS TRIGGER
 LANGUAGE plpgsql
 AS $$
 DECLARE
-  v_min_seq BIGINT;
+  v_current_min BIGINT;
 BEGIN
-  -- Get actual minimum seq from messages table
-  SELECT COALESCE(MIN(m.seq), 1)
-    INTO v_min_seq
-  FROM public.messages m
-  WHERE m.conversation_id = OLD.conversation_id;
+  SELECT cs.min_seq INTO v_current_min
+  FROM public.conversation_state cs
+  WHERE cs.conversation_id = NEW.conversation_id;
 
-  -- Update conversation_state
-  UPDATE public.conversation_state
-    SET min_seq_available = v_min_seq
-  WHERE conversation_id = OLD.conversation_id;
+  -- If this is first message or seq is lower than current min, update
+  IF v_current_min IS NULL OR v_current_min = 0 OR NEW.seq < v_current_min THEN
+    UPDATE public.conversation_state
+    SET min_seq = NEW.seq
+    WHERE conversation_id = NEW.conversation_id;
+  END IF;
 
-  RETURN OLD;
+  RETURN NEW;
 END;
 $$;
-
--- Apply trigger on message deletion (to track retention)
 DROP TRIGGER IF EXISTS trg_messages_update_min_seq ON public.messages;
 CREATE TRIGGER trg_messages_update_min_seq
-AFTER DELETE ON public.messages
+AFTER INSERT ON public.messages
 FOR EACH ROW
-EXECUTE FUNCTION public.update_conversation_state_min_seq();
-
-COMMENT ON FUNCTION public.update_conversation_state_min_seq()
-  IS 'REQ-0135: Maintains min_seq_available when messages are deleted (retention policies).';
+EXECUTE FUNCTION public.update_conversation_min_seq();
+-- 4. Backfill min_seq for existing conversations (best-effort)
+UPDATE public.conversation_state cs
+SET min_seq = COALESCE(
+  (
+    SELECT MIN(m.seq)
+    FROM public.messages m
+    WHERE m.conversation_id = cs.conversation_id
+  ),
+  0
+)
+WHERE cs.min_seq IS NULL OR cs.min_seq = 0;

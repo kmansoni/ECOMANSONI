@@ -10,7 +10,6 @@
 -- ============================================================================
 
 CREATE EXTENSION IF NOT EXISTS pg_cron;
-
 -- Wrapper: run coordinated-attack detection across top hashtags (since detect_coordinated_hashtag_attack_v1 requires a tag)
 CREATE OR REPLACE FUNCTION public.batch_detect_coordinated_hashtag_attacks_v1(
   p_limit INTEGER DEFAULT 50,
@@ -49,10 +48,8 @@ BEGIN
   END LOOP;
 END;
 $$;
-
 REVOKE ALL ON FUNCTION public.batch_detect_coordinated_hashtag_attacks_v1(INTEGER, INTEGER, NUMERIC) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.batch_detect_coordinated_hashtag_attacks_v1(INTEGER, INTEGER, NUMERIC) TO service_role;
-
 DO $do$
 BEGIN
   -- EPIC H
@@ -130,9 +127,8 @@ BEGIN
     );
   END IF;
 END $do$;
-
 -- ============================================================================
 -- Notes:
 -- - Job arguments are conservative defaults; tune after observing runtime.
 -- - All scheduled functions must be SECURITY DEFINER / service-only safe.
--- ============================================================================
+-- ============================================================================;

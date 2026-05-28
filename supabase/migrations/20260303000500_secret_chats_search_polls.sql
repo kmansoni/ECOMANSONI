@@ -1,4 +1,3 @@
--- ALLOW_NON_IDEMPOTENT_POLICY_DDL: legacy migration already applied to production; non-idempotent policies are intentional here.
 -- Секретные чаты
 CREATE TABLE IF NOT EXISTS secret_chats (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -12,7 +11,6 @@ CREATE TABLE IF NOT EXISTS secret_chats (
   accepted_at TIMESTAMPTZ,
   closed_at TIMESTAMPTZ
 );
-
 ALTER TABLE secret_chats ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "Users see own secret chats" ON secret_chats
   FOR SELECT USING (initiator_id = auth.uid() OR participant_id = auth.uid());
@@ -20,10 +18,8 @@ CREATE POLICY "Users create secret chats" ON secret_chats
   FOR INSERT WITH CHECK (initiator_id = auth.uid());
 CREATE POLICY "Users update own secret chats" ON secret_chats
   FOR UPDATE USING (initiator_id = auth.uid() OR participant_id = auth.uid());
-
 -- Пометка conversation как секретный
 ALTER TABLE conversations ADD COLUMN IF NOT EXISTS is_secret BOOLEAN DEFAULT false;
-
 -- Опросы
 CREATE TABLE IF NOT EXISTS message_polls (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -39,7 +35,6 @@ CREATE TABLE IF NOT EXISTS message_polls (
   is_closed BOOLEAN DEFAULT false,
   created_at TIMESTAMPTZ DEFAULT now()
 );
-
 CREATE TABLE IF NOT EXISTS poll_options (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   poll_id UUID NOT NULL REFERENCES message_polls(id) ON DELETE CASCADE,
@@ -47,7 +42,6 @@ CREATE TABLE IF NOT EXISTS poll_options (
   option_index INTEGER NOT NULL,
   voter_count INTEGER DEFAULT 0
 );
-
 CREATE TABLE IF NOT EXISTS poll_votes (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   poll_id UUID NOT NULL REFERENCES message_polls(id) ON DELETE CASCADE,
@@ -56,25 +50,20 @@ CREATE TABLE IF NOT EXISTS poll_votes (
   voted_at TIMESTAMPTZ DEFAULT now(),
   UNIQUE(poll_id, option_id, user_id)
 );
-
 -- Добавить poll_id к messages
 ALTER TABLE messages ADD COLUMN IF NOT EXISTS poll_id UUID;
-
 -- Индексы
 CREATE INDEX IF NOT EXISTS idx_secret_chats_participants ON secret_chats(initiator_id, participant_id);
 CREATE INDEX IF NOT EXISTS idx_poll_options_poll ON poll_options(poll_id, option_index);
 CREATE INDEX IF NOT EXISTS idx_poll_votes_poll ON poll_votes(poll_id, user_id);
-
 -- RLS для опросов
 ALTER TABLE message_polls ENABLE ROW LEVEL SECURITY;
 ALTER TABLE poll_options ENABLE ROW LEVEL SECURITY;
 ALTER TABLE poll_votes ENABLE ROW LEVEL SECURITY;
-
 CREATE POLICY "Polls readable in conversations" ON message_polls FOR SELECT USING (true);
 CREATE POLICY "Poll options readable" ON poll_options FOR SELECT USING (true);
 CREATE POLICY "Users manage own votes" ON poll_votes FOR ALL USING (user_id = auth.uid());
 CREATE POLICY "Users create polls" ON message_polls FOR INSERT WITH CHECK (creator_id = auth.uid());
-
 -- Функция голосования (атомарная)
 CREATE OR REPLACE FUNCTION vote_poll_v1(
   p_poll_id UUID,

@@ -30,17 +30,13 @@ CREATE TABLE IF NOT EXISTS public.controversial_content_flags (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   expires_at TIMESTAMPTZ -- Auto-expire after review or time limit
 );
-
 CREATE INDEX IF NOT EXISTS controversial_flags_needs_review_idx
   ON public.controversial_content_flags(needs_review, flagged_at DESC)
   WHERE needs_review = TRUE;
-
 CREATE INDEX IF NOT EXISTS controversial_flags_active_idx
   ON public.controversial_content_flags(is_controversial, updated_at DESC)
   WHERE is_controversial = TRUE;
-
 ALTER TABLE public.controversial_content_flags ENABLE ROW LEVEL SECURITY;
-
 -- Service role only (internal enforcement)
 DROP POLICY IF EXISTS "controversial_flags_service_role_all" ON public.controversial_content_flags;
 CREATE POLICY "controversial_flags_service_role_all"
@@ -48,7 +44,6 @@ CREATE POLICY "controversial_flags_service_role_all"
   FOR ALL TO service_role
   USING (TRUE)
   WITH CHECK (TRUE);
-
 -- 2) RPC: Check and Flag Controversial Content
 CREATE OR REPLACE FUNCTION public.check_controversial_content_v1(
   p_reel_id UUID,
@@ -161,10 +156,8 @@ BEGIN
   RETURN v_is_controversial;
 END;
 $$;
-
 COMMENT ON FUNCTION check_controversial_content_v1 IS 
   'Phase 1 EPIC I: Detect controversial content (high engagement + high report/hide rate) and apply penalty';
-
 -- 3) RPC: Get Controversial Penalty for Ranking
 CREATE OR REPLACE FUNCTION public.get_controversial_penalty_v1(p_reel_id UUID)
 RETURNS NUMERIC
@@ -186,10 +179,8 @@ BEGIN
   RETURN v_penalty;
 END;
 $$;
-
 COMMENT ON FUNCTION get_controversial_penalty_v1 IS
   'Phase 1 EPIC I: Get controversial penalty score for ranking (0 if not controversial)';
-
 -- 4) RPC: Batch Check Controversial Content (for worker)
 CREATE OR REPLACE FUNCTION public.batch_check_controversial_v1(
   p_limit INTEGER DEFAULT 100,
@@ -224,10 +215,8 @@ BEGIN
   FROM candidates c;
 END;
 $$;
-
 COMMENT ON FUNCTION batch_check_controversial_v1 IS
   'Phase 1 EPIC I: Batch process reels to detect controversial content (for background worker)';
-
 -- 5) RPC: Review Controversial Content (Admin)
 CREATE OR REPLACE FUNCTION public.review_controversial_content_v1(
   p_reel_id UUID,
@@ -276,20 +265,19 @@ BEGIN
   RETURN TRUE;
 END;
 $$;
-
 COMMENT ON FUNCTION review_controversial_content_v1 IS
   'Phase 1 EPIC I: Admin review of controversial content flags';
-
 -- Grant permissions
 REVOKE ALL ON FUNCTION check_controversial_content_v1(UUID, NUMERIC, NUMERIC, NUMERIC) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON FUNCTION get_controversial_penalty_v1(UUID) FROM PUBLIC, anon;
 REVOKE ALL ON FUNCTION batch_check_controversial_v1(INTEGER, INTEGER) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON FUNCTION review_controversial_content_v1(UUID, TEXT, TEXT) FROM PUBLIC, anon;
-
 GRANT EXECUTE ON FUNCTION check_controversial_content_v1(UUID, NUMERIC, NUMERIC, NUMERIC) TO service_role;
-GRANT EXECUTE ON FUNCTION get_controversial_penalty_v1(UUID) TO service_role, authenticated; -- Needed for feed
+GRANT EXECUTE ON FUNCTION get_controversial_penalty_v1(UUID) TO service_role, authenticated;
+-- Needed for feed
 GRANT EXECUTE ON FUNCTION batch_check_controversial_v1(INTEGER, INTEGER) TO service_role;
-GRANT EXECUTE ON FUNCTION review_controversial_content_v1(UUID, TEXT, TEXT) TO authenticated; -- Admin only (add RBAC check)
+GRANT EXECUTE ON FUNCTION review_controversial_content_v1(UUID, TEXT, TEXT) TO authenticated;
+-- Admin only (add RBAC check)
 
 -- 6) Cleanup expired flags (cron job helper)
 CREATE OR REPLACE FUNCTION public.cleanup_controversial_flags_v1(p_days_expired INTEGER DEFAULT 7)
@@ -308,6 +296,5 @@ BEGIN
   RETURN v_deleted;
 END;
 $$;
-
 REVOKE ALL ON FUNCTION cleanup_controversial_flags_v1(INTEGER) FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION cleanup_controversial_flags_v1(INTEGER) TO service_role;

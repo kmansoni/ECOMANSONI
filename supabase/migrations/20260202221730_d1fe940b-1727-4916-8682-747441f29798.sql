@@ -7,13 +7,10 @@ CREATE TABLE public.phone_otps (
   expires_at TIMESTAMP WITH TIME ZONE NOT NULL,
   created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now()
 );
-
 -- Create index for fast phone lookups
 CREATE INDEX idx_phone_otps_phone ON public.phone_otps(phone);
-
 -- Enable RLS
 ALTER TABLE public.phone_otps ENABLE ROW LEVEL SECURITY;
-
 -- No public access - only service role can access this table
 -- (Edge functions use service role key)
 

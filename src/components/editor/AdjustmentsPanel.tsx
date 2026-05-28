@@ -1,61 +1,39 @@
-/**
- * AdjustmentsPanel — ручные настройки изображения через CSS filter
- */
-import { Slider } from "@/components/ui/slider";
-import { DEFAULT_ADJUSTMENTS, type Adjustments } from "./adjustmentsModel";
+import type { Adjustments } from "./adjustmentsModel";
 
-const PARAMS: { key: keyof Adjustments; label: string; min: number; max: number }[] = [
-  { key: "brightness", label: "Яркость", min: -100, max: 100 },
-  { key: "contrast", label: "Контраст", min: -100, max: 100 },
-  { key: "saturation", label: "Насыщенность", min: -100, max: 100 },
-  { key: "warmth", label: "Теплота", min: -100, max: 100 },
-  { key: "shadows", label: "Тени", min: -100, max: 100 },
-  { key: "highlights", label: "Светлые участки", min: -100, max: 100 },
-  { key: "vignette", label: "Виньетка", min: 0, max: 100 },
-  { key: "sharpness", label: "Резкость", min: 0, max: 100 },
-  { key: "grain", label: "Зернистость", min: 0, max: 100 },
-];
-
-interface Props {
+interface AdjustmentsPanelProps {
   adjustments: Adjustments;
-  onChange: (adj: Adjustments) => void;
+  onChange: (value: Adjustments) => void;
 }
 
-export function AdjustmentsPanel({ adjustments, onChange }: Props) {
-  const handleChange = (key: keyof Adjustments, value: number) => {
-    onChange({ ...adjustments, [key]: value });
-  };
+const RANGES: Array<{ key: keyof Adjustments; label: string; min: number; max: number }> = [
+  { key: "brightness", label: "Brightness", min: -100, max: 100 },
+  { key: "contrast", label: "Contrast", min: -100, max: 100 },
+  { key: "saturation", label: "Saturation", min: -100, max: 100 },
+  { key: "warmth", label: "Warmth", min: -100, max: 100 },
+  { key: "shadows", label: "Shadows", min: -100, max: 100 },
+  { key: "highlights", label: "Highlights", min: -100, max: 100 },
+  { key: "vignette", label: "Vignette", min: 0, max: 100 },
+  { key: "sharpness", label: "Sharpness", min: 0, max: 100 },
+  { key: "grain", label: "Grain", min: 0, max: 100 },
+];
 
-  const reset = () => onChange(DEFAULT_ADJUSTMENTS);
-
-  const hasChanges = Object.entries(adjustments).some(([, v]) => v !== 0);
-
+export function AdjustmentsPanel({ adjustments, onChange }: AdjustmentsPanelProps) {
   return (
-    <div className="flex flex-col gap-3 px-2">
-      {PARAMS.map(({ key, label, min, max }) => (
-        <div key={key} className="flex items-center gap-3">
-          <span className="text-xs text-white/70 w-32 flex-shrink-0">{label}</span>
-          <Slider
-            value={[adjustments[key]]}
-            onValueChange={([v]) => handleChange(key, v)}
-            min={min}
-            max={max}
+    <div className="space-y-2">
+      {RANGES.map((row) => (
+        <label key={row.key} className="block text-xs text-white/80">
+          {row.label}: {adjustments[row.key]}
+          <input
+            type="range"
+            min={row.min}
+            max={row.max}
             step={1}
-            className="flex-1"
+            value={adjustments[row.key]}
+            onChange={(e) => onChange({ ...adjustments, [row.key]: Number(e.target.value) })}
+            className="mt-1 w-full"
           />
-          <span className="text-xs text-white/60 w-8 text-right">
-            {adjustments[key] > 0 ? "+" : ""}{adjustments[key]}
-          </span>
-        </div>
+        </label>
       ))}
-      {hasChanges && (
-        <button
-          onClick={reset}
-          className="self-end text-xs text-primary underline mt-1"
-        >
-          Сбросить
-        </button>
-      )}
     </div>
   );
 }

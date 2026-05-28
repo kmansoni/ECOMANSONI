@@ -29,7 +29,6 @@ BEGIN
 EXCEPTION
   WHEN duplicate_object THEN NULL;
 END $$;
-
 DO $$
 BEGIN
   CREATE TYPE public.appeal_reason AS ENUM (
@@ -42,13 +41,10 @@ BEGIN
 EXCEPTION
   WHEN duplicate_object THEN NULL;
 END $$;
-
 COMMENT ON TYPE public.appeal_status IS
   'Phase 1 EPIC K: Appeal lifecycle status';
-
 COMMENT ON TYPE public.appeal_reason IS
   'Phase 1 EPIC K: Reason for appeal submission';
-
 -- 2) Appeals table
 
 CREATE TABLE IF NOT EXISTS public.moderation_appeals (
@@ -82,23 +78,17 @@ CREATE TABLE IF NOT EXISTS public.moderation_appeals (
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
-
 CREATE INDEX IF NOT EXISTS idx_moderation_appeals_status
   ON public.moderation_appeals(status, submitted_at ASC);
-
 CREATE INDEX IF NOT EXISTS idx_moderation_appeals_author
   ON public.moderation_appeals(author_id, submitted_at DESC);
-
 CREATE INDEX IF NOT EXISTS idx_moderation_appeals_content
   ON public.moderation_appeals(content_type, content_id, submitted_at DESC);
-
 ALTER TABLE public.moderation_appeals
   ADD CONSTRAINT moderation_appeals_user_explanation_length
   CHECK (user_explanation IS NULL OR char_length(user_explanation) <= 1000);
-
 COMMENT ON TABLE public.moderation_appeals IS
   'Phase 1 EPIC K: Appeals lifecycle (submitted → in_review → accepted/rejected)';
-
 -- 3) Appeals rate limit tracking
 
 CREATE TABLE IF NOT EXISTS public.appeal_rate_limits (
@@ -113,16 +103,12 @@ CREATE TABLE IF NOT EXISTS public.appeal_rate_limits (
 
   PRIMARY KEY (user_id, window_start)
 );
-
 CREATE INDEX IF NOT EXISTS idx_appeal_rate_limits_user
   ON public.appeal_rate_limits(user_id);
-
 CREATE INDEX IF NOT EXISTS idx_appeal_rate_limits_window
   ON public.appeal_rate_limits(window_start, window_end);
-
 COMMENT ON TABLE public.appeal_rate_limits IS
   'Phase 1 EPIC K: Rate limit tracking for appeal submissions (anti-spam)';
-
 -- 4) Submit appeal (with rate limiting + ownership checks)
 
 CREATE OR REPLACE FUNCTION public.submit_appeal_v1(
@@ -278,13 +264,10 @@ BEGIN
   );
 END;
 $$;
-
 REVOKE ALL ON FUNCTION public.submit_appeal_v1(UUID, TEXT, UUID, public.appeal_reason, TEXT) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.submit_appeal_v1(UUID, TEXT, UUID, public.appeal_reason, TEXT) TO authenticated;
-
 COMMENT ON FUNCTION public.submit_appeal_v1(UUID, TEXT, UUID, public.appeal_reason, TEXT) IS
   'Phase 1 EPIC K: Submit appeal with rate limiting + ownership checks';
-
 -- 5) Review appeal (moderator action)
 
 CREATE OR REPLACE FUNCTION public.review_appeal_v1(
@@ -364,13 +347,10 @@ BEGIN
   RETURN true;
 END;
 $$;
-
 REVOKE ALL ON FUNCTION public.review_appeal_v1(UUID, UUID, TEXT, TEXT, TEXT) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.review_appeal_v1(UUID, UUID, TEXT, TEXT, TEXT) TO service_role;
-
 COMMENT ON FUNCTION public.review_appeal_v1(UUID, UUID, TEXT, TEXT, TEXT) IS
   'Phase 1 EPIC K: Review appeal (accept/reject) and update content moderation status';
-
 -- 6) Get pending appeals (moderation queue)
 
 CREATE OR REPLACE FUNCTION public.get_pending_appeals_v1(
@@ -412,13 +392,10 @@ BEGIN
   LIMIT GREATEST(1, LEAST(p_limit, 500));
 END;
 $$;
-
 REVOKE ALL ON FUNCTION public.get_pending_appeals_v1(INTEGER) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.get_pending_appeals_v1(INTEGER) TO service_role;
-
 COMMENT ON FUNCTION public.get_pending_appeals_v1(INTEGER) IS
   'Phase 1 EPIC K: Get pending appeals for moderator review';
-
 -- 7) Get current user appeals history
 
 CREATE OR REPLACE FUNCTION public.get_my_appeals_v1(
@@ -462,13 +439,10 @@ BEGIN
   LIMIT GREATEST(1, LEAST(p_limit, 100));
 END;
 $$;
-
 REVOKE ALL ON FUNCTION public.get_my_appeals_v1(INTEGER) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.get_my_appeals_v1(INTEGER) TO authenticated;
-
 COMMENT ON FUNCTION public.get_my_appeals_v1(INTEGER) IS
   'Phase 1 EPIC K: Get current user appeals history';
-
 -- 8) Calculate appeal SLA metrics
 
 CREATE OR REPLACE FUNCTION public.calculate_appeal_sla_v1(
@@ -514,13 +488,10 @@ BEGIN
   FROM appeal_stats;
 END;
 $$;
-
 REVOKE ALL ON FUNCTION public.calculate_appeal_sla_v1(INTEGER) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.calculate_appeal_sla_v1(INTEGER) TO service_role;
-
 COMMENT ON FUNCTION public.calculate_appeal_sla_v1(INTEGER) IS
   'Phase 1 EPIC K: Calculate appeal SLA metrics (turnaround time, SLA breaches)';
-
 -- ============================================================================
 -- Summary:
 -- - ✅ moderation_appeals table + rate limits
@@ -529,4 +500,4 @@ COMMENT ON FUNCTION public.calculate_appeal_sla_v1(INTEGER) IS
 -- - ✅ get_pending_appeals_v1: moderator queue
 -- - ✅ get_my_appeals_v1: user history
 -- - ✅ calculate_appeal_sla_v1: SLA metrics
--- ============================================================================
+-- ============================================================================;

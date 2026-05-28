@@ -1,4 +1,3 @@
--- ALLOW_NON_IDEMPOTENT_POLICY_DDL: legacy migration already applied to production; non-idempotent policies are intentional here.
 -- Settings + Creator Insights + Branded Content (Telegram-level baseline)
 
 -- =====================================================
@@ -31,9 +30,7 @@ CREATE TABLE IF NOT EXISTS public.user_settings (
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
-
 ALTER TABLE public.user_settings ENABLE ROW LEVEL SECURITY;
-
 DO $$
 BEGIN
   IF NOT EXISTS (
@@ -76,7 +73,6 @@ BEGIN
       WITH CHECK (auth.uid() = user_id);
   END IF;
 END $$;
-
 DO $$
 BEGIN
   IF NOT EXISTS (
@@ -90,7 +86,6 @@ BEGIN
       EXECUTE FUNCTION public.update_updated_at_column();
   END IF;
 END $$;
-
 -- Ensure settings row exists for every new user
 CREATE OR REPLACE FUNCTION public.handle_new_user_settings()
 RETURNS TRIGGER
@@ -106,7 +101,6 @@ BEGIN
   RETURN NEW;
 END;
 $$;
-
 DO $$
 BEGIN
   IF NOT EXISTS (
@@ -120,7 +114,6 @@ BEGIN
       EXECUTE FUNCTION public.handle_new_user_settings();
   END IF;
 END $$;
-
 -- =====================================================
 -- BRANDED CONTENT: APPROVED AUTHORS
 -- =====================================================
@@ -132,9 +125,7 @@ CREATE TABLE IF NOT EXISTS public.branded_content_approved_authors (
   approved_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   UNIQUE(brand_user_id, author_user_id)
 );
-
 ALTER TABLE public.branded_content_approved_authors ENABLE ROW LEVEL SECURITY;
-
 DO $$
 BEGIN
   IF NOT EXISTS (
@@ -151,10 +142,8 @@ BEGIN
       WITH CHECK (auth.uid() = brand_user_id);
   END IF;
 END $$;
-
 CREATE INDEX IF NOT EXISTS idx_branded_content_approved_authors_brand
   ON public.branded_content_approved_authors(brand_user_id);
-
 -- =====================================================
 -- CREATOR INSIGHTS (RPC)
 -- =====================================================
@@ -265,6 +254,5 @@ BEGIN
   );
 END;
 $$;
-
 REVOKE ALL ON FUNCTION public.get_creator_insights(INT) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.get_creator_insights(INT) TO authenticated;

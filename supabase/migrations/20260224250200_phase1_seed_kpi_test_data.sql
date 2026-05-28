@@ -20,7 +20,6 @@ insert into kpi_daily_snapshots (
   2.8, 6.5,
   45.3, 180, 520
 );
-
 -- Day -6: Healthy metrics (all green)
 insert into kpi_daily_snapshots (
   snapshot_date,
@@ -37,7 +36,6 @@ insert into kpi_daily_snapshots (
   3.1, 8.2,
   47.2, 195, 540
 );
-
 -- Day -5: Yellow alert - retention drops to 36% (below 40%, above red 35%)
 insert into kpi_daily_snapshots (
   snapshot_date,
@@ -54,7 +52,6 @@ insert into kpi_daily_snapshots (
   3.5, 10.5,
   43.2, 160, 490
 );
-
 -- Day -4: Red alert - retention 32% (below 35%), queue age 26h (>24h)
 insert into kpi_daily_snapshots (
   snapshot_date,
@@ -71,7 +68,6 @@ insert into kpi_daily_snapshots (
   4.2, 26.5,
   41.5, 145, 470
 );
-
 -- Day -3: Multiple red alerts - report rate 5.8 (>5), creator return 38% (<40%)
 insert into kpi_daily_snapshots (
   snapshot_date,
@@ -88,7 +84,6 @@ insert into kpi_daily_snapshots (
   5.8, 28.3,
   38.2, 152, 480
 );
-
 -- Day -2: Recovery started - retention 37% (yellow), report rate back to 3.8
 insert into kpi_daily_snapshots (
   snapshot_date,
@@ -105,7 +100,6 @@ insert into kpi_daily_snapshots (
   3.8, 18.5,
   42.1, 168, 505
 );
-
 -- Day -1 (yesterday): Back to green - all metrics healthy
 insert into kpi_daily_snapshots (
   snapshot_date,
@@ -122,11 +116,9 @@ insert into kpi_daily_snapshots (
   3.2, 12.0,
   44.8, 182, 530
 );
-
 -- Now run guardrail check to populate alerts based on this data
 -- This will create guardrail_alerts for days -5, -4, -3 (yellow/red)
 select check_guardrails_v1();
-
 -- Log results
 do $$
 declare

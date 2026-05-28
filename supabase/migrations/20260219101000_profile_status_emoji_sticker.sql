@@ -3,7 +3,6 @@
 ALTER TABLE public.profiles
   ADD COLUMN IF NOT EXISTS status_emoji TEXT,
   ADD COLUMN IF NOT EXISTS status_sticker_url TEXT;
-
 -- Enable realtime updates for presence/status
 DO $$
 BEGIN

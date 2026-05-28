@@ -15,13 +15,10 @@ CREATE TABLE IF NOT EXISTS public.chat_v11_rollout_control (
   CONSTRAINT chat_v11_rollout_control_stage_chk
     CHECK (stage IN ('canary_1', 'canary_10', 'canary_50', 'full'))
 );
-
 ALTER TABLE public.chat_v11_rollout_control ENABLE ROW LEVEL SECURITY;
-
 INSERT INTO public.chat_v11_rollout_control(singleton_id, stage, kill_switch, note)
 VALUES (true, 'canary_1', false, 'initial')
 ON CONFLICT (singleton_id) DO NOTHING;
-
 CREATE OR REPLACE FUNCTION public.chat_get_v11_rollout_state()
 RETURNS TABLE(
   stage TEXT,
@@ -64,7 +61,6 @@ AS $$
   FROM ctrl
   CROSS JOIN gate;
 $$;
-
 CREATE OR REPLACE FUNCTION public.chat_set_v11_rollout_state(
   p_stage TEXT,
   p_kill_switch BOOLEAN,
@@ -108,7 +104,5 @@ BEGIN
   LIMIT 1;
 END;
 $$;
-
 GRANT EXECUTE ON FUNCTION public.chat_get_v11_rollout_state() TO authenticated;
 GRANT EXECUTE ON FUNCTION public.chat_set_v11_rollout_state(TEXT, BOOLEAN, TEXT) TO service_role;
-

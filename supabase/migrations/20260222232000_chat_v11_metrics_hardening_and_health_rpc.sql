@@ -62,7 +62,6 @@ BEGIN
   RETURN QUERY SELECT true, now();
 END;
 $$;
-
 -- 2) Health RPC for operational dashboards
 CREATE OR REPLACE FUNCTION public.chat_get_v11_health()
 RETURNS TABLE(
@@ -84,7 +83,5 @@ AS $$
     COALESCE(h.write_receipt_samples, 0)::BIGINT
   FROM public.chat_v11_health_last_15m h;
 $$;
-
 GRANT EXECUTE ON FUNCTION public.chat_ingest_client_metric_v11(TEXT, DOUBLE PRECISION, JSONB) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.chat_get_v11_health() TO authenticated;
-

@@ -14,11 +14,9 @@
 ALTER TABLE public.conversations ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.conversation_participants ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.messages ENABLE ROW LEVEL SECURITY;
-
 -- 1) Conversations: canonical server seq counter.
 ALTER TABLE public.conversations
   ADD COLUMN IF NOT EXISTS server_seq BIGINT NOT NULL DEFAULT 0;
-
 -- Backfill server_seq from existing last_message_seq / messages.seq.
 UPDATE public.conversations c
 SET server_seq = GREATEST(
@@ -32,21 +30,16 @@ FROM (
 ) x
 WHERE c.id = x.conversation_id
   AND c.server_seq = 0;
-
 -- 2) Ensure messages.seq is NOT NULL and uniqueness is strict.
 ALTER TABLE public.messages
   ADD COLUMN IF NOT EXISTS seq BIGINT;
-
 ALTER TABLE public.messages
   ALTER COLUMN seq SET NOT NULL;
-
 CREATE UNIQUE INDEX IF NOT EXISTS idx_messages_conv_seq_unique_strict
   ON public.messages (conversation_id, seq);
-
 CREATE UNIQUE INDEX IF NOT EXISTS idx_messages_conv_sender_client_msg
   ON public.messages (conversation_id, sender_id, client_msg_id)
   WHERE client_msg_id IS NOT NULL;
-
 -- 3) Seq assignment trigger: keep compatibility for server-side direct inserts,
 --    but avoid double-increment when seq is explicitly provided by RPC.
 CREATE OR REPLACE FUNCTION public.assign_message_seq_and_touch_conversation()
@@ -88,13 +81,11 @@ BEGIN
   RETURN NEW;
 END;
 $$;
-
 DROP TRIGGER IF EXISTS trg_messages_assign_seq_touch_conversation ON public.messages;
 CREATE TRIGGER trg_messages_assign_seq_touch_conversation
 BEFORE INSERT ON public.messages
 FOR EACH ROW
 EXECUTE FUNCTION public.assign_message_seq_and_touch_conversation();
-
 -- 4) Cursors: delivered/read per user per conversation.
 CREATE TABLE IF NOT EXISTS public.conversation_cursors (
   conversation_id UUID NOT NULL REFERENCES public.conversations(id) ON DELETE CASCADE,
@@ -104,9 +95,7 @@ CREATE TABLE IF NOT EXISTS public.conversation_cursors (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   PRIMARY KEY (conversation_id, user_id)
 );
-
 ALTER TABLE public.conversation_cursors ENABLE ROW LEVEL SECURITY;
-
 -- Minimal RLS policies: users can read/update their own cursor if they are participants.
 DROP POLICY IF EXISTS conversation_cursors_select_self ON public.conversation_cursors;
 CREATE POLICY conversation_cursors_select_self
@@ -119,7 +108,6 @@ USING (
       AND cp.user_id = auth.uid()
   )
 );
-
 DROP POLICY IF EXISTS conversation_cursors_upsert_self ON public.conversation_cursors;
 CREATE POLICY conversation_cursors_upsert_self
 ON public.conversation_cursors FOR INSERT
@@ -131,7 +119,6 @@ WITH CHECK (
       AND cp.user_id = auth.uid()
   )
 );
-
 DROP POLICY IF EXISTS conversation_cursors_update_self ON public.conversation_cursors;
 CREATE POLICY conversation_cursors_update_self
 ON public.conversation_cursors FOR UPDATE
@@ -146,7 +133,6 @@ USING (
 WITH CHECK (
   user_id = auth.uid()
 );
-
 -- 5) Inbox rollup: conversation_state (materialized latest message metadata).
 CREATE TABLE IF NOT EXISTS public.conversation_state (
   conversation_id UUID PRIMARY KEY REFERENCES public.conversations(id) ON DELETE CASCADE,
@@ -158,15 +144,11 @@ CREATE TABLE IF NOT EXISTS public.conversation_state (
   last_media_kind TEXT NULL,
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
-
 ALTER TABLE public.conversation_state ENABLE ROW LEVEL SECURITY;
-
 CREATE INDEX IF NOT EXISTS idx_conversation_state_last_seq
   ON public.conversation_state (last_seq DESC);
-
 CREATE INDEX IF NOT EXISTS idx_conversation_state_last_created_at
   ON public.conversation_state (last_created_at DESC);
-
 -- Only participants can SELECT conversation_state.
 DROP POLICY IF EXISTS conversation_state_select_participants ON public.conversation_state;
 CREATE POLICY conversation_state_select_participants
@@ -178,11 +160,9 @@ USING (
       AND cp.user_id = auth.uid()
   )
 );
-
 -- No direct writes from clients.
 REVOKE ALL ON TABLE public.conversation_state FROM anon;
 REVOKE ALL ON TABLE public.conversation_state FROM authenticated;
-
 CREATE OR REPLACE FUNCTION public.update_conversation_state_from_message_v1()
 RETURNS TRIGGER
 LANGUAGE plpgsql
@@ -238,13 +218,11 @@ BEGIN
   RETURN NEW;
 END;
 $$;
-
 DROP TRIGGER IF EXISTS trg_conversation_state_from_message_v1 ON public.messages;
 CREATE TRIGGER trg_conversation_state_from_message_v1
 AFTER INSERT ON public.messages
 FOR EACH ROW
 EXECUTE FUNCTION public.update_conversation_state_from_message_v1();
-
 -- 6) RPC audit log (metadata only).
 CREATE TABLE IF NOT EXISTS public.rpc_audit_log (
   event_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -257,15 +235,12 @@ CREATE TABLE IF NOT EXISTS public.rpc_audit_log (
   result TEXT NOT NULL,
   error_code TEXT NULL
 );
-
 CREATE INDEX IF NOT EXISTS idx_rpc_audit_ts ON public.rpc_audit_log(ts DESC);
 CREATE INDEX IF NOT EXISTS idx_rpc_audit_actor ON public.rpc_audit_log(actor_user_id, ts DESC);
 CREATE INDEX IF NOT EXISTS idx_rpc_audit_conv ON public.rpc_audit_log(conversation_id, ts DESC);
-
 ALTER TABLE public.rpc_audit_log ENABLE ROW LEVEL SECURITY;
 REVOKE ALL ON TABLE public.rpc_audit_log FROM anon;
 REVOKE ALL ON TABLE public.rpc_audit_log FROM authenticated;
-
 CREATE OR REPLACE FUNCTION public.rpc_audit_write_v1(
   p_rpc_name TEXT,
   p_conversation_id UUID,
@@ -289,10 +264,8 @@ BEGIN
   END;
 END;
 $$;
-
 REVOKE ALL ON FUNCTION public.rpc_audit_write_v1(TEXT, UUID, UUID, UUID, TEXT, TEXT) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.rpc_audit_write_v1(TEXT, UUID, UUID, UUID, TEXT, TEXT) TO authenticated;
-
 -- 7) ACK RPCs.
 CREATE OR REPLACE FUNCTION public.ack_delivered_v1(
   p_conversation_id UUID,
@@ -352,10 +325,8 @@ BEGIN
   RETURN NEXT;
 END;
 $$;
-
 REVOKE ALL ON FUNCTION public.ack_delivered_v1(UUID, BIGINT) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.ack_delivered_v1(UUID, BIGINT) TO authenticated;
-
 CREATE OR REPLACE FUNCTION public.ack_read_v1(
   p_conversation_id UUID,
   p_up_to_seq BIGINT
@@ -430,10 +401,8 @@ BEGIN
   RETURN NEXT;
 END;
 $$;
-
 REVOKE ALL ON FUNCTION public.ack_read_v1(UUID, BIGINT) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.ack_read_v1(UUID, BIGINT) TO authenticated;
-
 -- 8) RPC: fetch_messages_v1 (pagination by seq).
 CREATE OR REPLACE FUNCTION public.fetch_messages_v1(
   p_conversation_id UUID,
@@ -501,10 +470,8 @@ BEGIN
   LIMIT v_lim;
 END;
 $$;
-
 REVOKE ALL ON FUNCTION public.fetch_messages_v1(UUID, BIGINT, INTEGER) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.fetch_messages_v1(UUID, BIGINT, INTEGER) TO authenticated;
-
 -- 9) RPC: inbox without N+1 (participants + last preview + unread).
 CREATE OR REPLACE FUNCTION public.chat_get_inbox_v2(
   p_limit INTEGER DEFAULT 100,
@@ -576,7 +543,7 @@ BEGIN
       ) AS participants
     FROM public.conversation_participants cp
     LEFT JOIN public.profiles pr ON pr.user_id = cp.user_id
-    WHERE cp.conversation_id IN (SELECT r2.conversation_id FROM roll r2)
+    WHERE cp.conversation_id IN (SELECT conversation_id FROM roll)
     GROUP BY cp.conversation_id
   )
   SELECT
@@ -594,10 +561,8 @@ BEGIN
   ORDER BY r.last_seq DESC, r.updated_at DESC;
 END;
 $$;
-
 REVOKE ALL ON FUNCTION public.chat_get_inbox_v2(INTEGER, BIGINT) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.chat_get_inbox_v2(INTEGER, BIGINT) TO authenticated;
-
 -- 10) Rework send_message_v1 to assign seq via conversation row lock and update server_seq.
 -- NOTE: Signature must match existing v2 migration (uuid, uuid, text).
 CREATE OR REPLACE FUNCTION public.send_message_v1(
@@ -727,7 +692,7 @@ BEGIN
       final_content := btrim(coalesce(payload->>'text', ''));
       final_duration := NULLIF((payload->>'duration_seconds')::int, 0);
       IF final_content = '' THEN
-        final_content := 'рџ“Ћ';
+        final_content := '📎';
       END IF;
       IF final_media_type NOT IN ('image','video','voice','video_circle') THEN
         RAISE EXCEPTION 'invalid_media_type' USING ERRCODE = '22023';
@@ -738,11 +703,11 @@ BEGIN
 
     ELSIF kind = 'share_post' THEN
       final_shared_post := (payload->>'shared_post_id')::uuid;
-      final_content := btrim(coalesce(payload->>'text', 'рџ“Њ РџРѕСЃС‚'));
+      final_content := btrim(coalesce(payload->>'text', '📌 Пост'));
 
     ELSIF kind = 'share_reel' THEN
       final_shared_reel := (payload->>'shared_reel_id')::uuid;
-      final_content := btrim(coalesce(payload->>'text', 'рџЋ¬ Р РёР»СЃ'));
+      final_content := btrim(coalesce(payload->>'text', '🎬 Рилс'));
     END IF;
 
     IF final_content IS NULL OR length(btrim(final_content)) < 1 OR length(final_content) > 4000 THEN
@@ -813,10 +778,7 @@ BEGIN
   RETURN NEXT;
 END;
 $$;
-
 REVOKE ALL ON FUNCTION public.send_message_v1(UUID, UUID, TEXT) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.send_message_v1(UUID, UUID, TEXT) TO authenticated;
-
 COMMENT ON FUNCTION public.send_message_v1(UUID, UUID, TEXT)
   IS 'Project B: RPC-only durable commit ACK. Assigns seq via conversation row lock, enforces membership and idempotency, returns (message_id, seq).';
-

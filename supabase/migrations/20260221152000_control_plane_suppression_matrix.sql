@@ -29,7 +29,6 @@ BEGIN
   PERFORM pg_advisory_xact_lock(hashtext(v_key));
 END;
 $$;
-
 -- ---------------------------------------------------------------------------
 -- 2) Helper: pipeline suppression status
 -- ---------------------------------------------------------------------------
@@ -57,7 +56,6 @@ AS $$
     AND s.segment_key = p_segment_key
   LIMIT 1;
 $$;
-
 -- ---------------------------------------------------------------------------
 -- 3) set_pipeline_suppression: also enter incident mode
 -- ---------------------------------------------------------------------------
@@ -112,10 +110,8 @@ BEGIN
     updated_at = v_now;
 END;
 $$;
-
 ALTER FUNCTION public.reels_engine_set_pipeline_suppression(TEXT, TEXT, TIMESTAMPTZ, TEXT)
   SET search_path = public, pg_catalog;
-
 -- ---------------------------------------------------------------------------
 -- 4) clear_pipeline_suppression: exit incident mode
 -- ---------------------------------------------------------------------------
@@ -158,10 +154,8 @@ BEGIN
   --  needs strict idempotent journaling.)
 END;
 $$;
-
 ALTER FUNCTION public.reels_engine_clear_pipeline_suppression(TEXT, TEXT, TEXT)
   SET search_path = public, pg_catalog;
-
 -- ---------------------------------------------------------------------------
 -- 5) Apply-action: suppression matrix + serialization
 -- ---------------------------------------------------------------------------
@@ -333,16 +327,13 @@ BEGIN
   SELECT v_existing_id, v_status, v_message;
 END;
 $$;
-
 ALTER FUNCTION public.reels_engine_apply_action(TEXT, TEXT, TEXT, TEXT, JSONB, INTEGER, BOOLEAN, TEXT)
   SET search_path = public, pg_catalog;
-
 -- ---------------------------------------------------------------------------
 -- 6) Grants
 -- ---------------------------------------------------------------------------
 GRANT EXECUTE ON FUNCTION public.reels_engine_lock_segment(TEXT, TEXT) TO service_role;
 GRANT EXECUTE ON FUNCTION public.reels_engine_get_pipeline_suppression(TEXT, TEXT) TO service_role;
 GRANT EXECUTE ON FUNCTION public.reels_engine_clear_pipeline_suppression(TEXT, TEXT, TEXT) TO service_role;
-
 COMMENT ON FUNCTION public.reels_engine_apply_action(TEXT, TEXT, TEXT, TEXT, JSONB, INTEGER, BOOLEAN, TEXT) IS
   'Control plane core primitive: idempotent action journal + suppression matrix + segment serialization.';

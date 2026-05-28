@@ -97,7 +97,6 @@ BEGIN
   RETURN NEW;
 END;
 $$;
-
 DROP TRIGGER IF EXISTS trg_video_calls_enqueue_notifications ON public.video_calls;
 CREATE TRIGGER trg_video_calls_enqueue_notifications
 AFTER INSERT OR UPDATE OF status

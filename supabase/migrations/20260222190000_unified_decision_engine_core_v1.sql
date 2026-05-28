@@ -38,12 +38,10 @@ create table if not exists decision_engine_events (
   constraint events_event_type_chk check (event_type in ('hashtag_mentioned', 'hashtag_engagement', 'moderation_action', 'rollback_triggered', 'algorithm_update')),
   constraint events_subject_type_chk check (subject_type in ('hashtag', 'user', 'post', 'comment', 'segment'))
 );
-
 create index idx_events_event_id on decision_engine_events (event_id);
 create index idx_events_subject on decision_engine_events (subject_type, subject_id);
 create index idx_events_created_at on decision_engine_events (created_at desc);
 create index idx_events_idempotency on decision_engine_events (idempotency_key) where idempotency_key is not null;
-
 -- ============================================================================
 -- 2. DECISION SNAPSHOTS (Versioned, immutable)
 -- ============================================================================
@@ -85,11 +83,9 @@ create table if not exists decision_snapshots (
   constraint snapshots_confidence_chk check (confidence_score >= 0.0 and confidence_score <= 1.0),
   constraint snapshots_trust_weight_chk check (trust_weight >= 0.0 and trust_weight <= 1.0)
 );
-
 create unique index idx_snapshots_subject_version on decision_snapshots (subject_type, subject_id, version_number);
 create index idx_snapshots_created_at on decision_snapshots (created_at desc);
 create index idx_snapshots_algorithm on decision_snapshots (algorithm_version);
-
 -- ============================================================================
 -- 3. ANTI-ABUSE SCORING
 -- ============================================================================
@@ -129,16 +125,13 @@ create table if not exists anti_abuse_weights (
     weight_bot_account_ratio + weight_ip_concentration = 1.0
   )
 );
-
 create index idx_abuse_weights_active on anti_abuse_weights (is_active, created_at desc);
-
 -- ============================================================================
 -- 4. DECISION QUEUE (Worker coordination)
 -- ============================================================================
 
 create type decision_job_status as enum ('pending', 'processing', 'completed', 'failed', 'deadletter');
 create type decision_job_priority as enum ('low', 'normal', 'high', 'critical');
-
 create table if not exists decision_jobs (
   id bigserial primary key,
   job_id uuid not null unique default gen_random_uuid(),
@@ -175,17 +168,14 @@ create table if not exists decision_jobs (
   
   constraint jobs_job_type_chk check (job_type in ('compute_trend_snapshot', 'apply_moderation', 'evaluate_rollback', 'bulk_update'))
 );
-
 create index idx_jobs_status_priority on decision_jobs (status, priority) where status in ('pending', 'processing');
 create index idx_jobs_idempotency on decision_jobs (idempotency_key) where idempotency_key is not null;
-
 -- ============================================================================
 -- 5. MODERATION DECISIONS (Audit trail)
 -- ============================================================================
 
 create type moderation_decision_type as enum ('normal', 'restricted', 'hidden', 'quarantined');
 create type moderation_actor_type as enum ('system', 'human', 'auto_engine');
-
 create table if not exists moderation_decisions (
   id bigserial primary key,
   decision_id uuid not null unique default gen_random_uuid(),
@@ -218,11 +208,9 @@ create table if not exists moderation_decisions (
   constraint mod_decisions_subject_chk check (subject_type in ('hashtag', 'post', 'user')),
   constraint mod_decisions_actor_chk check (actor_type in ('system', 'human', 'auto_engine'))
 );
-
 create index idx_moderation_decisions_subject on moderation_decisions (subject_type, subject_id);
 create index idx_moderation_decisions_created_at on moderation_decisions (created_at desc);
 create index idx_moderation_decisions_actor on moderation_decisions (actor_type);
-
 -- ============================================================================
 -- 6. ROLLBACK POLICY (Hysteresis + cooldown)
 -- ============================================================================
@@ -252,7 +240,6 @@ create table if not exists rollback_policies (
   is_active boolean not null default true,
   version_id text not null
 );
-
 -- ============================================================================
 -- 7. IDEMPOTENCY REGISTRY
 -- ============================================================================
@@ -270,9 +257,7 @@ create table if not exists idempotency_register (
   
   expires_at timestamptz not null default (now() + interval '30 days')
 );
-
 create index idx_idempotency_register_expires on idempotency_register (expires_at);
-
 -- ============================================================================
 -- 8. CONTENT HASH VERIFICATION (For replay)
 -- ============================================================================
@@ -291,7 +276,6 @@ create table if not exists snapshot_content_hashes (
   
   unique(snapshot_id, content_hash)
 );
-
 -- ============================================================================
 -- 9. BOOTSTRAP: Algorithm versions & configs
 -- ============================================================================
@@ -317,7 +301,6 @@ create table if not exists algorithm_versions (
   
   unique(algorithm_id, version_number)
 );
-
 -- ============================================================================
 -- 10. GRANT PERMISSIONS
 -- ============================================================================
@@ -332,7 +315,6 @@ grant select, insert, update, delete on rollback_policies to service_role;
 grant select, insert, update, delete on idempotency_register to service_role;
 grant select, insert, update, delete on snapshot_content_hashes to service_role;
 grant select, insert, update, delete on algorithm_versions to service_role;
-
 grant usage on schema public to service_role;
 grant all privileges on decision_engine_events to service_role;
 grant all privileges on decision_snapshots to service_role;

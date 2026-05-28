@@ -38,5 +38,4 @@ begin
   return v;
 end;
 $$;
-
 grant execute on function public.__debug_phone_probe_v1(text) to anon, authenticated;

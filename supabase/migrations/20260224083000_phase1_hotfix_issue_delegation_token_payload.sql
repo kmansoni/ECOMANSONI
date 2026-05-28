@@ -3,7 +3,6 @@
 -- Fix: return (delegation_id, token_jwt placeholder, token_payload jsonb) while keeping DB-side idempotent delegation logic.
 
 DROP FUNCTION IF EXISTS issue_delegation_token_v1(JSONB, TEXT, TEXT[], INT);
-
 CREATE FUNCTION issue_delegation_token_v1(
   p_auth_context JSONB,
   p_service_id TEXT,

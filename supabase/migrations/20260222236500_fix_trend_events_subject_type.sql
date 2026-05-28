@@ -153,7 +153,6 @@ BEGIN
     v_run.notes;
 END;
 $$;
-
 -- Patch execute_trend_run_v1 to emit completed with subject_type='segment'
 CREATE OR REPLACE FUNCTION public.execute_trend_run_v1(
   p_run_id UUID
@@ -327,9 +326,7 @@ BEGIN
   RETURN QUERY SELECT v_run.run_id::text, v_run.window_key, v_run.started_at, v_run.ended_at, v_run.status, v_run.outputs;
 END;
 $$;
-
 REVOKE ALL ON FUNCTION public.start_trend_run_v1(TEXT, TEXT, INT, TEXT, TEXT) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.start_trend_run_v1(TEXT, TEXT, INT, TEXT, TEXT) TO service_role;
-
 REVOKE ALL ON FUNCTION public.execute_trend_run_v1(UUID) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.execute_trend_run_v1(UUID) TO service_role;

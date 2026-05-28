@@ -1,4 +1,3 @@
--- ALLOW_NON_IDEMPOTENT_POLICY_DDL: legacy migration already applied to production; non-idempotent policies are intentional here.
 -- Devices (sessions) + notification prefs
 
 -- =====================================================
@@ -17,9 +16,7 @@ CREATE TABLE IF NOT EXISTS public.user_sessions (
   revoked_at TIMESTAMPTZ,
   UNIQUE(user_id, session_key)
 );
-
 ALTER TABLE public.user_sessions ENABLE ROW LEVEL SECURITY;
-
 DO $$
 BEGIN
   IF NOT EXISTS (
@@ -54,13 +51,9 @@ BEGIN
       FOR DELETE USING (auth.uid() = user_id);
   END IF;
 END $$;
-
 ALTER PUBLICATION supabase_realtime ADD TABLE public.user_sessions;
-
 CREATE INDEX IF NOT EXISTS user_sessions_user_last_seen_idx
   ON public.user_sessions(user_id, last_seen_at DESC);
-
-
 -- =====================================================
 -- 2) Extend user_settings for notification prefs + session policy
 -- =====================================================
