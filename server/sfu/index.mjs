@@ -390,6 +390,7 @@ function logOperationError(operation, { roomId = null, deviceId = null, consumer
 
 const rooms = new Map();
 const peersByDevice = new Map();
+const userSockets = new Map(); // userId -> Set<ws> — for pre-room signaling routing (call.invite)
 
 function ensureRoom(roomId, callId, preferredRegion = REGION) {
   let room = rooms.get(roomId);
@@ -766,6 +767,11 @@ wss.on("connection", (ws, req) => {
         conn.userId = verified.userId;
         if (!conn.deviceId) conn.deviceId = `dev_${uuid().slice(0, 8)}`;
         peersByDevice.set(conn.deviceId, ws);
+        {
+          let uSet = userSockets.get(conn.userId);
+          if (!uSet) { uSet = new Set(); userSockets.set(conn.userId, uSet); }
+          uSet.add(ws);
+        }
 
         send(ws, {
           v: 1,
@@ -1709,6 +1715,37 @@ wss.on("connection", (ws, req) => {
         return;
       }
 
+      case "call.invite": {
+        if (!ensureAuth()) return;
+        const toUser = frame.payload?.toUser;
+        const toDevice = frame.payload?.toDevice;
+        if (typeof toUser !== "string" || !toUser.trim()) {
+          ack(ws, frame.msgId, false, wsError("VALIDATION_FAILED", "call.invite: missing toUser", {}, false));
+          return;
+        }
+        let delivered = 0;
+        if (toDevice) {
+          const tWs = peersByDevice.get(toDevice);
+          if (tWs && tWs.readyState === 1 /* OPEN */) {
+            send(tWs, { ...frame, ts: nowMs() });
+            delivered = 1;
+          }
+        }
+        if (!delivered) {
+          const calleeSockets = userSockets.get(toUser);
+          if (calleeSockets) {
+            for (const tWs of calleeSockets) {
+              if (tWs.readyState === 1 /* OPEN */) {
+                send(tWs, { ...frame, ts: nowMs() });
+                delivered++;
+              }
+            }
+          }
+        }
+        ack(ws, frame.msgId, true);
+        return;
+      }
+
       case "ROOM_LEAVE": {
         if (!ensureAuth()) return;
         const roomId = frame.payload?.roomId ?? conn.roomId;
@@ -1785,6 +1822,10 @@ wss.on("connection", (ws, req) => {
 
   ws.on("close", () => {
     if (conn.deviceId) peersByDevice.delete(conn.deviceId);
+    if (conn.userId) {
+      const uSet = userSockets.get(conn.userId);
+      if (uSet) { uSet.delete(ws); if (!uSet.size) userSockets.delete(conn.userId); }
+    }
 
     if (conn.roomId && conn.deviceId) {
       const room = rooms.get(conn.roomId);
