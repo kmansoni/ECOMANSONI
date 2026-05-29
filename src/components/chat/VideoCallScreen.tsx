@@ -210,7 +210,6 @@ export function VideoCallScreen({
   const showRetryButton = callState === "failed";
   const showWaitingUI = !showRetryButton && !isConnected;
   const hasRemoteScreen = isConnected && remoteScreenStream && remoteScreenStream.getVideoTracks().length > 0;
-  const hasSecondaryControls = !!(onToggleScreenShare || onToggleNoiseSuppression || onToggleBackgroundBlur);
 
   if (isVideoCall && localStream && !isVideoOff) {
     return (
@@ -354,7 +353,6 @@ export function VideoCallScreen({
           onToggleNoiseSuppression={onToggleNoiseSuppression}
           backgroundBlurEnabled={backgroundBlurEnabled}
           onToggleBackgroundBlur={onToggleBackgroundBlur}
-          hasSecondaryControls={hasSecondaryControls}
           hasRemoteScreen={!!hasRemoteScreen}
           remoteScreenRef={remoteScreenRef}
           remoteScreenStream={remoteScreenStream}
@@ -436,7 +434,6 @@ export function VideoCallScreen({
           onToggleNoiseSuppression={onToggleNoiseSuppression}
           backgroundBlurEnabled={backgroundBlurEnabled}
           onToggleBackgroundBlur={onToggleBackgroundBlur}
-          hasSecondaryControls={hasSecondaryControls}
           variant="audio"
         />
       </div>
@@ -459,7 +456,6 @@ interface VideoCallControlsProps {
   onToggleNoiseSuppression?: () => void;
   backgroundBlurEnabled: boolean;
   onToggleBackgroundBlur?: () => void;
-  hasSecondaryControls: boolean;
   variant?: "video" | "audio";
   hasRemoteScreen?: boolean;
   remoteScreenRef?: React.RefObject<HTMLVideoElement>;
@@ -475,7 +471,6 @@ function VideoCallControls({
   isScreenSharing, onToggleScreenShare,
   noiseSuppressionEnabled, onToggleNoiseSuppression,
   backgroundBlurEnabled, onToggleBackgroundBlur,
-  hasSecondaryControls,
   variant = "video",
   hasRemoteScreen = false,
   remoteScreenRef,
@@ -503,19 +498,6 @@ function VideoCallControls({
             autoPlay playsInline
             className="w-full h-full object-contain bg-black/90"
           />
-        </div>
-      )}
-      {isConnected && hasSecondaryControls && (
-        <div className="flex items-center justify-center gap-6 mb-4">
-          {onToggleScreenShare && (
-            <GlassControlButton icon={<Monitor className="w-5 h-5" />} label="Экран" isActive={!isScreenSharing} onClick={onToggleScreenShare} />
-          )}
-          {onToggleNoiseSuppression && (
-            <GlassControlButton icon={<Waves className="w-5 h-5" />} label="Шум" isActive={!noiseSuppressionEnabled} onClick={onToggleNoiseSuppression} />
-          )}
-          {onToggleBackgroundBlur && (
-            <GlassControlButton icon={<Sparkles className="w-5 h-5" />} label="Фон" isActive={!backgroundBlurEnabled} onClick={onToggleBackgroundBlur} />
-          )}
         </div>
       )}
       <div className="flex items-center justify-around">
