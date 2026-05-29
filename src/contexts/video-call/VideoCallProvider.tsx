@@ -140,6 +140,12 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
   const lastCallsBootstrapErrorRef = useRef<Error | null>(null);
   const consumerAddedUnsubRef = useRef<(() => void) | null>(null);
   const consumerListenerBoundClientRef = useRef<import("@/calls-v2/wsClient").CallsWsClient | null>(null);
+  /**
+   * Дедуп CONSUMER_ADDED по consumerId — защита от двойной обработки при
+   * replay кеша (поздний bind listener'а) + повторного emit'а того же события.
+   * Очищается при переподключении/смене клиента вместе с listener'ом.
+   */
+  const processedConsumerIdsRef = useRef<Set<string>>(new Set());
   const producerAddedUnsubRef = useRef<(() => void) | null>(null);
   const mediaBootstrapBlockedUntilRef = useRef<Map<string, number>>(new Map());
   const mediaBootstrapErrorLogAtRef = useRef<Map<string, number>>(new Map());
@@ -367,6 +373,7 @@ const unansweredCallTimerRef = useRef<number | null>(null);
       consumerAddedUnsubRef.current = null;
     }
     consumerListenerBoundClientRef.current = null;
+    processedConsumerIdsRef.current.clear();
     if (producerAddedUnsubRef.current) {
       producerAddedUnsubRef.current();
       producerAddedUnsubRef.current = null;
@@ -773,6 +780,19 @@ dispatchFsm,
       const sfuManager = sfuManagerRef.current;
       if (!sfuManager) return;
 
+      // Дедуп: один consumerId обрабатываем строго один раз. Срабатывает,
+      // когда replay поднял кешированный CONSUMER_ADDED, а тот же event позже
+      // пришёл вживую (либо при двойном emit'е). Откатываем при ошибке consume,
+      // чтобы recovery-путь мог попробовать снова.
+      if (processedConsumerIdsRef.current.has(c.consumerId)) {
+        logger.debug("[VideoCallContext] CONSUMER_ADDED dedup skip", {
+          consumerId: c.consumerId,
+          producerId: c.producerId,
+        });
+        return;
+      }
+      processedConsumerIdsRef.current.add(c.consumerId);
+
       void sfuManager.consume({
         id: c.consumerId,
         producerId: c.producerId,
@@ -847,9 +867,11 @@ dispatchFsm,
           rebuildRemoteStream();
         });
       }).catch((err) => {
+        // Откатываем дедуп, чтобы retry-/recovery-путь мог попробовать заново.
+        processedConsumerIdsRef.current.delete(c.consumerId);
         logger.error("[VideoCallContext] consume/resume failed", err);
       });
-    });
+    }, { replay: true });
 
     consumerListenerBoundClientRef.current = client;
   });

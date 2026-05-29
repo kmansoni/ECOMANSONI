@@ -494,13 +494,33 @@ export class CallsWsClient {
     return this.sendOrderedAcked(type, payload, timeoutMs);
   }
 
-  on(event: CallsWsEvent, handler: CallsWsEventHandler): () => void {
+  on(
+    event: CallsWsEvent,
+    handler: CallsWsEventHandler,
+    options?: { replay?: boolean },
+  ): () => void {
     let handlers = this.listeners.get(event);
     if (!handlers) {
       handlers = new Set();
       this.listeners.set(event, handlers);
     }
     handlers.add(handler);
+    // Replay уже накопленных кадров — спасает поздних подписчиков от потери
+    // событий, пришедших до useEffect-бинда (например CONSUMER_ADDED на callee).
+    if (options?.replay) {
+      const recent = this.recentEvents.get(event);
+      if (recent && recent.length > 0) {
+        // снимок, чтобы handler, который сам отпишется, не ломал итерацию
+        const snapshot = recent.slice();
+        for (const frame of snapshot) {
+          try {
+            handler(frame);
+          } catch (err) {
+            logger.warn('[CallsWsClient] replay handler error', { event, err });
+          }
+        }
+      }
+    }
     return () => {
       handlers!.delete(handler);
     };
