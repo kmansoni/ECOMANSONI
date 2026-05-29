@@ -41,28 +41,11 @@ jobs:
               find "$APP_DIR" -name "index.html" 2>/dev/null | head -5
             fi
 
-            echo "=== FIX: ensure nginx root points to current ==="
-            NGINX_CONF=""
-            for dir in /etc/nginx/sites-enabled /etc/nginx/sites-available /etc/nginx/conf.d; do
-              [ -d "$dir" ] || continue
-              for f in "$dir"/*; do
-                [ -f "$f" ] || continue
-                if grep -q "$APP_DIR" "$f" 2>/dev/null; then
-                  NGINX_CONF="$f"; break 2
-                fi
-              done
-            done
-            [ -z "$NGINX_CONF" ] && NGINX_CONF="/etc/nginx/nginx.conf"
-            echo "Using nginx conf: $NGINX_CONF"
-
-            # Fix root to point to current symlink
-            CURRENT="$APP_DIR/current"
-            if grep -q "root " "$NGINX_CONF"; then
-              sudo sed -Ei "s#root[[:space:]]+[^;]+;#root $CURRENT;#g" "$NGINX_CONF"
-              echo "Updated root to: $CURRENT"
-            fi
-
-            sudo nginx -t && sudo systemctl reload nginx && echo "Nginx reloaded OK"
+            echo "=== FIX: create current symlink → dist ==="
+            # current symlink is broken/missing — dist has the files, point current to it
+            ln -sfn "$APP_DIR/dist" "$APP_DIR/current"
+            echo "Symlink: $APP_DIR/current → $APP_DIR/dist"
+            ls "$APP_DIR/current/index.html" && echo "index.html OK"
 
             echo "=== SMOKE ==="
             sleep 2
