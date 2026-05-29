@@ -640,7 +640,9 @@ serve(async (req) => {
   }
 
   try {
-    const turnUrls = getTurnUrls();
+    const includeStunWithTurn = parseBool(Deno.env.get("TURN_INCLUDE_STUN_WITH_TURN"), false);
+    const turnRegion = await getTurnUrlsForRegion(clientIp);
+    const turnUrls = turnRegion.urls;
     const stunUrls = getStunUrls();
 
     // Pre-compute hashes for audit logging (avoid duplicate async calls)
@@ -680,14 +682,14 @@ serve(async (req) => {
     }
 
     const creds = await buildTurnCredentials(auth.userId, ttlSeconds);
-    const iceServers = [
-      ...stunUrls.map((u) => ({ urls: u })),
-      ...splitIceServersByUrl({
+    const turnIceServers = splitIceServersByUrl({
         urls: turnUrls,
         username: creds.username,
         credential: creds.credential,
-      }),
-    ];
+      });
+    const iceServers = includeStunWithTurn
+      ? [...turnIceServers, ...stunUrls.map((u) => ({ urls: u }))]
+      : turnIceServers;
 
     const latencyMs = Math.max(1, nowMs() - startedAt);
     metrics.success += 1;
@@ -712,7 +714,9 @@ serve(async (req) => {
       authType: auth.authType,
       ttlSeconds,
       latencyMs,
+      region: turnRegion.region,
       turnCount: turnUrls.length,
+      includeStunWithTurn,
     });
 
     return makeJsonResponse(corsHeaders, 200, {
@@ -722,7 +726,7 @@ serve(async (req) => {
       username: creds.username,
       credentialType: "hmac-sha1",
       iceServers,
-      region: normalizeEnv(Deno.env.get("TURN_REGION") ?? "global"),
+      region: turnRegion.region,
     });
   } catch (error) {
     const latencyMs = Math.max(1, nowMs() - startedAt);

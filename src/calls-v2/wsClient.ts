@@ -62,6 +62,7 @@ type WaitForOptions = {
 };
 
 const ACK_PENDING_LIMIT_DEFAULT = 2048;
+const NON_RETRYABLE_ACK_TYPES = new Set<string>(['CONSUMER_RESUME']);
 
 const wsAckSchema = z
   .object({
@@ -634,7 +635,8 @@ export class CallsWsClient {
     };
 
     return new Promise((resolve, reject) => {
-      const maxRetries = this.config.ackRetry?.maxRetries ?? this.config.ackMaxRetries ?? 1;
+      const configuredMaxRetries = this.config.ackRetry?.maxRetries ?? this.config.ackMaxRetries ?? 1;
+      const maxRetries = NON_RETRYABLE_ACK_TYPES.has(type) ? 0 : configuredMaxRetries;
       const retryDelayMs = this.config.ackRetry?.retryDelayMs ?? this.config.ackRetryMs ?? 250;
 
       const configuredLimit = (this.config as CallsWsConfig & { pendingAcksMax?: number }).pendingAcksMax;
