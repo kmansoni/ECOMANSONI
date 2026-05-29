@@ -285,59 +285,52 @@ export function VideoCallScreen({
 
         {hasRemoteVideo ? (
           <div className="absolute inset-0 w-full h-full">
-            {/* Main video — tap toggles mirror */}
-            {isSelfMain ? (
-              <>
-                <video
-                  ref={localVideoRef}
-                  autoPlay playsInline muted
-                  className="w-full h-full object-cover transition-all duration-500"
-                  style={{
-                    transform: isMirrored ? 'scaleX(-1)' : 'none',
-                    opacity: isVideoOff ? 0.15 : 1,
-                    filter: isVideoOff ? "blur(2px) grayscale(0.7)" : "none",
-                    transition: "opacity 0.4s, filter 0.4s, transform 0.3s",
-                  }}
-                  onClick={() => setIsMirrored(m => !m)}
-                />
-                <MaskOverlay videoRef={localVideoRef} maskId={maskId} />
-              </>
-            ) : (
-              <video
-                ref={remoteVideoRef}
-                autoPlay playsInline
-                className="w-full h-full object-cover transition-all duration-500"
-                onClick={() => setIsMirrored(m => !m)}
-              />
-            )}
+            {/* Main video — always rendered, visibility toggled */}
+            <video
+              ref={localVideoRef}
+              autoPlay playsInline muted
+              className="absolute inset-0 w-full h-full object-cover transition-all duration-300"
+              style={{
+                transform: isMirrored ? 'scaleX(-1)' : 'none',
+                opacity: isSelfMain ? (isVideoOff ? 0.15 : 1) : 0,
+                pointerEvents: isSelfMain ? 'auto' : 'none',
+                zIndex: isSelfMain ? 1 : 0,
+              }}
+              onClick={() => setIsMirrored(m => !m)}
+            />
+            <video
+              ref={remoteVideoRef}
+              autoPlay playsInline
+              className="absolute inset-0 w-full h-full object-cover transition-all duration-300"
+              style={{
+                opacity: isSelfMain ? 0 : 1,
+                pointerEvents: isSelfMain ? 'none' : 'auto',
+                zIndex: isSelfMain ? 0 : 1,
+              }}
+              onClick={() => setIsMirrored(m => !m)}
+            />
+            {isSelfMain && <MaskOverlay videoRef={localVideoRef} maskId={maskId} />}
 
             {/* PiP — tap swaps main/pip */}
             <div
-              className="absolute top-20 right-4 w-28 h-40 z-10 cursor-pointer"
+              className="absolute top-20 right-4 w-28 h-40 z-10 cursor-pointer overflow-hidden rounded-2xl border-2 border-white/30 shadow-lg"
               onClick={() => setIsSelfMain(s => !s)}
             >
-              {isSelfMain ? (
-                <video
-                  ref={remoteVideoRef}
-                  autoPlay playsInline
-                  className="w-full h-full object-cover rounded-2xl border-2 border-white/30 shadow-lg"
+              {/* PiP shows the opposite of main */}
+              <div
+                className="w-full h-full"
+                style={{
+                  transform: isSelfMain ? 'none' : (isMirrored ? 'scaleX(-1)' : 'none'),
+                  opacity: isSelfMain ? 1 : (isVideoOff ? 0.15 : 1),
+                }}
+              >
+                {/* Clone streams into PiP via canvas */}
+                <PipVideo
+                  srcRef={isSelfMain ? remoteVideoRef : localVideoRef}
+                  mirrored={!isSelfMain && isMirrored}
+                  dimmed={!isSelfMain && isVideoOff}
                 />
-              ) : (
-                <>
-                  <video
-                    ref={localVideoRef}
-                    autoPlay playsInline muted
-                    className="w-full h-full object-cover rounded-2xl border-2 border-white/30 shadow-lg"
-                    style={{
-                      transform: isMirrored ? 'scaleX(-1)' : 'none',
-                      opacity: isVideoOff ? 0.15 : 1,
-                      filter: isVideoOff ? "blur(2px) grayscale(0.7)" : "none",
-                    }}
-                  />
-                  <MaskOverlay videoRef={localVideoRef} maskId={maskId} />
-                </>
-              )}
-              {/* Swap hint */}
+              </div>
               <div className="absolute bottom-1 left-1/2 -translate-x-1/2 bg-black/50 rounded-full px-2 py-0.5 text-[9px] text-white/70 flex items-center gap-1">
                 <SwitchCamera className="w-2.5 h-2.5" />
                 Сменить
@@ -647,6 +640,15 @@ function VideoCallControls({
             hideLabel
           />
         )}
+        {!isAudio && onToggleScreenShare && (
+          <GlassControlButton
+            icon={<Monitor className="w-6 h-6" />}
+            label={isScreenSharing ? "Стоп" : "Экран"}
+            isActive={isScreenSharing}
+            onClick={onToggleScreenShare}
+            hideLabel
+          />
+        )}
         <GlassControlButton
           icon={isMuted ? <MicOff className="w-6 h-6" /> : <Mic className="w-6 h-6" />}
           label="Звук"
@@ -661,5 +663,50 @@ function VideoCallControls({
         />
       </div>
     </div>
+  );
+}
+
+// Renders a video stream into a canvas to avoid ref conflicts when the same
+// stream needs to appear in both main view and PiP simultaneously.
+function PipVideo({ srcRef, mirrored, dimmed }: {
+  srcRef: React.RefObject<HTMLVideoElement>;
+  mirrored: boolean;
+  dimmed: boolean;
+}) {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const rafRef = useRef<number>(0);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    const draw = () => {
+      const video = srcRef.current;
+      if (video && video.readyState >= 2 && video.videoWidth > 0) {
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+        ctx.save();
+        if (mirrored) {
+          ctx.translate(canvas.width, 0);
+          ctx.scale(-1, 1);
+        }
+        ctx.globalAlpha = dimmed ? 0.15 : 1;
+        ctx.drawImage(video, 0, 0);
+        ctx.restore();
+      }
+      rafRef.current = requestAnimationFrame(draw);
+    };
+
+    rafRef.current = requestAnimationFrame(draw);
+    return () => cancelAnimationFrame(rafRef.current);
+  }, [srcRef, mirrored, dimmed]);
+
+  return (
+    <canvas
+      ref={canvasRef}
+      style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
+    />
   );
 }
