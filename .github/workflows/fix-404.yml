@@ -1,0 +1,35 @@
+name: Fix 404
+on:
+  workflow_dispatch:
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: appleboy/ssh-action@v0.1.7
+        with:
+          host: ${{ secrets.ADMINVPS_HOST }}
+          username: ${{ secrets.ADMINVPS_USER }}
+          key: ${{ secrets.ADMINVPS_SSH_KEY }}
+          port: 22
+          script: |
+            set -euo pipefail
+            APP_DIR="${{ secrets.ADMINVPS_APP_DIR }}"
+            echo "=== STATE ==="
+            ls -la "$APP_DIR/current" 2>/dev/null || echo "no symlink"
+            ls "$APP_DIR/dist/index.html" 2>/dev/null && echo "dist/index.html OK" || echo "dist/index.html MISSING"
+            ls "$APP_DIR/releases/" 2>/dev/null || echo "no releases"
+            grep -r "root " /etc/nginx/sites-enabled/ 2>/dev/null | grep -v "#" || true
+            echo "=== FIX ==="
+            # Find where index.html actually is
+            FOUND=$(find "$APP_DIR" -maxdepth 3 -name "index.html" 2>/dev/null | grep -v node_modules | head -1)
+            echo "index.html found at: $FOUND"
+            if [ -n "$FOUND" ]; then
+              TARGET=$(dirname "$FOUND")
+              ln -sfn "$TARGET" "$APP_DIR/current"
+              echo "Symlink: current -> $TARGET"
+              sudo nginx -t && sudo systemctl reload nginx && echo "nginx reloaded"
+            else
+              echo "ERROR: index.html not found anywhere"
+            fi
+            echo "=== VERIFY ==="
+            curl -s -o /dev/null -w "https status: %{http_code}" https://mansoni.ru/ || true
