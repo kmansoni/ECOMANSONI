@@ -1,0 +1,69 @@
+name: Fix nginx 404 (one-shot)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Diagnose and fix nginx
+        uses: appleboy/ssh-action@v0.1.7
+        with:
+          host: ${{ secrets.ADMINVPS_HOST }}
+          username: ${{ secrets.ADMINVPS_USER }}
+          key: ${{ secrets.ADMINVPS_SSH_KEY }}
+          port: 22
+          script: |
+            set -euo pipefail
+            APP_DIR="${{ secrets.ADMINVPS_APP_DIR }}"
+
+            echo "=== CURRENT LINK ==="
+            ls -la "$APP_DIR/current" 2>/dev/null || echo "no current symlink"
+            readlink -f "$APP_DIR/current" 2>/dev/null || echo "cannot resolve"
+
+            echo "=== DIST DIR ==="
+            ls "$APP_DIR/dist/" 2>/dev/null | head -5 || echo "no dist"
+
+            echo "=== RELEASES ==="
+            ls "$APP_DIR/releases/" 2>/dev/null || echo "no releases"
+
+            echo "=== NGINX ROOT ==="
+            grep -r "root " /etc/nginx/sites-enabled/ /etc/nginx/conf.d/ 2>/dev/null | grep -v "#" || echo "not found"
+
+            echo "=== INDEX.HTML CHECK ==="
+            REAL=$(readlink -f "$APP_DIR/current" 2>/dev/null || echo "")
+            if [ -n "$REAL" ] && [ -f "$REAL/index.html" ]; then
+              echo "index.html OK at $REAL"
+            else
+              echo "index.html MISSING at $REAL"
+              # Try to find it
+              find "$APP_DIR" -name "index.html" 2>/dev/null | head -5
+            fi
+
+            echo "=== FIX: ensure nginx root points to current ==="
+            NGINX_CONF=""
+            for dir in /etc/nginx/sites-enabled /etc/nginx/sites-available /etc/nginx/conf.d; do
+              [ -d "$dir" ] || continue
+              for f in "$dir"/*; do
+                [ -f "$f" ] || continue
+                if grep -q "$APP_DIR" "$f" 2>/dev/null; then
+                  NGINX_CONF="$f"; break 2
+                fi
+              done
+            done
+            [ -z "$NGINX_CONF" ] && NGINX_CONF="/etc/nginx/nginx.conf"
+            echo "Using nginx conf: $NGINX_CONF"
+
+            # Fix root to point to current symlink
+            CURRENT="$APP_DIR/current"
+            if grep -q "root " "$NGINX_CONF"; then
+              sudo sed -Ei "s#root[[:space:]]+[^;]+;#root $CURRENT;#g" "$NGINX_CONF"
+              echo "Updated root to: $CURRENT"
+            fi
+
+            sudo nginx -t && sudo systemctl reload nginx && echo "Nginx reloaded OK"
+
+            echo "=== SMOKE ==="
+            sleep 2
+            curl -s -o /dev/null -w "%{http_code}" http://localhost/ || echo "localhost check failed"
