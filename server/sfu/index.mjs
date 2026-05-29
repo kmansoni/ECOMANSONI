@@ -534,8 +534,11 @@ function sendToDevice(room, deviceId, frame) {
 
 function relayCallSignalInRoom(room, sourceDeviceId, frame) {
   const payload = frame.payload ?? {};
-  const toUser = typeof payload.to === "string" ? payload.to.trim() : "";
-  const toDevice = typeof payload.toDevice === "string" ? payload.toDevice.trim() : "";
+  // Accept both canonical (to / to_device) and legacy (toUser / toDevice) field names.
+  const toUserRaw = typeof payload.to === "string" ? payload.to : payload.toUser;
+  const toDeviceRaw = typeof payload.to_device === "string" ? payload.to_device : payload.toDevice;
+  const toUser = typeof toUserRaw === "string" ? toUserRaw.trim() : "";
+  const toDevice = typeof toDeviceRaw === "string" ? toDeviceRaw.trim() : "";
   const callId = typeof payload.callId === "string" ? payload.callId.trim() : "";
 
   if (!toUser || !callId) {
@@ -1717,10 +1720,16 @@ wss.on("connection", (ws, req) => {
 
       case "call.invite": {
         if (!ensureAuth()) return;
-        const toUser = frame.payload?.toUser;
-        const toDevice = frame.payload?.toDevice;
-        if (typeof toUser !== "string" || !toUser.trim()) {
-          ack(ws, frame.msgId, false, wsError("VALIDATION_FAILED", "call.invite: missing toUser", {}, false));
+        // Accept both contracts:
+        //   - canonical (client + calls-ws): { to, to_device }
+        //   - legacy SFU: { toUser, toDevice }
+        const p = frame.payload ?? {};
+        const toUserRaw = typeof p.to === "string" ? p.to : p.toUser;
+        const toDeviceRaw = typeof p.to_device === "string" ? p.to_device : p.toDevice;
+        const toUser = typeof toUserRaw === "string" ? toUserRaw.trim() : "";
+        const toDevice = typeof toDeviceRaw === "string" ? toDeviceRaw.trim() : "";
+        if (!toUser) {
+          ack(ws, frame.msgId, false, wsError("VALIDATION_FAILED", "call.invite: missing to", {}, false));
           return;
         }
         let delivered = 0;
