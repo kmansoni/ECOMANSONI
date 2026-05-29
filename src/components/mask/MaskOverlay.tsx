@@ -8,10 +8,11 @@ interface MaskOverlayProps {
 
 const MaskOverlay: React.FC<MaskOverlayProps> = ({ videoRef }) => {
   useEffect(() => {
+    if (typeof jeelizFaceFilter === 'undefined') return;
+
     const video = videoRef.current;
     if (!video) return;
 
-    // Create canvas overlay
     const canvas = document.createElement('canvas');
     canvas.style.position = 'absolute';
     canvas.style.top = '0';
@@ -24,17 +25,13 @@ const MaskOverlay: React.FC<MaskOverlayProps> = ({ videoRef }) => {
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-     // Load mask image
-     const maskImg = new Image();
-     maskImg.crossOrigin = 'anonymous';
-     maskImg.src = 'https://raw.githubusercontent.com/zamhown/wear-a-mask/master/masks/n1.png';
+    const maskImg = new Image();
+    maskImg.crossOrigin = 'anonymous';
+    maskImg.src = 'https://raw.githubusercontent.com/zamhown/wear-a-mask/master/masks/n1.png';
 
     let maskLoaded = false;
-    maskImg.onload = () => {
-      maskLoaded = true;
-    };
+    maskImg.onload = () => { maskLoaded = true; };
 
-    // Initialize jeelizFaceFilter
     jeelizFaceFilter.init({
       videoElement: video,
       callbackTrack: (detectState: any) => {
@@ -43,7 +40,6 @@ const MaskOverlay: React.FC<MaskOverlayProps> = ({ videoRef }) => {
           const { scale, x, y, rz } = detectState;
           const maskWidth = maskImg.width * scale;
           const maskHeight = maskImg.height * scale;
-          
           ctx.save();
           ctx.translate(x, y);
           ctx.rotate(rz);
@@ -53,7 +49,6 @@ const MaskOverlay: React.FC<MaskOverlayProps> = ({ videoRef }) => {
       }
     });
 
-    // Cleanup
     return () => {
       jeelizFaceFilter.reset(video);
       canvas.remove();
