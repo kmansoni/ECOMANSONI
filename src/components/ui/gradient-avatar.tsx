@@ -69,14 +69,16 @@ export function GradientAvatar({
         src={normalizedAvatarUrl}
         alt={name}
         onError={() => setImageFailed(true)}
-        className={`${sizeClasses[size]} rounded-full object-cover border-2 border-white/20 ${className}`}
+        className={`${sizeClasses[size]} rounded-full object-cover shadow-md ${className}`}
+        style={{ boxShadow: '0 2px 8px rgba(0,0,0,0.25)' }}
       />
     );
   }
 
   return (
     <div
-      className={`${sizeClasses[size]} rounded-full bg-gradient-to-br ${gradient} flex items-center justify-center font-bold text-white shadow-lg border-2 border-white/20 ${className}`}
+      className={`${sizeClasses[size]} rounded-full bg-gradient-to-br ${gradient} flex items-center justify-center font-bold text-white shadow-md ${className}`}
+      style={{ boxShadow: '0 2px 8px rgba(0,0,0,0.25)' }}
     >
       {initials}
     </div>

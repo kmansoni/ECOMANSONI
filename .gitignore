@@ -51,6 +51,7 @@ vite_errors.txt
 # Local env (secrets)
 .env
 .env.*
+.env.local
 !.env.example
 
 # Supabase local temp

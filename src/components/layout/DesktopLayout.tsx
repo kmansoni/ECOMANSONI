@@ -26,7 +26,7 @@ const SIDEBAR_NAV = [
   { to: "/", icon: HomeIcon as SidebarIcon, label: "Лента" },
   { to: "/chats", icon: MessageIcon as SidebarIcon, label: "Чаты" },
   { to: "/search", icon: SearchIcon as SidebarIcon, label: "Поиск" },
-  { to: "/reels", icon: ReelsIcon as SidebarIcon, label: "Reels" },
+  { to: "/reels", icon: ReelsIcon as SidebarIcon, label: "Видео" },
   { to: "/notifications", icon: BellIcon as SidebarIcon, label: "Уведомления" },
   { to: "/reminders", icon: BellIcon as SidebarIcon, label: "Напоминания" },
   { to: "/people-nearby", icon: "users" as SidebarIcon, label: "Люди рядом" },

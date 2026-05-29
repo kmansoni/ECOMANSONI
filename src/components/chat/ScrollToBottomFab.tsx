@@ -59,14 +59,11 @@ export function ScrollToBottomFab({ visible, unreadCount = 0, onClick }: ScrollT
             onClick={onClick}
             aria-label="Прокрутить вниз"
             className="
-              w-10 h-10 rounded-full
-              bg-black/50 backdrop-blur-md
-              border border-white/15
+              chat-glass-icon-btn
+              w-11 h-11 rounded-full
               flex items-center justify-center
-              text-white/80
-              hover:bg-black/65 active:bg-black/75
               shadow-lg shadow-black/30
-              transition-colors duration-150
+              transition-[filter] duration-150
             "
           >
             <ChevronDown className="w-5 h-5" />

@@ -104,14 +104,25 @@ export function ChatSettingsSheet({ conversationId, open, onClose }: ChatSetting
       {open ? (
         <>
           <motion.div
-            className="fixed inset-0 bg-black/50 z-40"
+            className="fixed inset-0 z-40"
+            style={{ background: "rgba(2,3,9,0.55)", backdropFilter: "blur(8px)" }}
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             onClick={onClose}
           />
           <motion.div
-            className="fixed bottom-0 left-0 right-0 z-50 bg-background rounded-t-2xl max-h-[85vh] overflow-y-auto"
+            className="chat-glass-scope fixed bottom-0 left-0 right-0 z-50 rounded-t-3xl max-h-[85vh] overflow-y-auto"
+            style={{
+              background:
+                "linear-gradient(135deg, rgba(255,255,255,0.08) 0%, rgba(255,255,255,0.02) 50%, rgba(255,255,255,0.04) 100%)",
+              backdropFilter: "blur(40px) saturate(180%)",
+              border: "1px solid rgba(255,255,255,0.08)",
+              borderBottom: "none",
+              boxShadow:
+                "0 -8px 40px rgba(0,0,0,0.45), inset 0 1px 0 rgba(255,255,255,0.10)",
+              color: "hsl(var(--glass-ink))",
+            }}
             initial={{ y: '100%' }}
             animate={{ y: 0 }}
             exit={{ y: '100%' }}
@@ -119,12 +130,12 @@ export function ChatSettingsSheet({ conversationId, open, onClose }: ChatSetting
           >
             {/* Handle */}
             <div className="flex justify-center pt-3 pb-1">
-              <div className="w-10 h-1 rounded-full bg-muted-foreground/30" />
+              <div className="w-10 h-1 rounded-full bg-white/30" />
             </div>
 
             <div className="flex items-center justify-between px-4 py-2">
-              <h2 className="text-lg font-semibold">Настройки чата</h2>
-              <button onClick={onClose} className="p-2 rounded-full hover:bg-muted">
+              <h2 className="glass-title text-lg">Настройки чата</h2>
+              <button onClick={onClose} aria-label="Закрыть" className="chat-glass-icon-btn h-9 w-9 rounded-full flex items-center justify-center">
                 <X className="w-5 h-5" />
               </button>
             </div>

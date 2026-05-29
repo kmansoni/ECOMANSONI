@@ -60,63 +60,7 @@
 </head>
 
   <body>
-    <div id="root">
-      <!-- Minimal inline boot-fallback shown until React mounts.
-           Provides basic navigation links if the JS bundle fails to load. -->
-      <div id="boot-fallback" style="display:none;min-height:100vh;align-items:center;justify-content:center;background:#0a1628;color:#fff;font-family:Inter,sans-serif;text-align:center;padding:24px">
-        <div>
-          <h1 style="margin:0 0 12px;font-size:24px;font-weight:700">Загрузка…</h1>
-          <p style="margin:0 0 20px;opacity:.8">Если страница не открывается, попробуйте обновить.</p>
-          <a href="/" style="display:inline-block;padding:10px 20px;margin:0 6px;border-radius:12px;border:1px solid rgba(255,255,255,.25);color:#fff;text-decoration:none;background:rgba(255,255,255,.08)">Главная</a>
-          <a href="/auth" style="display:inline-block;padding:10px 20px;margin:0 6px;border-radius:12px;border:1px solid rgba(255,255,255,.25);color:#fff;text-decoration:none;background:rgba(255,255,255,.08)">Войти</a>
-        </div>
-      </div>
-    </div>
-    <script>
-      // Boot fallback strategy:
-      //   1. Show fallback after 250 ms — avoids flash on fast connections.
-      //   2. Hide fallback as soon as React mounts (MutationObserver).
-      //   3. If React never mounts after 10 s (bundle error / network down),
-      //      keep fallback visible so the user can navigate manually.
-      (function () {
-        var fb = document.getElementById('boot-fallback');
-        var root = document.getElementById('root');
-        var showTimer = null;
-        var hideTimer = null;
-
-        function showFallback() {
-          if (fb) fb.style.display = 'flex';
-        }
-
-        function hideFallback(obs) {
-          if (showTimer) clearTimeout(showTimer);
-          if (hideTimer) clearTimeout(hideTimer);
-          if (fb) fb.style.display = 'none';
-          if (obs) obs.disconnect();
-        }
-
-        // Delay showing fallback — on fast connections React mounts before this fires
-        showTimer = setTimeout(showFallback, 250);
-
-        // Safety net: if React never mounts in 10 s, show fallback permanently
-        hideTimer = setTimeout(showFallback, 10000);
-
-        if (root) {
-          var obs = new MutationObserver(function (_, o) {
-            // React has mounted when #root has children other than boot-fallback
-            if (!document.getElementById('boot-fallback')) {
-              hideFallback(o);
-            } else if (
-              root.children.length > 1 ||
-              (root.children[0] && root.children[0].id !== 'boot-fallback')
-            ) {
-              hideFallback(o);
-            }
-          });
-          obs.observe(root, { childList: true });
-        }
-      })();
-    </script>
+    <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
     <script>
       // Service Worker registration — sw.js (media cache + push)

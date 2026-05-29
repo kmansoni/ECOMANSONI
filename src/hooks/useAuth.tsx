@@ -176,9 +176,58 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
     });
 
+    // E2E test-only hook: ?__e2e_session=<base64url(JSON({access_token, refresh_token}))>.
+    // Only consumes tokens that supabase-auth itself accepts; provides no
+    // additional privilege over already-public signIn endpoints.
+    const consumeE2ESessionFromUrl = async (): Promise<boolean> => {
+      try {
+        const url = new URL(window.location.href);
+        const param = url.searchParams.get("__e2e_session");
+        if (!param) return false;
+        // eslint-disable-next-line no-console
+        console.log("[E2E-HOOK] param present, decoding");
+        const b64 = param.replace(/-/g, "+").replace(/_/g, "/");
+        const padded = b64 + "=".repeat((4 - (b64.length % 4)) % 4);
+        const json = atob(padded);
+        const parsed = JSON.parse(json) as { access_token?: string; refresh_token?: string };
+        if (!parsed?.access_token || !parsed?.refresh_token) {
+          // eslint-disable-next-line no-console
+          console.log("[E2E-HOOK] missing tokens in payload");
+          return false;
+        }
+        const { data, error } = await supabase.auth.setSession({
+          access_token: parsed.access_token,
+          refresh_token: parsed.refresh_token,
+        });
+        // eslint-disable-next-line no-console
+        console.log("[E2E-HOOK] setSession result", {
+          err: error?.message ?? null,
+          user: data?.session?.user?.id ?? null,
+        });
+        if (error) {
+          logger.warn("[AuthProvider] __e2e_session setSession failed", { error });
+          return false;
+        }
+        // Strip the param from URL so it does not leak via history/back.
+        url.searchParams.delete("__e2e_session");
+        window.history.replaceState(window.history.state, "", url.toString());
+        return true;
+      } catch (e) {
+        // eslint-disable-next-line no-console
+        console.log("[E2E-HOOK] exception", (e as Error).message);
+        logger.warn("[AuthProvider] __e2e_session parse failed", { error: (e as Error).message });
+        return false;
+      }
+    };
+
     // THEN check for existing session
     void (async () => {
       try {
+        const consumed = await consumeE2ESessionFromUrl();
+        if (consumed) {
+          // setSession already triggered onAuthStateChange + resolve().
+          return;
+        }
         const { data: { session } } = await supabase.auth.getSession();
         if (cancelled) return;
         setSession(session);

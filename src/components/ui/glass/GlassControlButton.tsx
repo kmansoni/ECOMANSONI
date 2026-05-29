@@ -9,6 +9,7 @@ interface GlassControlButtonProps {
   variant?: "default" | "danger" | "success";
   size?: "sm" | "md" | "lg";
   disabled?: boolean;
+  hideLabel?: boolean;
   className?: string;
 }
 
@@ -22,6 +23,7 @@ export function GlassControlButton({
   variant = "default",
   size = "md",
   disabled = false,
+  hideLabel = false,
   className = "",
 }: GlassControlButtonProps) {
   const isDanger = variant === "danger";
@@ -64,7 +66,7 @@ export function GlassControlButton({
           {icon}
         </span>
       </motion.button>
-      <span className="text-white/70 text-xs select-none">{label}</span>
+      {!hideLabel && <span className="text-white/70 text-xs select-none">{label}</span>}
     </div>
   );
 }

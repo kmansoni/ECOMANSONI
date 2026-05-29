@@ -45,7 +45,7 @@ export function PinnedMessageBar({ pinnedMessages, onScrollTo, onLongPress }: Pi
   const preview = current.content?.trim() || (current.media_type ? `[${current.media_type}]` : 'Сообщение');
 
   return (
-    <div className="flex-shrink-0 bg-muted/80 backdrop-blur-sm border-b border-white/10 px-3 h-10 flex items-center gap-2">
+    <div className="chat-glass-bar flex-shrink-0 px-3 h-11 flex items-center gap-2">
       <span className="text-base shrink-0" aria-hidden>📌</span>
       <button
         className="flex-1 flex items-center gap-2 min-w-0 text-left"
@@ -63,11 +63,11 @@ export function PinnedMessageBar({ pinnedMessages, onScrollTo, onLongPress }: Pi
         )}
       </button>
       <button
-        className="shrink-0 p-1 rounded-md hover:bg-white/10 transition-colors"
+        className="chat-glass-icon-btn shrink-0 h-9 w-9 rounded-full flex items-center justify-center"
         onClick={() => setHidden(true)}
         aria-label="Скрыть"
       >
-        <X className="w-4 h-4 text-muted-foreground" />
+        <X className="w-4 h-4" />
       </button>
     </div>
   );

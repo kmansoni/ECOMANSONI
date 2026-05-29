@@ -5,6 +5,19 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Kill browser autofill background globally */
+input:-webkit-autofill,
+input:-webkit-autofill:hover,
+input:-webkit-autofill:focus,
+textarea:-webkit-autofill,
+select:-webkit-autofill {
+  -webkit-box-shadow: 0 0 0 1000px transparent inset !important;
+  box-shadow: 0 0 0 1000px transparent inset !important;
+  -webkit-text-fill-color: white !important;
+  transition: background-color 9999s ease-in-out 0s;
+  background-color: transparent !important;
+}
+
 /* Definition of the design system. All colors, gradients, fonts, etc should be defined here.
 All colors MUST be HSL.
 */
@@ -618,6 +631,15 @@ textarea:focus-visible,
 }
 
 @layer utilities {
+  .glass-input {
+    background: transparent !important;
+    color: white;
+    outline: none;
+    -webkit-text-fill-color: white;
+  }
+  .glass-input::placeholder { color: rgba(255,255,255,0.25); }
+  .glass-input::-webkit-scrollbar { width: 0; }
+
   /* Ensure full-screen wrappers don't flatten the global dark background */
   html.dark .min-h-screen.bg-background,
   html.dark .h-full.bg-background,
@@ -848,6 +870,299 @@ html.appearance-no-sticker-anim .emoji-picker-ios .EmojiPickerReact .epr-emoji i
   background: hsl(var(--glass-input));
   color: hsl(var(--glass-ink));
   border: 1px solid hsl(var(--glass-border));
+}
+
+/* ──────────────────────────────────────────────────────────────────
+ * CHAT GLASS DESIGN SCOPE
+ * Унифицирует визуал всех экранов чата под эталон auth (glass-window
+ * + glass-input + glass-primary-btn). Применяется через корневой класс
+ * .chat-glass-scope (вешается на root компонента-экрана).
+ * Цель: один источник правды, минимум точечных правок в 100+ файлах.
+ * ────────────────────────────────────────────────────────────────── */
+
+.chat-glass-scope {
+  --chat-glass-bg: hsl(var(--glass-surface));
+  --chat-glass-border: hsl(var(--glass-border));
+  --chat-glass-ink: hsl(var(--glass-ink));
+  --chat-glass-muted: hsl(var(--glass-muted-ink));
+  --chat-glass-input: hsl(var(--glass-input));
+  --chat-glass-shadow: hsl(var(--glass-shadow));
+}
+
+/* Header / pinned / nav-like bars */
+.chat-glass-bar {
+  background: hsl(var(--glass-surface));
+  color: hsl(var(--glass-ink));
+  border-bottom: 1px solid hsl(var(--glass-border));
+  backdrop-filter: blur(24px) saturate(1.15);
+  -webkit-backdrop-filter: blur(24px) saturate(1.15);
+  box-shadow: 0 12px 32px hsl(var(--glass-shadow));
+}
+
+.chat-glass-chip {
+  background: hsl(var(--glass-input));
+  color: hsl(var(--glass-ink));
+  border: 1px solid hsl(var(--glass-border));
+  backdrop-filter: blur(18px) saturate(1.1);
+  -webkit-backdrop-filter: blur(18px) saturate(1.1);
+  border-radius: 9999px;
+}
+
+/* Composer pill */
+.chat-glass-pill {
+  background: hsl(var(--glass-input));
+  color: hsl(var(--glass-ink));
+  border: 1px solid hsl(var(--glass-border));
+  backdrop-filter: blur(24px) saturate(1.15);
+  -webkit-backdrop-filter: blur(24px) saturate(1.15);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.18),
+    0 10px 30px hsl(var(--glass-shadow));
+}
+
+.chat-glass-pill::placeholder,
+.chat-glass-pill ::placeholder {
+  color: hsl(var(--glass-muted-ink));
+}
+
+/* Round icon buttons (header / composer / fab) */
+.chat-glass-icon-btn {
+  background: hsl(var(--glass-input));
+  color: hsl(var(--glass-ink));
+  border: 1px solid hsl(var(--glass-border));
+  backdrop-filter: blur(18px) saturate(1.1);
+  -webkit-backdrop-filter: blur(18px) saturate(1.1);
+  transition: filter 120ms ease, background 120ms ease, border-color 120ms ease;
+}
+
+.chat-glass-icon-btn:hover {
+  filter: brightness(1.08);
+  border-color: hsl(0 0% 100% / 0.32);
+}
+
+.chat-glass-icon-btn:active {
+  filter: brightness(0.95);
+}
+
+/* Primary action (send) — same vibe as auth primary button */
+.chat-glass-primary-btn {
+  background: linear-gradient(135deg, hsl(var(--primary)) 0%, hsl(188 100% 44%) 100%);
+  color: hsl(var(--primary-foreground));
+  border: 1px solid hsl(0 0% 100% / 0.25);
+  box-shadow: 0 12px 26px hsl(var(--glass-shadow));
+}
+
+/* Message bubbles */
+.chat-glass-bubble {
+  background: hsl(var(--glass-surface));
+  color: hsl(var(--glass-ink));
+  border: 1px solid hsl(var(--glass-border));
+  backdrop-filter: blur(22px) saturate(1.15);
+  -webkit-backdrop-filter: blur(22px) saturate(1.15);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.14),
+    0 10px 28px hsl(var(--glass-shadow));
+}
+
+.chat-glass-bubble--own {
+  background: linear-gradient(
+    135deg,
+    hsl(var(--primary) / 0.92) 0%,
+    hsl(188 100% 44% / 0.92) 100%
+  );
+  border-color: hsl(0 0% 100% / 0.25);
+  color: hsl(var(--primary-foreground));
+}
+
+/* Floating date / system chips */
+.chat-glass-floating-chip {
+  background: hsl(var(--glass-input));
+  color: hsl(var(--glass-ink));
+  border: 1px solid hsl(var(--glass-border));
+  backdrop-filter: blur(20px) saturate(1.15);
+  -webkit-backdrop-filter: blur(20px) saturate(1.15);
+  box-shadow: 0 8px 22px hsl(var(--glass-shadow));
+}
+
+/* Inherit glass look for ALL shadcn dialogs/sheets/popovers rendered
+ * inside a chat scope, без правки каждого модального файла. */
+.chat-glass-scope [role="dialog"],
+.chat-glass-scope [data-radix-popper-content-wrapper] > * {
+  background: hsl(var(--glass-surface)) !important;
+  color: hsl(var(--glass-ink)) !important;
+  border-color: hsl(var(--glass-border)) !important;
+  backdrop-filter: blur(24px) saturate(1.18);
+  -webkit-backdrop-filter: blur(24px) saturate(1.18);
+  box-shadow: 0 20px 56px hsl(var(--glass-shadow)),
+    inset 0 1px 0 hsl(0 0% 100% / 0.20) !important;
+}
+
+/* Inputs inside chat scope get auth-glass treatment */
+.chat-glass-scope input:not([type="checkbox"]):not([type="radio"]):not(.no-glass),
+.chat-glass-scope textarea:not(.no-glass) {
+  background: hsl(var(--glass-input));
+  color: hsl(var(--glass-ink));
+  border: 1px solid hsl(var(--glass-border));
+  border-radius: 1rem;
+}
+
+.chat-glass-scope input::placeholder,
+.chat-glass-scope textarea::placeholder {
+  color: hsl(var(--glass-muted-ink));
+}
+
+/* В chat-scope группы строк настроек (bg-muted/30) превращаем в glass-card */
+.chat-glass-scope [class*="bg-muted\\/30"],
+.chat-glass-scope [class*="bg-muted\\/40"],
+.chat-glass-scope [class*="bg-muted\\/50"],
+.chat-glass-scope [class*="bg-muted\\/60"] {
+  background: hsl(var(--glass-input)) !important;
+  border: 1px solid hsl(var(--glass-border)) !important;
+  -webkit-backdrop-filter: blur(18px);
+          backdrop-filter: blur(18px);
+}
+
+.chat-glass-scope [class*="divide-border"] > * + *,
+.chat-glass-scope [class*="divide-y"] > * + * {
+  border-color: hsl(var(--glass-border)) !important;
+}
+
+/* ──────────────────────────────────────────────────────────────────
+ * CHATS PAGE SCOPE — список чатов / звонков / вкладок / фильтров
+ * Берём auth-эталон: radial ambient + grid + glass header/tabs/items.
+ * Применяется к корневому контейнеру ChatsPage.
+ * ────────────────────────────────────────────────────────────────── */
+
+.chats-page-scope {
+  position: relative;
+  min-height: 100%;
+  background:
+    radial-gradient(120% 80% at 50% 0%, #0a1628 0%, #071420 60%, #020309 100%);
+  color: hsl(var(--glass-ink));
+}
+
+html:not(.dark) .chats-page-scope {
+  background:
+    radial-gradient(120% 80% at 50% 0%, #ccfbf1 0%, #a5f3fc 50%, #7dd3fc 100%);
+  color: hsl(var(--foreground));
+}
+
+.chats-page-scope::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0.03;
+  background-image:
+    linear-gradient(#ffffff 1px, transparent 1px),
+    linear-gradient(90deg, #ffffff 1px, transparent 1px);
+  background-size: 60px 60px;
+  -webkit-mask-image: radial-gradient(ellipse 70% 60% at 50% 0%, black 20%, transparent 70%);
+          mask-image: radial-gradient(ellipse 70% 60% at 50% 0%, black 20%, transparent 70%);
+  z-index: 0;
+}
+
+html:not(.dark) .chats-page-scope::before {
+  background-image:
+    linear-gradient(#000000 1px, transparent 1px),
+    linear-gradient(90deg, #000000 1px, transparent 1px);
+}
+
+.chats-page-scope > * {
+  position: relative;
+  z-index: 1;
+}
+
+/* Glass header bar (auth-style top highlight) */
+.chats-page-scope .chats-header {
+  background: linear-gradient(135deg, rgba(255,255,255,0.08) 0%, rgba(255,255,255,0.02) 50%, rgba(255,255,255,0.04) 100%) !important;
+  -webkit-backdrop-filter: blur(40px) saturate(180%);
+          backdrop-filter: blur(40px) saturate(180%);
+  border-bottom: 0 !important;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.08);
+  position: relative;
+}
+
+.chats-page-scope .chats-header::after {
+  content: "";
+  position: absolute;
+  inset-inline: 2rem;
+  top: 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.30) 50%, transparent 100%);
+  pointer-events: none;
+}
+
+html:not(.dark) .chats-page-scope .chats-header {
+  background: linear-gradient(135deg, rgba(255,255,255,0.95) 0%, rgba(255,255,255,0.85) 50%, rgba(255,255,255,0.92) 100%) !important;
+  border-bottom: 0 !important;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.8);
+}
+
+/* Tabs / pills (Чаты/Звонки, папки, создать) */
+.chats-page-scope .chats-header button[data-chat-chip]:not([data-active="true"]),
+.chats-page-scope .chats-header button[data-filter-chip="calls"]:not([data-active="true"]) {
+  background: rgba(255, 255, 255, 0.10) !important;
+  color: #ffffff !important;
+  border: 1px solid rgba(255, 255, 255, 0.20) !important;
+  -webkit-backdrop-filter: blur(18px);
+          backdrop-filter: blur(18px);
+}
+
+/* Inline search input — glass */
+.chats-page-scope .chats-header input[type="text"] {
+  background: rgba(255, 255, 255, 0.10) !important;
+  border: 1px solid rgba(255, 255, 255, 0.20) !important;
+  color: hsl(var(--glass-ink)) !important;
+  -webkit-backdrop-filter: blur(18px);
+          backdrop-filter: blur(18px);
+  border-radius: 1rem !important;
+}
+
+/* Profile header — transparent frosted glass icons */
+.profile-header-scope .chat-glass-icon-btn,
+.profile-header-scope .chat-glass-chip {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.18);
+  color: #ffffff;
+}
+.dark .profile-header-scope .chat-glass-icon-btn,
+.dark .profile-header-scope .chat-glass-chip {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(255, 255, 255, 0.14);
+  color: #ffffff;
+}
+
+/* List items hover/active surfaces */
+.chats-page-scope .chats-list [class*="hover:bg-muted"]:hover,
+.chats-page-scope .chats-list [class*="hover:bg-white"]:hover {
+  background: rgba(255,255,255,0.06) !important;
+}
+
+.chats-page-scope .chats-list .divide-y > * + * {
+  border-color: hsl(var(--glass-border)) !important;
+}
+
+.app-shell-unified-bg {
+  background:
+    radial-gradient(120% 80% at 50% 0%, #0a1628 0%, #071420 60%, #020309 100%);
+}
+
+html:not(.dark) .app-shell-unified-bg {
+  background:
+    radial-gradient(120% 80% at 50% 0%, #ccfbf1 0%, #a5f3fc 50%, #7dd3fc 100%);
+}
+
+.app-main-unified-surface {
+  background: transparent;
+  border-left: 0;
+  border-right: 0;
+}
+
+html:not(.dark) .app-main-unified-surface {
+  background: transparent;
+  border-left: 0;
+  border-right: 0;
 }
 
 .unified-page-bg {
@@ -1347,6 +1662,14 @@ html.dark .module-pill {
   pointer-events: none;
   z-index: 0;
 }
+
+@media (max-width: 768px) {
+  html.dark body::before {
+    display: none;
+  }
+}
+
+/* (\u0443\u0431\u0440\u0430\u043d\u043e \u043f\u0440\u0438\u043d\u0443\u0434\u0438\u0442\u0435\u043b\u044c\u043d\u043e\u0435 #000 \u0434\u043b\u044f .chat-conversation-root \u2014 \u0442\u0435\u043f\u0435\u0440\u044c \u0441\u0442\u0438\u043b\u044c\n   auth-glass \u0437\u0430\u0434\u0430\u0451\u0442\u0441\u044f \u0438\u043d\u043b\u0430\u0439\u043d-\u0441\u0442\u0438\u043b\u0435\u043c radial-gradient \u0432 ChatConversation.tsx) */
 
 .aurora-overlay::before,
 .aurora-overlay::after {

@@ -33,13 +33,11 @@ export function FloatingDate({ date, onClick }: FloatingDateProps) {
             type="button"
             onClick={onClick}
             className="
+              chat-glass-floating-chip
               px-3 py-1 rounded-full
-              bg-black/40 backdrop-blur-md
-              border border-white/10
-              text-white/80 text-xs font-medium
+              text-xs font-medium
               select-none whitespace-nowrap
-              hover:bg-black/55 active:bg-black/65
-              transition-colors duration-150
+              transition-[filter] duration-150 hover:brightness-110
             "
           >
             {label}
@@ -71,10 +69,9 @@ export function DateSeparator({
     >
       <span
         className="
+          chat-glass-floating-chip
           px-3 py-1 rounded-full
-          bg-black/35 backdrop-blur-sm
-          border border-white/8
-          text-white/55 text-xs font-medium
+          text-xs font-medium
         "
       >
         {formatDateLabel(d)}

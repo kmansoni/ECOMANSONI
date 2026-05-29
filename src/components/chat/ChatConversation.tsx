@@ -416,7 +416,13 @@ export function ChatConversation({ conversationId, chatName, chatAvatar, otherUs
   ]);
 
   return (
-    <div className="fixed inset-0 md:absolute md:inset-0 flex flex-col bg-background z-[200]">
+    <div
+      className="chat-glass-scope chat-conversation-root fixed inset-0 md:absolute md:inset-0 flex flex-col z-[200]"
+      style={{
+        background:
+          "radial-gradient(120% 80% at 50% 0%, #0a1628 0%, #071420 60%, #020309 100%)",
+      }}
+    >
       <AnimatedEmojiFullscreen emoji={lastSentEmoji} onComplete={() => setLastSentEmoji(null)} />
       <MessageEffectOverlay effect={activeEffect} onComplete={() => setActiveEffect(null)} />
 
@@ -451,7 +457,7 @@ export function ChatConversation({ conversationId, chatName, chatAvatar, otherUs
       />
 
       {/* Messages - scrollable with animated brand background */}
-      <div ref={scrollContainerRef} className="flex-1 overflow-y-auto overflow-x-hidden native-scroll flex flex-col relative" onClick={() => { if (showEmojiPicker) setShowEmojiPicker(false); }}>
+      <div ref={scrollContainerRef} className="flex-1 overflow-y-auto overflow-x-hidden native-scroll scrollbar-hide flex flex-col relative" onClick={() => { if (showEmojiPicker) setShowEmojiPicker(false); }}>
         {/* UI-1: Floating date pill */}
         <FloatingDate
           date={floatingDate}
@@ -465,7 +471,7 @@ export function ChatConversation({ conversationId, chatName, chatAvatar, otherUs
         />
       <ChatBackground wallpaper={chatSettings.chat_wallpaper} className="flex-1 flex flex-col min-h-full">
         {/* Content layer */}
-        <div className="relative z-10 flex-1 flex flex-col p-4 overflow-x-hidden min-w-0">
+        <div className="relative z-10 flex-1 flex flex-col p-4 overflow-x-hidden overflow-y-auto scrollbar-hide min-w-0">
         {/* Spacer to push messages to bottom */}
         <div className="flex-1" />
         

@@ -390,16 +390,28 @@ export function ChatConversationOverlays({
 
       {selectionMode && (
         <div className="fixed bottom-[84px] left-0 right-0 z-[250] px-4">
-          <div className="mx-auto max-w-[520px] rounded-2xl bg-black/40 backdrop-blur-xl border border-white/10 px-3 py-2 flex items-center justify-between gap-2">
-            <div className="text-sm text-white/80">Выбрано: {selectedIds.size}</div>
+          <div className="glass-window mx-auto max-w-[560px] rounded-2xl border px-3 py-2.5 backdrop-blur-2xl flex items-center justify-between gap-2">
+            <div className="glass-title text-sm font-medium">Выбрано: {selectedIds.size}</div>
             <div className="flex items-center gap-2">
-              <Button size="sm" variant="outline" className="bg-white/10 border-white/20 text-white hover:bg-white/20" onClick={copySelected}>
+              <Button
+                size="sm"
+                className="glass-secondary-btn h-9 rounded-xl px-4 text-sm text-white border-white/30 hover:brightness-110"
+                onClick={copySelected}
+              >
                 Скопировать
               </Button>
-              <Button size="sm" variant="outline" className="bg-white/10 border-white/20 text-white hover:bg-white/20" onClick={deleteSelectedForMe}>
+              <Button
+                size="sm"
+                className="glass-secondary-btn h-9 rounded-xl px-4 text-sm text-red-100 border-red-300/40 hover:bg-red-500/15"
+                onClick={deleteSelectedForMe}
+              >
                 Удалить у меня
               </Button>
-              <Button size="sm" variant="ghost" className="text-white/70 hover:bg-white/10" onClick={clearSelection}>
+              <Button
+                size="sm"
+                className="glass-secondary-btn h-9 rounded-xl px-3 text-sm text-white/90 border-white/20 hover:brightness-110"
+                onClick={clearSelection}
+              >
                 Отмена
               </Button>
             </div>

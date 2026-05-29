@@ -91,7 +91,7 @@ function buildPremiumOtpHtml(codeSpaced: string, ttlMinutes: number): string {
 </head>
 <body style="background: linear-gradient(135deg, #0a0a0f 0%, #1a1a2e 50%, #0f0f1a 100%); font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; margin: 0; padding: 20px;">
   <div style="background: rgba(255, 255, 255, 0.03); border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 32px; padding: 48px; max-width: 420px; margin: 0 auto; box-shadow: 0 25px 50px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.05);">
-    <div style="font-size: 26px; font-weight: 700; letter-spacing: 6px; color: #ffffff; text-align: center; margin-bottom: 4px;">MASNONI</div>
+    <div style="font-size: 26px; font-weight: 700; letter-spacing: 6px; color: #ffffff; text-align: center; margin-bottom: 4px;">MANSONI</div>
     <div style="text-align: center; color: rgba(255, 255, 255, 0.4); font-size: 11px; letter-spacing: 4px; text-transform: uppercase; margin-bottom: 40px;">Подтверждение входа</div>
 
     <div style="text-align: center; color: rgba(255, 255, 255, 0.9); font-size: 16px; margin-bottom: 8px;">Здравствуйте!</div>
@@ -114,9 +114,9 @@ function buildPremiumOtpHtml(codeSpaced: string, ttlMinutes: number): string {
     </div>
 
     <div style="text-align: center; padding-top: 24px; border-top: 1px solid rgba(255, 255, 255, 0.06);">
-      <div style="color: rgba(255, 255, 255, 0.6); font-size: 14px; margin-bottom: 8px;">С уважением, команда Masnoni</div>
+      <div style="color: rgba(255, 255, 255, 0.6); font-size: 14px; margin-bottom: 8px;">С уважением, команда Mansoni</div>
       <div style="color: rgba(255, 255, 255, 0.4); font-size: 12px;">Ваша технологическая экосистема</div>
-      <div style="color: rgba(255, 255, 255, 0.3); font-size: 11px; margin-top: 4px;">masnoni.ru</div>
+      <div style="color: rgba(255, 255, 255, 0.3); font-size: 11px; margin-top: 4px;">mansoni.ru</div>
     </div>
   </div>
 </body>
@@ -124,21 +124,21 @@ function buildPremiumOtpHtml(codeSpaced: string, ttlMinutes: number): string {
 }
 
 function buildPremiumOtpText(codeSpaced: string, ttlMinutes: number): string {
-  return [
-    "MASNONI - код подтверждения входа",
-    "",
-    "Здравствуйте!",
-    "Введите код для завершения входа в систему:",
-    "",
-    `Код: ${codeSpaced}`,
-    `Код действителен ${ttlMinutes} минут.`,
-    "",
-    "Важно:",
-    "Этот код - конфиденциальная информация.",
-    "Не сообщайте его третьим лицам.",
-    "Использование чужого кода без согласия владельца - нарушение закона (ст. 272 УК РФ).",
-    "Если получили код случайно - проигнорируйте письмо и напишите нам: support@mansoni.ru",
-  ].join("\n");
+   return [
+     "MANSONI - код подтверждения входа",
+     "",
+     "Здравствуйте!",
+     "Введите код для завершения входа в систему:",
+     "",
+     `Код: ${codeSpaced}`,
+     `Код действителен ${ttlMinutes} минут.`,
+     "",
+     "Важно:",
+     "Этот код - конфиденциальная информация.",
+     "Не сообщайте его третьим лицам.",
+     "Использование чужого кода без согласия владельца - нарушение закона (ст. 272 УК РФ).",
+     "Если получили код случайно - проигнорируйте письмо и напишите нам: support@mansoni.ru",
+   ].join("\n");
 }
 
 async function cleanupOtpCode(
@@ -327,7 +327,7 @@ Deno.serve(async (req: Request) => {
       : 8;
     const otpMaxAttempts = isPriorityMailbox ? Math.min(20, Math.max(otpMaxAttemptsBase, 10)) : otpMaxAttemptsBase;
 
-    const shortCode = code.slice(0, 3) + " " + code.slice(3);
+    const shortCode = code;
     const timeoutRaw = Number(Deno.env.get("EMAIL_ROUTER_TIMEOUT_MS") ?? "8000");
     const emailRouterTimeoutMs = Number.isFinite(timeoutRaw) && timeoutRaw >= 3000 && timeoutRaw <= 12000
       ? Math.floor(timeoutRaw)
@@ -336,7 +336,7 @@ Deno.serve(async (req: Request) => {
     const emailPayload = {
       to: email,
       from: otpFromEmail,
-      subject: `Masnoni - код подтверждения: ${shortCode}`,
+      subject: `Mansoni - код подтверждения: ${shortCode}`,
       maxAttempts: otpMaxAttempts,
       priority: 1,
       headers: {
@@ -346,7 +346,7 @@ Deno.serve(async (req: Request) => {
         "X-Priority": "1 (Highest)",
         "Importance": "high",
         "X-MSMail-Priority": "High",
-        "X-Mailer": "Masnoni-OTP/1.0",
+        "X-Mailer": "Mansoni-OTP/1.0",
         "Reply-To": otpReplyTo,
       },
       html: buildPremiumOtpHtml(shortCode, otpTtlMinutes),

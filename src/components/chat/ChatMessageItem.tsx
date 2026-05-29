@@ -6,7 +6,7 @@
  * Extracted from ChatConversation.tsx renderMessages.map() body.
  */
 import { Fragment, memo, useMemo } from "react";
-import { Play, Pause, CheckCheck, MapPin } from "lucide-react";
+import { Play, Pause, CheckCheck, Check, MapPin } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { GradientAvatar } from "@/components/ui/gradient-avatar";
@@ -226,12 +226,12 @@ function ChatMessageItemInner({
   const renderManualLoadPlaceholder = (label: string) => (
     <div
       className={cn(
-        "chat-bubble inline-block max-w-[min(75%,560px)] rounded-2xl px-4 py-3 backdrop-blur-xl border border-white/10",
-        isOwn ? "bg-white/10 text-white rounded-br-md" : "bg-white/5 text-white rounded-bl-md",
+        "chat-bubble inline-block max-w-[min(75%,560px)] rounded-2xl px-4 py-3",
+        isOwn ? "chat-glass-bubble chat-glass-bubble--own rounded-br-md" : "chat-glass-bubble rounded-bl-md",
       )}
       style={{ borderRadius: `${messageCornerRadius}px` }}
     >
-      <p className="text-sm text-white/80">{label}</p>
+      <p className="text-sm opacity-90">{label}</p>
       <Button variant="secondary" className="mt-2" onClick={() => onManualLoad(message.id)}>
         Загрузить
       </Button>
@@ -513,15 +513,14 @@ function ChatMessageItemInner({
         <div className={cn("flex flex-col flex-1 min-w-0", isOwn ? "items-end" : "items-start")}>
           <div
             className={cn(
-              "chat-bubble relative inline-block min-w-[64px] max-w-[min(75%,560px)] rounded-2xl px-3 py-2 select-none backdrop-blur-xl border border-white/10",
-              isOwn ? `${bubbleClass} text-white ${bubbleTailClass}` : `bg-white/5 text-white ${bubbleTailClass}`,
-              selectionMode && selectedIds.has(message.id) && "ring-2 ring-white/30",
+              "chat-bubble relative inline-block min-w-[64px] max-w-[min(75%,560px)] rounded-2xl px-3 py-2 select-none",
+              isOwn
+                ? `chat-glass-bubble chat-glass-bubble--own ${bubbleClass} ${bubbleTailClass}`
+                : `chat-glass-bubble ${bubbleTailClass}`,
+              selectionMode && selectedIds.has(message.id) && "ring-2 ring-cyan-300/60",
             )}
             style={{
               borderRadius: `${effectiveBubbleRadius}px`,
-              boxShadow: isOwn
-                ? "inset 0 1px 0 rgba(255,255,255,0.15), 0 4px 20px rgba(0,0,0,0.25)"
-                : "inset 0 1px 0 rgba(255,255,255,0.1), 0 4px 20px rgba(0,0,0,0.2)",
             }}
             onClick={() => {
               if (selectionMode) toggleSel(message.id);
@@ -538,6 +537,18 @@ function ChatMessageItemInner({
             }}
             onTouchEnd={onLongPressEnd}
           >
+            {selectionMode && selectedIds.has(message.id) && (
+              <span
+                className={cn(
+                  "absolute -top-2 z-20 flex h-5 w-5 items-center justify-center rounded-full border border-white/60 bg-cyan-400 text-black shadow-[0_4px_14px_rgba(0,180,216,0.45)]",
+                  isOwn ? "-left-2" : "-right-2",
+                )}
+                aria-hidden="true"
+              >
+                <Check className="h-3.5 w-3.5" strokeWidth={3} />
+              </span>
+            )}
+
             {/* Forward label */}
             {message.content?.startsWith("↪ Переслано от") && (
               <p className="text-[11px] font-medium text-[#6ab3f3]/70 mb-0.5 italic">

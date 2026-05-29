@@ -8,7 +8,7 @@
  */
 
 // Bump when caching behavior changes or to evict stale deployed shells/chunks.
-const CACHE_VERSION = 'v6';
+const CACHE_VERSION = 'v7';
 const MEDIA_CACHE = `media-${CACHE_VERSION}`;
 const STATIC_CACHE = `static-${CACHE_VERSION}`;
 const TILE_CACHE = `tiles-${CACHE_VERSION}`;

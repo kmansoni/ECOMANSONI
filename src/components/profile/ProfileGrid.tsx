@@ -34,7 +34,6 @@ export function ProfileGrid({ items, loading, type, onItemClick }: ProfileGridPr
     const key = String(item?.id ?? index);
     const isReel = type === "reels";
 
-    const reelCandidates = [item?.thumbnail_url].filter((u: unknown): u is string => typeof u === "string" && u.trim().length > 0);
     const postMedia = Array.isArray(item?.post_media) ? item.post_media : [];
     const postCandidates = postMedia
       .map((m) => ({
@@ -48,9 +47,13 @@ export function ProfileGrid({ items, loading, type, onItemClick }: ProfileGridPr
       ...postCandidates.filter((m) => m.mediaType === "video"),
     ];
 
-    const variants = isReel
-      ? reelCandidates.map((url) => ({ url, mediaType: "video" }))
-      : orderedPostCandidates;
+    const reelVideoUrl = postCandidates.find((m) => m.mediaType === "video")?.url ?? "";
+    const reelCandidates = [
+      ...[item?.thumbnail_url].filter((u: unknown): u is string => typeof u === "string" && u.trim().length > 0).map((url) => ({ url, mediaType: "image" as const })),
+      ...(reelVideoUrl ? [{ url: reelVideoUrl, mediaType: "video" as const }] : []),
+    ];
+
+    const variants = isReel ? reelCandidates : orderedPostCandidates;
 
     const failedIndex = failedVariantByKey[key] ?? 0;
     const candidate = failedIndex >= 0 ? variants[failedIndex] : undefined;
@@ -58,6 +61,7 @@ export function ProfileGrid({ items, loading, type, onItemClick }: ProfileGridPr
     return {
       key,
       imageUrl: candidate?.url ?? "",
+      isVideoPreview: candidate?.mediaType === "video",
       isReel,
       isVideo: !isReel && (candidate?.mediaType === "video" || item?.post_media?.[0]?.media_type === "video"),
       multiMedia: !isReel && (item?.post_media?.length || 0) > 1,
@@ -105,7 +109,7 @@ export function ProfileGrid({ items, loading, type, onItemClick }: ProfileGridPr
   return (
     <div className="grid grid-cols-3 gap-[1px]">
       {items.map((item, i) => {
-        const { key, imageUrl, isReel, isVideo, multiMedia, variantsCount, failedIndex } = selectPreviewVariant(item, i);
+        const { key, imageUrl, isVideoPreview, isReel, isVideo, multiMedia, variantsCount, failedIndex } = selectPreviewVariant(item, i);
 
         return (
           <motion.button
@@ -119,18 +123,28 @@ export function ProfileGrid({ items, loading, type, onItemClick }: ProfileGridPr
             className="relative aspect-square overflow-hidden bg-muted group disabled:cursor-default"
           >
             {imageUrl ? (
-              <img loading="lazy" src={imageUrl}
-                alt=""
-                
-                onError={() => rotateToNextVariant(key, variantsCount, failedIndex)}
-                className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-200"
-              />
+              isVideoPreview ? (
+                <video
+                  src={imageUrl}
+                  className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-200"
+                  preload="metadata"
+                  muted
+                  playsInline
+                  onError={() => rotateToNextVariant(key, variantsCount, failedIndex)}
+                />
+              ) : (
+                <img loading="lazy" src={imageUrl}
+                  alt=""
+                  onError={() => rotateToNextVariant(key, variantsCount, failedIndex)}
+                  className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-200"
+                />
+              )
             ) : (
-              <div className="w-full h-full flex items-center justify-center bg-neutral-800">
+              <div className="w-full h-full flex items-center justify-center bg-neutral-200 dark:bg-neutral-700">
                 {isReel ? (
-                  <Play className="w-6 h-6 text-white/40 fill-white/40" />
+                  <Play className="w-6 h-6 text-neutral-400 fill-neutral-400" />
                 ) : (
-                  <Grid3X3 className="w-6 h-6 text-white/40" />
+                  <Grid3X3 className="w-6 h-6 text-neutral-400" />
                 )}
               </div>
             )}

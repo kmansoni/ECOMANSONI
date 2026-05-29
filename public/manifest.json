@@ -32,13 +32,3 @@
     }
   }
 }
-  ],
-  "screenshots": [],
-  "share_target": {
-    "action": "/mini-apps/share",
-    "method": "GET",
-    "params": {
-      "target_url": "url"
-    }
-  }
-}

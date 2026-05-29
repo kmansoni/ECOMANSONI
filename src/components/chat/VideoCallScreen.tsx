@@ -4,7 +4,6 @@ import { logger } from "@/lib/logger";
 import {
   ChevronLeft,
   Volume2,
-  VolumeX,
   Video,
   VideoOff,
   Mic,
@@ -24,6 +23,14 @@ import { GlassControlButton } from "@/components/ui/glass/GlassControlButton";
 import { CallStatusIndicator } from "@/components/ui/glass/CallStatusIndicator";
 import { CallBackground } from "@/components/ui/glass/CallBackground";
 import { GlassAvatarRing } from "@/components/ui/glass/GlassAvatarRing";
+import MaskOverlay from "@/components/mask/MaskOverlay";
+
+
+
+type AudioOutputMode = "earpiece" | "speaker";
+
+const SPEAKER_DEVICE_HINT = /(speaker|hands.?free|loud|динам|громк)/i;
+const EARPIECE_DEVICE_HINT = /(earpiece|receiver|handset|телефон|разговор)/i;
 
 function RingtonePlayer({ play }: { play: boolean }) {
   const audioRef = useRef<HTMLAudioElement>(null);
@@ -38,6 +45,51 @@ function RingtonePlayer({ play }: { play: boolean }) {
     }
   }, [play]);
   return <audio ref={audioRef} src="/ringtone.mp3" loop style={{ display: "none" }} />;
+}
+
+async function pickAudioOutputDeviceId(mode: AudioOutputMode): Promise<string | null> {
+  if (typeof navigator === "undefined" || !navigator.mediaDevices?.enumerateDevices) {
+    return null;
+  }
+
+  const devices = await navigator.mediaDevices.enumerateDevices();
+  const outputs = devices.filter((device) => device.kind === "audiooutput");
+  if (outputs.length === 0) return null;
+
+  const preferredHint = mode === "speaker" ? SPEAKER_DEVICE_HINT : EARPIECE_DEVICE_HINT;
+  const preferred = outputs.find((device) => preferredHint.test(device.label));
+  if (preferred) return preferred.deviceId;
+
+  const defaultOutput = outputs.find((device) => device.deviceId === "default");
+  if (defaultOutput) return defaultOutput.deviceId;
+
+  return outputs[0]?.deviceId ?? null;
+}
+
+async function applyAudioOutputMode(audioEl: HTMLAudioElement, mode: AudioOutputMode): Promise<void> {
+  const maybeNativePlugins = (globalThis as { Capacitor?: { Plugins?: Record<string, unknown> } }).Capacitor?.Plugins;
+  const routePlugin = (maybeNativePlugins?.CallAudioRoute ?? maybeNativePlugins?.AudioRoute ?? maybeNativePlugins?.InCallManager) as
+    | { setAudioRoute?: (args: { route: AudioOutputMode }) => Promise<void> }
+    | { setSpeakerphoneOn?: (args: { enabled: boolean }) => Promise<void> }
+    | undefined;
+
+  if (routePlugin && "setAudioRoute" in routePlugin && typeof routePlugin.setAudioRoute === "function") {
+    await routePlugin.setAudioRoute({ route: mode });
+    return;
+  }
+
+  if (routePlugin && "setSpeakerphoneOn" in routePlugin && typeof routePlugin.setSpeakerphoneOn === "function") {
+    await routePlugin.setSpeakerphoneOn({ enabled: mode === "speaker" });
+    return;
+  }
+
+  const sinkEl = audioEl as HTMLAudioElement & { setSinkId?: (sinkId: string) => Promise<void> };
+  if (typeof sinkEl.setSinkId !== "function") return;
+
+  const deviceId = await pickAudioOutputDeviceId(mode);
+  if (deviceId) {
+    await sinkEl.setSinkId(deviceId);
+  }
 }
 
 interface VideoCallScreenProps {
@@ -92,18 +144,19 @@ export function VideoCallScreen({
   const audioOutRef = useRef<HTMLAudioElement>(null);
   const remoteScreenRef = useRef<HTMLVideoElement>(null);
   const [callDuration, setCallDuration] = useState(0);
-  const [isRemoteAudioOn, setIsRemoteAudioOn] = useState(true);
+  const [audioOutputMode, setAudioOutputMode] = useState<AudioOutputMode>("earpiece");
   const [isSelfMain, setIsSelfMain] = useState(true);
 
   useEffect(() => {
     const audioEl = audioOutRef.current;
     if (!audioEl) return;
-    if (isRemoteAudioOn) {
-      audioEl.muted = false;
-    } else {
-      audioEl.muted = true;
-    }
-  }, [isRemoteAudioOn]);
+    applyAudioOutputMode(audioEl, audioOutputMode).catch((error) => {
+      logger.debug("video-call-screen: failed to apply audio output mode", {
+        mode: audioOutputMode,
+        error,
+      });
+    });
+  }, [audioOutputMode]);
 
   const shouldPlayRingtone = isCallRinging(callState);
   const isInitiator = call ? call.caller_id === user?.id : false;
@@ -210,6 +263,9 @@ export function VideoCallScreen({
   const showRetryButton = callState === "failed";
   const showWaitingUI = !showRetryButton && !isConnected;
   const hasRemoteScreen = isConnected && remoteScreenStream && remoteScreenStream.getVideoTracks().length > 0;
+  const handleToggleAudioOutput = () => {
+    setAudioOutputMode((prev) => (prev === "earpiece" ? "speaker" : "earpiece"));
+  };
 
   if (isVideoCall && localStream && !isVideoOff) {
     return (
@@ -224,24 +280,30 @@ export function VideoCallScreen({
 
         {hasRemoteVideo ? (
           <div className="absolute inset-0 w-full h-full">
-            {isSelfMain ? (
-              <video
-                ref={localVideoRef}
-                autoPlay playsInline muted
-                className="w-full h-full object-cover scale-x-[-1] transition-all duration-500 cursor-pointer"
-                style={{ opacity: isVideoOff ? 0.15 : 1, filter: isVideoOff ? "blur(2px) grayscale(0.7)" : "none", transition: "opacity 0.4s, filter 0.4s" }}
-                onClick={() => setIsSelfMain(false)}
-                title="Поменять местами"
-              />
-            ) : (
-              <video
-                ref={remoteVideoRef}
-                autoPlay playsInline
-                className="w-full h-full object-cover transition-all duration-500 cursor-pointer"
-                onClick={() => setIsSelfMain(true)}
-                title="Поменять местами"
-              />
-            )}
+{isSelfMain ? (
+              <>
+                <video
+                  ref={localVideoRef}
+                  autoPlay playsInline muted
+                  className="w-full h-full object-cover scale-x-[-1] transition-all duration-500 cursor-pointer"
+                  style={{ opacity: isVideoOff ? 0.15 : 1, filter: isVideoOff ? "blur(2px) grayscale(0.7)" : "none", transition: "opacity 0.4s, filter 0.4s" }}
+                  onClick={() => setIsSelfMain(false)}
+                  title="Поменять местами"
+                />
+                <MaskOverlay videoRef={localVideoRef} />
+              </>
+              ) : (
+              <>
+                <video
+                  ref={remoteVideoRef}
+                  autoPlay playsInline
+                  className="w-full h-full object-cover transition-all duration-500 cursor-pointer"
+                  onClick={() => setIsSelfMain(true)}
+                  title="Поменять местами"
+                />
+                <MaskOverlay videoRef={localVideoRef} />
+              </>
+              )}
             <div className="absolute top-20 right-4 w-28 h-40 z-10 transition-all duration-500">
               {isSelfMain ? (
                 <video
@@ -251,26 +313,30 @@ export function VideoCallScreen({
                   onClick={() => setIsSelfMain(true)}
                   title="Поменять местами"
                 />
-              ) : (
-                <video
-                  ref={localVideoRef}
-                  autoPlay playsInline muted
-                  className="w-full h-full object-cover rounded-2xl border-2 border-white/30 scale-x-[-1] shadow-lg transition-all duration-500 cursor-pointer"
-                  style={{ opacity: isVideoOff ? 0.15 : 1, filter: isVideoOff ? "blur(2px) grayscale(0.7)" : "none", transition: "opacity 0.4s, filter 0.4s" }}
-                  onClick={() => setIsSelfMain(false)}
-                  title="Поменять местами"
-                />
-              )}
+) : (
+                 <>
+                   <video
+                     ref={localVideoRef}
+                     autoPlay playsInline muted
+                     className="w-full h-full object-cover rounded-2xl border-2 border-white/30 scale-x-[-1] shadow-lg transition-all duration-500 cursor-pointer"
+                     style={{ opacity: isVideoOff ? 0.15 : 1, filter: isVideoOff ? "blur(2px) grayscale(0.7)" : "none", transition: "opacity 0.4s, filter 0.4s" }}
+                     onClick={() => setIsSelfMain(false)}
+                     title="Поменять местами"
+                   />
+                   <MaskOverlay videoRef={localVideoRef} />
+                 </>
+               )}
             </div>
           </div>
         ) : (
           <div className="absolute inset-0 w-full h-full">
-            <video
-              ref={localVideoRef}
-              autoPlay playsInline muted
-              className="w-full h-full object-cover scale-x-[-1] transition-opacity duration-400"
-              style={{ opacity: isVideoOff ? 0.15 : 1, filter: isVideoOff ? "blur(2px) grayscale(0.7)" : "none", transition: "opacity 0.4s, filter 0.4s" }}
-            />
+             <video
+               ref={localVideoRef}
+               autoPlay playsInline muted
+               className="w-full h-full object-cover scale-x-[-1] transition-opacity duration-400"
+               style={{ opacity: isVideoOff ? 0.15 : 1, filter: isVideoOff ? "blur(2px) grayscale(0.7)" : "none", transition: "opacity 0.4s, filter 0.4s" }}
+             />
+             <MaskOverlay videoRef={localVideoRef} />
             {isVideoOff && (
               <div className="absolute inset-0 flex items-center justify-center bg-black/60 transition-all duration-400">
                 <VideoOff className="w-16 h-16 text-white/80 animate-fade-in" />
@@ -339,8 +405,8 @@ export function VideoCallScreen({
         </div>
 
         <VideoCallControls
-          isRemoteAudioOn={isRemoteAudioOn}
-          onToggleRemoteAudio={() => setIsRemoteAudioOn(!isRemoteAudioOn)}
+          audioOutputMode={audioOutputMode}
+          onToggleAudioOutput={handleToggleAudioOutput}
           isVideoOff={isVideoOff}
           onToggleVideo={onToggleVideo}
           isMuted={isMuted}
@@ -420,8 +486,8 @@ export function VideoCallScreen({
         <audio ref={audioOutRef} autoPlay playsInline style={{ display: "none" }} />
 
         <VideoCallControls
-          isRemoteAudioOn={isRemoteAudioOn}
-          onToggleRemoteAudio={() => setIsRemoteAudioOn(!isRemoteAudioOn)}
+          audioOutputMode={audioOutputMode}
+          onToggleAudioOutput={handleToggleAudioOutput}
           isVideoOff={isVideoOff}
           onToggleVideo={onToggleVideo}
           isMuted={isMuted}
@@ -442,8 +508,8 @@ export function VideoCallScreen({
 }
 
 interface VideoCallControlsProps {
-  isRemoteAudioOn: boolean;
-  onToggleRemoteAudio: () => void;
+  audioOutputMode: AudioOutputMode;
+  onToggleAudioOutput: () => void;
   isVideoOff: boolean;
   onToggleVideo: () => void;
   isMuted: boolean;
@@ -463,7 +529,7 @@ interface VideoCallControlsProps {
 }
 
 function VideoCallControls({
-  isRemoteAudioOn, onToggleRemoteAudio,
+  audioOutputMode, onToggleAudioOutput,
   isVideoOff, onToggleVideo,
   isMuted, onToggleMute,
   onEnd,
@@ -502,10 +568,11 @@ function VideoCallControls({
       )}
       <div className="flex items-center justify-around">
         <GlassControlButton
-          icon={isRemoteAudioOn ? <Volume2 className="w-6 h-6" /> : <VolumeX className="w-6 h-6" />}
-          label={isRemoteAudioOn ? "Звук собеседника включен" : "Звук собеседника выключен"}
-          isActive={isRemoteAudioOn}
-          onClick={onToggleRemoteAudio}
+          icon={audioOutputMode === "speaker" ? <Volume2 className="w-6 h-6" /> : <Waves className="w-6 h-6" />}
+          label={audioOutputMode === "speaker" ? "Динамик" : "Пищалка"}
+          isActive={audioOutputMode === "speaker"}
+          onClick={onToggleAudioOutput}
+          hideLabel
         />
         <GlassControlButton
           icon={isVideoOff ? <VideoOff className="w-6 h-6" /> : <Video className="w-6 h-6" />}

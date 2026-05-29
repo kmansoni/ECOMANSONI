@@ -1,11 +1,11 @@
 /**
  * src/components/chat/ChatHeader.tsx
  *
- * Chat header bar: back button, avatar, name/status, call buttons.
- * Extracted from ChatConversation.tsx.
+ * Redesigned chat header bar: back button, avatar, name/status, call buttons.
+ * Features: Glass morphism, status dot, compact icons, Telegram-style.
  */
 import { useNavigate } from "react-router-dom";
-import { ArrowLeft, Phone, Video, Search, Users as UsersIcon } from "lucide-react";
+import { Phone, Video, Search, Users as UsersIcon } from "lucide-react";
 import { GradientAvatar } from "@/components/ui/gradient-avatar";
 import { TypingDots } from "./TypingDots";
 
@@ -51,16 +51,22 @@ export function ChatHeader({
   const navigate = useNavigate();
 
   return (
-    <div className="flex-shrink-0 safe-area-top relative z-10 backdrop-blur-xl bg-black/20 border-b border-white/10">
-      <div className="flex items-center px-2 py-2">
-        {/* Back button */}
+    <div className="flex-shrink-0 relative z-10">
+      {/* Main header bar */}
+      <div className="flex items-center px-3 py-2.5 gap-3">
+        {/* Back button - glass pill style */}
         <button
           onClick={onBack}
-          className="flex items-center gap-1 p-2 text-[#6ab3f3] hover:bg-white/5 rounded-lg transition-colors"
+          aria-label="Назад"
+          className="flex items-center justify-center w-9 h-9 rounded-full bg-white/10 backdrop-blur-md border border-white/15 hover:bg-white/20 active:bg-white/25 transition-all"
         >
-          <ArrowLeft className="w-5 h-5" />
+          <svg className="w-5 h-5 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M15 18l-6-6 6-6" />
+          </svg>
           {totalUnreadCount && totalUnreadCount > 0 ? (
-            <span className="text-sm font-medium">{totalUnreadCount > 99 ? "99+" : totalUnreadCount}</span>
+            <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 rounded-full bg-gradient-to-r from-cyan-500 to-blue-500 text-[10px] font-bold text-white flex items-center justify-center shadow-lg">
+              {totalUnreadCount > 99 ? "99+" : totalUnreadCount}
+            </span>
           ) : null}
         </button>
 
@@ -70,8 +76,8 @@ export function ChatHeader({
             if (isGroup) return;
             navigate(`/contact/${otherUserId}`, { state: { name: chatName, avatar: chatAvatar, conversationId } });
           }}
-          className={`flex items-center gap-3 flex-1 min-w-0 rounded-lg px-2 py-1 transition-colors ${
-            isGroup ? "cursor-default" : "hover:bg-white/5"
+          className={`flex items-center gap-3 flex-1 min-w-0 rounded-2xl px-2 py-1 transition-colors ${
+            isGroup ? "cursor-default" : "hover:bg-white/5 active:bg-white/10"
           }`}
         >
           <div className="relative flex-shrink-0">
@@ -81,96 +87,98 @@ export function ChatHeader({
               avatarUrl={chatAvatar}
               size="sm"
             />
-            {otherStatusStickerUrl ? (
+            {/* Status indicator - online/typing */}
+            {!isGroup && (
+              <div className={`absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2 border-[#0a1628] ${
+                isOtherTyping ? "bg-cyan-400" : isOtherOnline ? "bg-emerald-400" : "bg-white/40"
+              }`} />
+            )}
+            {otherStatusStickerUrl && (
               <img loading="lazy"
                 src={otherStatusStickerUrl}
                 alt="status sticker"
-                className="absolute -bottom-2 -left-2 w-9 h-9 rounded-xl object-cover bg-white/10 border border-white/20"
+                className="absolute -bottom-2 -left-2 w-8 h-8 rounded-xl object-cover bg-white/10 border border-white/20 shadow-md"
               />
-            ) : null}
+            )}
           </div>
+
           <div className="flex flex-col items-start min-w-0">
-            <h2 className="font-semibold text-white text-base truncate max-w-[180px]">
-              {chatName}{otherStatusEmoji ? ` ${otherStatusEmoji}` : ""}
+            <h2 className="font-semibold text-white text-[15px] truncate max-w-[160px] flex items-center gap-1.5">
+              {chatName}
+              {otherStatusEmoji && (
+                <span className="text-base">{otherStatusEmoji}</span>
+              )}
             </h2>
-            <p
-              className={`text-xs flex items-center gap-1.5 ${
+            <div className="flex items-center gap-1.5">
+              {/* Status text with typing animation */}
+              <span className={`text-xs ${
                 isGroup
-                  ? "text-[#6ab3f3]"
+                  ? "text-cyan-300/80"
                   : isOtherTyping
-                    ? "text-[#6ab3f3]"
+                    ? "text-cyan-300"
                     : isOtherOnline
-                      ? "text-emerald-400"
-                      : "text-[#6ab3f3]"
-              }`}
-            >
-              {!isGroup ? (
-                <span
-                  className={`inline-block w-2 h-2 rounded-full ${
-                    isOtherTyping ? "bg-[#6ab3f3]" : isOtherOnline ? "bg-emerald-400" : "bg-white/40"
-                  }`}
-                  aria-hidden="true"
-                />
-              ) : null}
-              <span className="truncate">
+                      ? "text-emerald-300"
+                      : "text-white/50"
+              }`}>
                 {headerStatusText}
-                {isOtherTyping && <TypingDots className="ml-1" />}
+                {isOtherTyping && <TypingDots className="ml-1 inline-block" />}
               </span>
-            </p>
+            </div>
           </div>
         </button>
 
-        {/* Right - quick actions */}
-        <div className="flex items-center">
+        {/* Quick actions - compact glass buttons */}
+        <div className="flex items-center gap-1.5">
           <button
             onClick={onSearchOpen}
-            className="p-2 rounded-full hover:bg-white/10 transition-colors"
+            className="w-8 h-8 rounded-full flex items-center justify-center bg-white/8 hover:bg-white/15 active:bg-white/20 transition-all border border-white/10"
             aria-label="Поиск сообщений"
           >
-            <Search className="w-4 h-4 text-white/60" />
+            <Search className="w-4 h-4 text-white/80" />
           </button>
           <button
             onClick={onStartAudioCall}
-            className="p-2 rounded-full hover:bg-white/10 active:bg-white/15 transition-colors relative"
+            className="relative w-8 h-8 rounded-full flex items-center justify-center bg-white/8 hover:bg-white/15 active:bg-white/20 transition-all border border-white/10"
             aria-label="Аудиозвонок"
             data-testid="audio-call-btn"
           >
-            <Phone className="w-5 h-5 text-[#6ab3f3]" />
-            {isGroup && <UsersIcon className="w-3 h-3 text-[#6ab3f3] absolute -bottom-0.5 -right-0.5" />}
+            <Phone className="w-4 h-4 text-cyan-300" />
+            {isGroup && <UsersIcon className="w-2.5 h-2.5 text-cyan-300 absolute -bottom-0.5 -right-0.5" />}
           </button>
           <button
             onClick={onStartVideoCall}
-            className="p-2 rounded-full hover:bg-white/10 active:bg-white/15 transition-colors relative"
+            className="relative w-8 h-8 rounded-full flex items-center justify-center bg-white/8 hover:bg-white/15 active:bg-white/20 transition-all border border-white/10"
             aria-label="Видеозвонок"
             data-testid="video-call-btn"
           >
-            <Video className="w-5 h-5 text-[#6ab3f3]" />
-            {isGroup && <UsersIcon className="w-3 h-3 text-[#6ab3f3] absolute -bottom-0.5 -right-0.5" />}
+            <Video className="w-4 h-4 text-cyan-300" />
+            {isGroup && <UsersIcon className="w-2.5 h-2.5 text-cyan-300 absolute -bottom-0.5 -right-0.5" />}
           </button>
           {isGroup && onStartGroupVideoCall && (
             <button
               onClick={onStartGroupVideoCall}
-              className="p-2 rounded-full hover:bg-white/10 active:bg-white/15 transition-colors relative"
+              className="relative w-8 h-8 rounded-full flex items-center justify-center bg-cyan-500/20 hover:bg-cyan-500/30 transition-all border border-cyan-400/30"
               aria-label="Групповой видеозвонок"
             >
-              <Video className="w-5 h-5 text-[#6ab3f3]" />
-              <div className="absolute -bottom-0.5 -right-0.5 flex h-3 w-3 items-center justify-center bg-[#6ab3f3] rounded-full">
-                <span className="text-white text-xs">+</span>
+              <Video className="w-4 h-4 text-cyan-300" />
+              <div className="absolute -bottom-0.5 -right-0.5 flex h-3 w-3 items-center justify-center bg-cyan-400 rounded-full">
+                <span className="text-[8px] font-bold text-[#0a1628]">+</span>
               </div>
             </button>
           )}
         </div>
       </div>
 
+      {/* Add members bar - only for groups */}
       {isGroup && onAddMembers && (
         <button
           onClick={onAddMembers}
-          className="w-full py-2.5 px-4 bg-white/5 flex items-center justify-center gap-2 border-t border-white/5 hover:bg-white/10 transition-colors"
+          className="w-full py-2.5 px-4 flex items-center justify-center gap-2 bg-cyan-500/10 hover:bg-cyan-500/20 active:bg-cyan-500/30 transition-all border-y border-cyan-400/20"
         >
-          <span className="text-[#6ab3f3] text-sm font-medium">Добавить участников</span>
-          <span className="w-5 h-5 rounded-full border border-white/20 flex items-center justify-center">
-            <span className="text-white/60 text-xs leading-none">+</span>
-          </span>
+          <span className="text-cyan-300 text-sm font-medium">Добавить участников</span>
+          <div className="w-5 h-5 rounded-full bg-cyan-400/20 border border-cyan-400/40 flex items-center justify-center">
+            <span className="text-cyan-300 text-xs font-bold">+</span>
+          </div>
         </button>
       )}
     </div>

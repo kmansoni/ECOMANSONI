@@ -60,7 +60,8 @@ function MobileLayout() {
   return (
     <div
       className={cn(
-        "AppShell h-full flex flex-col safe-area-left safe-area-right relative bg-transparent"
+        "AppShell h-full flex flex-col safe-area-left safe-area-right relative",
+        "app-shell-unified-bg"
       )}
       style={{
         position: 'relative',
@@ -74,6 +75,7 @@ function MobileLayout() {
           className={cn(
             "flex-1 overflow-x-hidden w-full native-scroll relative z-10",
             isFullWidthPage ? "max-w-none" : "max-w-lg mx-auto",
+            !isFullWidthPage && !isReelsPage && "app-main-unified-surface",
             "overflow-y-auto"
           )}
           style={{

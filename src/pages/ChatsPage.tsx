@@ -9,6 +9,7 @@ import { ChatConversation } from "@/components/chat/ChatConversation";
 import { ChatStories } from "@/components/chat/ChatStories";
 import { ChatSearchSheet } from "@/components/chat/ChatSearchSheet";
 import { CreateChatSheet } from "@/components/chat/CreateChatSheet";
+import { ContactsHubSheet } from "@/components/chat/ContactsHubSheet";
 import { ChannelConversation } from "@/components/chat/ChannelConversation";
 import { GroupConversation } from "@/components/chat/GroupConversation";
 import { useAuth } from "@/hooks/useAuth";
@@ -29,7 +30,7 @@ import { usePullDownExpand } from "@/hooks/usePullDownExpand";
 import { supabase } from "@/lib/supabase";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
-import { Bot } from "lucide-react";
+import { ContactRound } from "lucide-react";
 import { pbkdf2Hash, verifyPasscodeHash } from "@/lib/passcode";
 import { useArchivedChats } from "@/hooks/useArchivedChats";
 import { usePinnedChats } from "@/hooks/usePinnedChats";
@@ -46,7 +47,6 @@ import {
   BookmarkIcon,
   BroadcastIcon,
   CheckIcon,
-  CreateIcon,
   DoubleCheckIcon,
   GroupIcon,
   LoginIcon,
@@ -77,11 +77,28 @@ interface TypingBroadcastPayload {
 
 // Animation constants
 const HEADER_BASE_HEIGHT = 56;
-const PRIMARY_TABS_HEIGHT = 40;
+const PRIMARY_TABS_HEIGHT = 42;
 const FILTERS_HEIGHT = 44;
-const CREATE_ACTIONS_HEIGHT = 44;
+const CALLS_FILTERS_HEIGHT = 38;
 const STORIES_ROW_HEIGHT = 92;
 const CHAT_LIST_PLACEHOLDER_COUNT = 6;
+const TECHNICAL_CHAT_NAME_RE = /^(calls?\s*e2e|debug|test)\b/i;
+const MOSTLY_DIGITS_RE = /^(?:\D*\d){8,}\D*$/;
+
+function sanitizeChatTitle(raw: string | null | undefined, fallback: string): string {
+  const value = (raw ?? "").trim();
+  if (!value) return fallback;
+  if (TECHNICAL_CHAT_NAME_RE.test(value)) return "Секретный чат";
+  if (MOSTLY_DIGITS_RE.test(value)) return fallback;
+  return value;
+}
+
+function sanitizeChatPreview(raw: string | null | undefined): string {
+  const value = (raw ?? "").trim();
+  if (!value) return "Медиафайл";
+  if (TECHNICAL_CHAT_NAME_RE.test(value)) return "Системное сообщение";
+  return value;
+}
 
 export function ChatsPage() {
   const navigate = useNavigate();
@@ -135,6 +152,7 @@ export function ChatsPage() {
   const [inlineSearchActive, setInlineSearchActive] = useState(false);
   const inlineSearchRef = useRef<HTMLInputElement>(null);
   const [emergencyOpen, setEmergencyOpen] = useState(false);
+  const [contactsHubOpen, setContactsHubOpen] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
   const [createMode, setCreateMode] = useState<"select" | "channel" | "group">("select");
   const [pendingNewMessageText, setPendingNewMessageText] = useState<string | null>(null);
@@ -231,6 +249,16 @@ export function ChatsPage() {
       setPrimaryTab("chats");
     }
   }, [primaryTab, showCallsTab]);
+
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    const tab = params.get("tab");
+    if (tab === "calls" && showCallsTab) {
+      setPrimaryTab("calls");
+      return;
+    }
+    setPrimaryTab("chats");
+  }, [location.search, showCallsTab]);
 
   const clearLongPressTimer = () => {
     if (longPressTimerRef.current) {
@@ -404,10 +432,14 @@ export function ChatsPage() {
     // Base filter: exclude archived
     const unarchived = combinedItems.filter((it) => !archivedChatIds.has(it.id));
 
+    const isAllFolder =
+      !!activeFolder &&
+      (activeFolder.system_kind === "all" || (activeFolder.name || "").trim().toLowerCase() === "все");
+
     let filtered: CombinedItem[];
     if (!activeFolder) {
       filtered = unarchived;
-    } else if (activeFolder.system_kind === "all") {
+    } else if (isAllFolder) {
       filtered = unarchived;
     } else if (activeFolder.system_kind === "chats") {
       filtered = unarchived.filter((it) => it.kind === "dm");
@@ -504,7 +536,7 @@ export function ChatsPage() {
       }
 
       const participantIds = [...new Set((participantRows || []).map((participant) => String(participant.user_id || "")).filter(Boolean))];
-      const briefMap = await fetchUserBriefMap(participantIds, supabase);
+      const briefMap = await fetchUserBriefMap(participantIds, supabase as unknown as Parameters<typeof fetchUserBriefMap>[1]);
       const participants = (participantRows || []).map((participant) => {
         const participantUserId = String(participant.user_id || "");
         const brief = briefMap.get(participantUserId);
@@ -840,11 +872,6 @@ export function ChatsPage() {
 
   const showStories = primaryTab === "chats" && !selectedConversation && !selectedChannel && !selectedGroup;
 
-  const expandedHeaderHeight = HEADER_BASE_HEIGHT + PRIMARY_TABS_HEIGHT + FILTERS_HEIGHT + (showStories ? STORIES_ROW_HEIGHT : 0);
-  const collapsedHeaderHeight = HEADER_BASE_HEIGHT + PRIMARY_TABS_HEIGHT;
-  const pullDown = usePullDownExpand({ expandedHeight: expandedHeaderHeight, collapsedHeight: collapsedHeaderHeight });
-  const isHeaderExpanded = pullDown.currentHeight > collapsedHeaderHeight + 8;
-
   const isCallsEmpty = !callsLoading && filteredCalls.length === 0;
   const isChatsEmpty = !chatsLoading && conversations.length === 0 && channels.length === 0 && groups.length === 0;
 
@@ -1106,10 +1133,13 @@ export function ChatsPage() {
   }
 
   // Calculate header height based on expand progress
-  const primaryTabsHeight = showCallsTab ? PRIMARY_TABS_HEIGHT : 0;
-  const filtersHeight = primaryTab === "chats" ? FILTERS_HEIGHT : 0;
-  const createActionsHeight = primaryTab === "chats" ? CREATE_ACTIONS_HEIGHT : 0;
-  const headerHeight = HEADER_BASE_HEIGHT + primaryTabsHeight + filtersHeight + createActionsHeight + (STORIES_ROW_HEIGHT * effectiveExpandProgress);
+  const primaryTabsHeight = primaryTab === "chats" && showCallsTab ? PRIMARY_TABS_HEIGHT : 0;
+  const filtersHeight = primaryTab === "chats"
+    ? FILTERS_HEIGHT
+    : primaryTab === "calls"
+      ? CALLS_FILTERS_HEIGHT
+      : 0;
+  const headerHeight = HEADER_BASE_HEIGHT + primaryTabsHeight + filtersHeight + (STORIES_ROW_HEIGHT * effectiveExpandProgress);
   const showChatListPlaceholders = primaryTab === "chats" && !showArchive && archivedLoading;
   const currentUserName =
     (typeof user?.user_metadata?.full_name === "string" && user.user_metadata.full_name.trim()) ||
@@ -1118,81 +1148,97 @@ export function ChatsPage() {
 
   return (
     <ScrollContainerProvider value={chatListRef}>
-      <div className="h-full flex flex-col overflow-hidden relative">
+      <div className="chats-page-scope h-full flex flex-col overflow-hidden relative">
         {/* Dynamic Header with stories stack/row */}
         <div 
-          className="flex-shrink-0 overflow-hidden bg-background/80 dark:bg-white/5 backdrop-blur-xl border-b border-border/50 dark:border-white/10"
+          className="chats-header flex-shrink-0 overflow-hidden"
           style={{ 
             height: headerHeight,
             transition: 'height 0.25s cubic-bezier(0.25, 0.1, 0.25, 1)',
           }}
         >
-          {/* Top row: stack (when collapsed) + title + actions */}
+          {/* Top row: stories stack + title + actions */}
           <div className="flex items-center justify-between px-4 h-14">
-            {/* Stories stack (collapsed) - left side */}
-            <div 
-              className="flex-shrink-0"
-              style={{ 
-                opacity: 1 - effectiveExpandProgress,
-                pointerEvents: effectiveExpandProgress > 0.5 ? 'none' : 'auto',
-                transition: 'opacity 0.2s ease-out',
-              }}
-            >
-              {primaryTab === "chats" && (
-                <ChatStories 
-                  expandProgress={0} 
-                  mode="stack" 
-                  onStackClick={toggleExpanded}
-                />
-              )}
+            {/* Stories stack (collapsed) */}
+            <div className="flex items-center gap-2.5 flex-shrink-0">
+              <div
+                className="flex-shrink-0"
+                style={{
+                  opacity: 1 - effectiveExpandProgress,
+                  pointerEvents: effectiveExpandProgress > 0.5 ? 'none' : 'auto',
+                  transition: 'opacity 0.2s ease-out',
+                }}
+              >
+                {primaryTab === "chats" && (
+                  <ChatStories
+                    expandProgress={0}
+                    mode="stack"
+                    onStackClick={toggleExpanded}
+                  />
+                )}
+              </div>
             </div>
-            
+
             {/* Title / Inline search */}
             {inlineSearchActive ? (
-              <div className="flex-1 flex items-center gap-2 mx-2">
+              <div className="flex-1 flex items-center gap-2.5 mx-2">
                 <input
                   ref={inlineSearchRef}
                   type="text"
                   value={inlineSearchQuery}
                   onChange={(e) => setInlineSearchQuery(e.target.value)}
                   placeholder="Поиск чатов..."
-                  className="flex-1 h-9 px-3 rounded-lg bg-black/5 dark:bg-white/10 border border-border/50 dark:border-white/20 text-sm text-foreground dark:text-white placeholder:text-muted-foreground outline-none focus:ring-1 focus:ring-primary/50"
+                  className="flex-1 h-10 px-3.5 rounded-2xl bg-white/10 border border-white/20 text-[15px] font-medium text-white placeholder:text-white/45 outline-none focus:ring-1 focus:ring-cyan-400/60"
                   autoFocus
                 />
                 <button
                   onClick={() => { setInlineSearchActive(false); setInlineSearchQuery(""); }}
-                  className="text-sm text-primary font-medium"
+                  className="text-[15px] text-cyan-300 font-semibold hover:text-cyan-200 transition-colors"
                 >
                   Отмена
                 </button>
               </div>
             ) : (
               <>
+                {/* Title - centered */}
                 <h1
-                  className="text-lg font-semibold absolute left-1/2 text-foreground dark:text-white"
+                  className="text-[26px] font-semibold tracking-tight text-white absolute left-1/2 -translate-x-1/2 antialiased"
                   style={{
-                    transform: `translateX(-50%) translateX(${(1 - effectiveExpandProgress) * 30}px)`,
+                    opacity: 1 - effectiveExpandProgress * 0.5,
+                    transform: `translateX(-50%) translateX(${(1 - effectiveExpandProgress) * 20}px)`,
                     transition: 'transform 0.25s cubic-bezier(0.25, 0.1, 0.25, 1)',
+                    textShadow: '0 2px 12px rgba(0,0,0,0.35)',
                   }}
                 >
                   {primaryTab === "calls" ? "Звонки" : "Чаты"}
                 </h1>
 
-                {/* Actions: Search */}
+                {/* Actions: compact glass buttons */}
                 {primaryTab === "chats" && (
-                  <div className="flex items-center gap-1">
+                  <div className="flex items-center gap-2 ml-auto">
+                    <button
+                      onClick={() => setContactsHubOpen(true)}
+                      className="w-9 h-9 flex items-center justify-center rounded-full bg-white/10 hover:bg-white/16 active:bg-white/24 transition-all border border-white/15 shadow-[0_3px_10px_rgba(0,0,0,0.28)]"
+                      aria-label="Открыть контакты"
+                    >
+                      <ContactRound className="w-[16px] h-[16px] text-white/90" strokeWidth={2} />
+                    </button>
                     <button
                       onClick={() => setEmergencyOpen(true)}
-                      className="w-9 h-9 flex items-center justify-center rounded-full bg-red-500/10 backdrop-blur-xl border border-red-500/20 hover:bg-red-500/15 transition-colors"
+                      className="relative w-9 h-9 flex items-center justify-center rounded-full bg-red-500/15 hover:bg-red-500/25 active:bg-red-500/35 transition-all border border-red-500/35 shadow-[0_3px_10px_rgba(220,38,38,0.3)]"
                       aria-label="Открыть SOS-центр"
                     >
-                      <BellIcon active size={20} tone="red" />
+                      <BellIcon size={16} active className="text-white" />
+                      <span className="absolute -top-1 -right-1 min-w-[16px] h-4 px-1 rounded-full bg-red-500 text-[10px] font-bold text-white flex items-center justify-center shadow-md">
+                        !
+                      </span>
                     </button>
                     <button
                       onClick={() => setInlineSearchActive(true)}
-                      className="w-9 h-9 flex items-center justify-center rounded-full bg-black/5 dark:bg-white/10 backdrop-blur-xl border border-border/50 dark:border-white/20 hover:bg-black/10 dark:hover:bg-white/20 transition-colors"
+                      className="w-9 h-9 flex items-center justify-center rounded-full bg-white/10 hover:bg-white/16 active:bg-white/24 transition-all border border-white/15 shadow-[0_3px_10px_rgba(0,0,0,0.28)]"
+                      aria-label="Поиск по чатам"
                     >
-                      <SearchIcon size={20} noAnimate className="text-foreground dark:text-white" />
+                      <SearchIcon size={16} noAnimate className="text-white/90" />
                     </button>
                   </div>
                 )}
@@ -1200,33 +1246,6 @@ export function ChatsPage() {
             )}
           </div>
           
-          {showCallsTab && (
-            <div className="flex items-center gap-2 px-4 h-10">
-              <button
-                onClick={() => setPrimaryTab("chats")}
-                className={cn(
-                  "px-3 py-1.5 text-sm font-medium rounded-full transition-all",
-                  primaryTab === "chats"
-                    ? "bg-black/5 text-foreground dark:bg-white/20 dark:text-white"
-                    : "text-muted-foreground hover:text-foreground dark:text-white/50 dark:hover:text-white/80",
-                )}
-              >
-                Чаты
-              </button>
-              <button
-                onClick={() => setPrimaryTab("calls")}
-                className={cn(
-                  "px-3 py-1.5 text-sm font-medium rounded-full transition-all",
-                  primaryTab === "calls"
-                    ? "bg-black/5 text-foreground dark:bg-white/20 dark:text-white"
-                    : "text-muted-foreground hover:text-foreground dark:text-white/50 dark:hover:text-white/80",
-                )}
-              >
-                Звонки
-              </button>
-            </div>
-          )}
-
           {/* Unified tabs (system + custom) */}
           {primaryTab === "chats" && (
             <div className="flex items-center gap-2 px-4 h-11 overflow-x-auto no-scrollbar">
@@ -1241,6 +1260,8 @@ export function ChatsPage() {
                   return (
                     <button
                       key={t.id}
+                      data-chat-chip="folder"
+                      data-active={isActive ? "true" : "false"}
                       ref={(el) => {
                         tabRefs.current[t.id] = el;
                       }}
@@ -1296,14 +1317,14 @@ export function ChatsPage() {
                       onPointerUp={onTabPointerUp}
                       onPointerCancel={onTabPointerCancel}
                       className={cn(
-                        "px-3 py-1.5 text-sm font-medium rounded-full transition-all select-none flex-shrink-0",
+                        "px-3.5 py-1.5 text-sm font-semibold rounded-full transition-all select-none flex-shrink-0 antialiased",
                         "touch-none",
                         isActive
-                          ? "bg-black/5 text-foreground dark:bg-white/20 dark:text-white"
-                          : "text-muted-foreground hover:text-foreground dark:text-white/50 dark:hover:text-white/80",
-                        draggingId === t.id && "scale-[1.06] bg-black/10 ring-2 ring-border/60 shadow-lg cursor-grabbing dark:bg-white/30 dark:ring-white/30",
+                          ? "bg-cyan-500/25 border border-cyan-400/40 text-white shadow-[0_0_8px_rgba(0,200,255,0.15)]"
+                          : "bg-white/5 border border-white/10 text-white/90 hover:text-white hover:bg-white/10",
+                        draggingId === t.id && "scale-[1.06] bg-cyan-500/30 ring-2 ring-cyan-400/40 shadow-lg cursor-grabbing",
                         draggingId && draggingId !== t.id && "cursor-grab",
-                        isLocked && "opacity-80",
+                        isLocked && "opacity-70",
                       )}
                     >
                       {t.name}
@@ -1313,32 +1334,37 @@ export function ChatsPage() {
             </div>
           )}
 
-          {primaryTab === "chats" && (
-            <div className="flex items-center gap-2 px-4 h-11 overflow-x-auto no-scrollbar">
+          {primaryTab === "calls" && (
+            <div className="flex items-center gap-2 px-4 h-9 overflow-x-auto no-scrollbar">
               <button
-                onClick={() => openCreateSheet("group")}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-full bg-black/5 text-foreground hover:bg-black/10 dark:bg-white/10 dark:text-white dark:hover:bg-white/20 transition-colors"
+                onClick={() => setCallsFilter("all")}
+                data-filter-chip="calls"
+                data-active={callsFilter === "all" ? "true" : "false"}
+                className={cn(
+                  "px-3.5 py-1.5 text-sm font-semibold rounded-full transition-all flex-shrink-0 antialiased",
+                  callsFilter === "all"
+                    ? "bg-cyan-500/30 border border-cyan-400/40 text-white shadow-[0_0_6px_rgba(0,200,255,0.1)]"
+                    : "bg-white/5 border border-white/10 text-white/90 hover:bg-white/10",
+                )}
               >
-                <GroupIcon size={16} noAnimate className="text-current" />
-                Группа
+                Все
               </button>
               <button
-                onClick={() => openCreateSheet("channel")}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-full bg-black/5 text-foreground hover:bg-black/10 dark:bg-white/10 dark:text-white dark:hover:bg-white/20 transition-colors"
+                onClick={() => setCallsFilter("missed")}
+                data-filter-chip="calls"
+                data-active={callsFilter === "missed" ? "true" : "false"}
+                className={cn(
+                  "px-3.5 py-1.5 text-sm font-semibold rounded-full transition-all flex-shrink-0 antialiased",
+                  callsFilter === "missed"
+                    ? "bg-cyan-500/30 border border-cyan-400/40 text-white shadow-[0_0_6px_rgba(0,200,255,0.1)]"
+                    : "bg-white/5 border border-white/10 text-white/90 hover:bg-white/10",
+                )}
               >
-                <BroadcastIcon size={16} noAnimate className="text-current" />
-                Канал
-              </button>
-              <button
-                onClick={() => navigate("/bots/new")}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-full bg-black/5 text-foreground hover:bg-black/10 dark:bg-white/10 dark:text-white dark:hover:bg-white/20 transition-colors"
-              >
-                <Bot className="w-4 h-4" />
-                Чат-бот
+                Пропущенные
               </button>
             </div>
           )}
-          
+
           {/* Stories row (expanded) - appears below title */}
           {primaryTab === "chats" && (
             <div 
@@ -1361,35 +1387,10 @@ export function ChatsPage() {
         {/* Scrollable list - unified view */}
         <div 
           ref={chatListRef}
-          className="flex-1 overflow-y-auto overscroll-contain px-3 py-2"
+          className="chats-list flex-1 overflow-y-auto overscroll-contain px-3 py-2"
         >
           {primaryTab === "calls" ? (
             <>
-              <div className="flex items-center gap-2 px-2 py-2">
-                <button
-                  onClick={() => setCallsFilter("all")}
-                  className={cn(
-                    "px-3 py-1.5 text-sm font-medium rounded-full transition-all",
-                    callsFilter === "all"
-                      ? "bg-black/5 text-foreground dark:bg-white/20 dark:text-white"
-                      : "text-muted-foreground hover:text-foreground dark:text-white/50 dark:hover:text-white/80",
-                  )}
-                >
-                  Все
-                </button>
-                <button
-                  onClick={() => setCallsFilter("missed")}
-                  className={cn(
-                    "px-3 py-1.5 text-sm font-medium rounded-full transition-all",
-                    callsFilter === "missed"
-                      ? "bg-black/5 text-foreground dark:bg-white/20 dark:text-white"
-                      : "text-muted-foreground hover:text-foreground dark:text-white/50 dark:hover:text-white/80",
-                  )}
-                >
-                  Пропущенные
-                </button>
-              </div>
-
               {callsLoading && (
                 <div className="flex items-center justify-center py-8">
                   <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-muted-foreground/40 dark:border-white/50" />
@@ -1443,14 +1444,14 @@ export function ChatsPage() {
                           )}>
                             {name}
                           </span>
-                          <span className="text-xs text-muted-foreground/70 dark:text-white/40 flex-shrink-0 ml-2">
+                          <span className="text-xs text-muted-foreground/85 dark:text-white/65 flex-shrink-0 ml-2">
                             {formatTime(call.created_at)}
                           </span>
                         </div>
                         <div className="flex items-center justify-between">
                           <p className={cn(
                             "text-sm truncate flex-1",
-                            isMissed ? "text-destructive/80 dark:text-red-200/80" : "text-muted-foreground dark:text-white/50",
+                            isMissed ? "text-destructive/85 dark:text-red-200/90" : "text-muted-foreground dark:text-white/72",
                           )}>
                             {isIncoming ? "Входящий" : "Исходящий"} · {statusLabel}
                           </p>
@@ -1552,7 +1553,7 @@ export function ChatsPage() {
                       </span>
                       <span
                         className={cn(
-                          "ml-2 inline-block w-[44px] text-right text-xs text-muted-foreground/70 dark:text-white/40 flex-shrink-0",
+                          "ml-2 inline-block w-[44px] text-right text-xs text-muted-foreground/85 dark:text-white/65 flex-shrink-0",
                           !savedMessagesLoading && savedMessages.length > 0 && savedMessages[0]?.saved_at
                             ? "opacity-100"
                             : "opacity-0",
@@ -1563,11 +1564,11 @@ export function ChatsPage() {
                           : "00:00"}
                       </span>
                     </div>
-                    <p className="text-sm text-muted-foreground dark:text-white/50 truncate">
+                    <p className="text-sm text-muted-foreground dark:text-white/72 truncate">
                       {savedMessagesLoading
                         ? "Загрузка…"
                         : savedMessages.length > 0
-                        ? savedMessages[0]?.content || "Медиафайл"
+                        ? sanitizeChatPreview(savedMessages[0]?.content)
                         : "Сохраняйте сообщения здесь"}
                     </p>
                   </div>
@@ -1601,7 +1602,7 @@ export function ChatsPage() {
                       {archivedCount} {archivedCount === 1 ? "чат" : archivedCount < 5 ? "чата" : "чатов"}
                     </p>
                   </div>
-                  <Badge className="h-5 min-w-5 rounded-full px-1.5 text-[11px] flex-shrink-0 ml-2 bg-slate-500 text-white border-0">
+                  <Badge className="h-6 min-w-6 rounded-full px-2 text-xs font-semibold flex-shrink-0 ml-2 bg-slate-500 text-white border-0">
                     {archivedCount}
                   </Badge>
                 </div>
@@ -1633,6 +1634,7 @@ export function ChatsPage() {
 
                 if (item.kind === "channel") {
                   const channel = item.channel;
+                  const channelDisplayName = sanitizeChatTitle(channel.name, "Канал");
                   return (
                     <div key={itemKey} className="relative overflow-hidden">
                       {/* Right swipe reveal: pin */}
@@ -1678,7 +1680,7 @@ export function ChatsPage() {
                         className="flex items-center gap-3 px-4 py-3 bg-background hover:bg-muted/60 active:bg-muted transition-colors cursor-pointer dark:bg-transparent dark:hover:bg-white/5"
                       >
                         <div className="relative flex-shrink-0">
-                          <GradientAvatar name={channel.name} seed={channel.id} avatarUrl={channel.avatar_url} size="md" />
+                          <GradientAvatar name={channelDisplayName} seed={channel.id} avatarUrl={channel.avatar_url} size="md" />
                           {channel.is_member && (
                             <div className="absolute -bottom-0.5 -right-0.5 w-5 h-5 bg-emerald-500 rounded-full flex items-center justify-center border-2 border-background dark:border-slate-900">
                               <CheckIcon size={12} noAnimate className="text-white" />
@@ -1689,17 +1691,17 @@ export function ChatsPage() {
                           <div className="flex items-center justify-between mb-0.5">
                             <span className="font-medium text-foreground dark:text-white truncate flex items-center gap-1.5">
                               <BroadcastIcon size={16} noAnimate className="text-cyan-400 flex-shrink-0" />
-                              {channel.name}
+                              {channelDisplayName}
                             </span>
-                            <span className="text-xs text-muted-foreground/70 dark:text-white/40 flex-shrink-0 ml-2">
+                            <span className="text-xs text-muted-foreground/85 dark:text-white/65 flex-shrink-0 ml-2">
                               {formatTime(channel.last_message?.created_at || channel.updated_at)}
                             </span>
                           </div>
                           <div className="flex items-center justify-between">
-                            <p className="text-sm text-muted-foreground dark:text-white/50 truncate flex-1">
+                            <p className="text-sm text-muted-foreground dark:text-white/72 truncate flex-1">
                               {channel.last_message?.content || channel.description || `${channel.member_count} подписчиков`}
                             </p>
-                            <div className="flex items-center gap-1 text-xs text-muted-foreground/70 dark:text-white/40 ml-2">
+                            <div className="flex items-center gap-1 text-xs text-muted-foreground/85 dark:text-white/65 ml-2">
                               <GroupIcon size={12} noAnimate className="text-current" />
                               {channel.member_count}
                             </div>
@@ -1713,6 +1715,7 @@ export function ChatsPage() {
                 if (item.kind === "group") {
                   const group = item.group;
                   const pinned = isPinned(group.id);
+                  const groupDisplayName = sanitizeChatTitle(group.name, "Группа");
                   return (
                     <div key={itemKey} className="relative overflow-hidden">
                       <AnimatePresence>
@@ -1760,7 +1763,7 @@ export function ChatsPage() {
                         className="flex items-center gap-3 px-4 py-3 bg-background hover:bg-muted/60 active:bg-muted transition-colors cursor-pointer dark:bg-transparent dark:hover:bg-white/5"
                       >
                         <div className="relative flex-shrink-0">
-                          <GradientAvatar name={group.name} seed={group.id} avatarUrl={group.avatar_url} size="md" />
+                          <GradientAvatar name={groupDisplayName} seed={group.id} avatarUrl={group.avatar_url} size="md" />
                           <div className="absolute -bottom-0.5 -right-0.5 w-5 h-5 bg-blue-500 rounded-full flex items-center justify-center border-2 border-background dark:border-slate-900">
                             <GroupIcon size={12} noAnimate className="text-white" />
                           </div>
@@ -1769,14 +1772,14 @@ export function ChatsPage() {
                           <div className="flex items-center justify-between mb-0.5">
                             <span className="font-medium text-foreground dark:text-white truncate flex items-center gap-1.5">
                               {pinned && <PinIcon size={12} noAnimate className="text-cyan-400 flex-shrink-0" />}
-                              {group.name}
+                              {groupDisplayName}
                             </span>
-                            <span className="text-xs text-muted-foreground/70 dark:text-white/40 flex-shrink-0 ml-2">
+                            <span className="text-xs text-muted-foreground/85 dark:text-white/65 flex-shrink-0 ml-2">
                               {formatTime(group.last_message?.created_at || group.updated_at)}
                             </span>
                           </div>
                           <div className="flex items-center justify-between">
-                            <p className="text-sm text-muted-foreground dark:text-white/50 truncate flex-1">
+                            <p className="text-sm text-muted-foreground dark:text-white/72 truncate flex-1">
                               {group.last_message?.content || `${group.member_count} участников`}
                             </p>
                           </div>
@@ -1788,6 +1791,10 @@ export function ChatsPage() {
 
                 const conv = item.conv;
                 const other = getOtherParticipant(conv);
+                const displayName = sanitizeChatTitle(
+                  other.display_name,
+                  fallbackNameFromUserId(other.user_id),
+                );
                 const lastMessage = conv.last_message;
                 const isMyMessage = lastMessage?.sender_id === user?.id;
                 const liveActivity = dmActivityByConversation[conv.id];
@@ -1856,7 +1863,7 @@ export function ChatsPage() {
                     >
                       <div className="relative flex-shrink-0">
                         <GradientAvatar
-                          name={other.display_name || "User"}
+                          name={displayName}
                           seed={conv.id}
                           avatarUrl={other.avatar_url}
                           size="md"
@@ -1868,9 +1875,9 @@ export function ChatsPage() {
                         <div className="flex items-center justify-between mb-0.5">
                           <span className="font-medium text-foreground dark:text-white truncate flex items-center gap-1.5">
                             {pinned && <PinIcon size={12} noAnimate className="text-cyan-400 flex-shrink-0" />}
-                            {other.display_name || fallbackNameFromUserId(other.user_id)}
+                            {displayName}
                           </span>
-                          <span className="text-xs text-muted-foreground/70 dark:text-white/40 flex-shrink-0 ml-2">
+                          <span className="text-xs text-muted-foreground/85 dark:text-white/65 flex-shrink-0 ml-2">
                             {formatTime(lastMessage?.created_at || conv.updated_at)}
                           </span>
                         </div>
@@ -1880,12 +1887,12 @@ export function ChatsPage() {
                               <DoubleCheckIcon size={16} noAnimate className="text-cyan-400 flex-shrink-0" />
                             )}
                             {!activityText && !hasDraft(conv.id) && isMyMessage && !lastMessage?.is_read && (
-                              <CheckIcon size={16} noAnimate className="text-muted-foreground/60 dark:text-white/40 flex-shrink-0" />
+                              <CheckIcon size={16} noAnimate className="text-muted-foreground/70 dark:text-white/60 flex-shrink-0" />
                             )}
                             {hasDraft(conv.id) && !activityText ? (
                               <p className="text-sm truncate">
                                 <span className="text-red-500 font-medium">Черновик: </span>
-                                <span className="text-muted-foreground dark:text-white/50">{getDraft(conv.id)?.slice(0, 50)}</span>
+                                <span className="text-muted-foreground dark:text-white/72">{getDraft(conv.id)?.slice(0, 50)}</span>
                               </p>
                             ) : (
                               <p
@@ -1893,7 +1900,7 @@ export function ChatsPage() {
                                   "text-sm truncate",
                                   activityText
                                     ? "text-cyan-400"
-                                    : "text-muted-foreground dark:text-white/50"
+                                    : "text-muted-foreground dark:text-white/72"
                                 )}
                               >
                                 <ChatLastMessagePreview
@@ -1907,7 +1914,7 @@ export function ChatsPage() {
                           </div>
 
                           {conv.unread_count > 0 && (
-                            <Badge className="h-5 min-w-5 rounded-full px-1.5 text-[11px] flex-shrink-0 ml-2 bg-cyan-500 text-white border-0">
+                            <Badge className="h-6 min-w-6 rounded-full px-2 text-xs font-semibold flex-shrink-0 ml-2 bg-cyan-500 text-white border-0">
                               {conv.unread_count}
                             </Badge>
                           )}
@@ -1948,6 +1955,23 @@ export function ChatsPage() {
           initialMode={createMode}
           onChannelCreated={handleChannelCreated}
           onGroupCreated={handleGroupCreated}
+        />
+
+        <ContactsHubSheet
+          open={contactsHubOpen}
+          onOpenChange={setContactsHubOpen}
+          onCreateGroup={() => {
+            setContactsHubOpen(false);
+            openCreateSheet("group");
+          }}
+          onCreateChannel={() => {
+            setContactsHubOpen(false);
+            openCreateSheet("channel");
+          }}
+          onCreateBot={() => {
+            setContactsHubOpen(false);
+            navigate("/bots/new");
+          }}
         />
       </div>
     </ScrollContainerProvider>

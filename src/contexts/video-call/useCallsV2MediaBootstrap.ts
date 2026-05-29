@@ -352,6 +352,8 @@ screenStream,
 
       // P0-1 fix: subscribe BEFORE sending transportCreate so we never miss the server event.
       // acceptRecent:false prevents matching a stale cached event from a previous bootstrap.
+      // Параллелим оба transportCreate (send + recv) — независимые request/response к SFU,
+      // экономит ~1 RTT на старте звонка.
       const sendCreatedPromise = client.waitFor(
         "TRANSPORT_CREATED",
         (frame) => {
@@ -360,9 +362,21 @@ screenStream,
         },
         { timeoutMs: 5000 }
       );
-      await client.transportCreate({ roomId, direction: "send" });
-      const sendCreated = await sendCreatedPromise;
+      const recvCreatedPromise = client.waitFor(
+        "TRANSPORT_CREATED",
+        (frame) => {
+          const p = frame.payload as { roomId?: string; direction?: string } | undefined;
+          return p?.roomId === roomId && p?.direction === "recv";
+        },
+        { timeoutMs: 5000 }
+      );
+      await Promise.all([
+        client.transportCreate({ roomId, direction: "send" }),
+        client.transportCreate({ roomId, direction: "recv" }),
+      ]);
+      const [sendCreated, recvCreated] = await Promise.all([sendCreatedPromise, recvCreatedPromise]);
       const sendParams = sendCreated.payload as import("@/calls-v2/types").TransportCreatedPayload | undefined;
+      const recvParams = recvCreated.payload as import("@/calls-v2/types").TransportCreatedPayload | undefined;
       if (!isValidTransportCreatedPayload(sendParams)) {
         reportMediaBootstrapFailure(
           roomId,
@@ -371,7 +385,16 @@ screenStream,
         );
         return;
       }
+      if (!isValidTransportCreatedPayload(recvParams)) {
+        reportMediaBootstrapFailure(
+          roomId,
+          callId,
+          new Error("invalid recv transport payload from SFU")
+        );
+        return;
+      }
       logger.info("[VideoCallContext] calls-v2 transport-created:send", { roomId, transportId: sendParams.transportId });
+      logger.info("[VideoCallContext] calls-v2 transport-created:recv", { roomId, transportId: recvParams.transportId });
       if (callStateRef.current === "bootstrapping") {
         dispatchFsm("BOOTSTRAP_OK");
       }
@@ -424,27 +447,6 @@ screenStream,
       );
       callsWsSendTransportRef.current = sendParams.transportId;
 
-      // P0-1 fix: same pattern for recv — subscribe before sending.
-      const recvCreatedPromise = client.waitFor(
-        "TRANSPORT_CREATED",
-        (frame) => {
-          const p = frame.payload as { roomId?: string; direction?: string } | undefined;
-          return p?.roomId === roomId && p?.direction === "recv";
-        },
-        { timeoutMs: 5000 }
-      );
-      await client.transportCreate({ roomId, direction: "recv" });
-      const recvCreated = await recvCreatedPromise;
-      const recvParams = recvCreated.payload as import("@/calls-v2/types").TransportCreatedPayload | undefined;
-      if (!isValidTransportCreatedPayload(recvParams)) {
-        reportMediaBootstrapFailure(
-          roomId,
-          callId,
-          new Error("invalid recv transport payload from SFU")
-        );
-        return;
-      }
-      logger.info("[VideoCallContext] calls-v2 transport-created:recv", { roomId, transportId: recvParams.transportId });
       markMediaBootstrapProgress("recv_transport_created");
       dispatchFsm("TRANSPORT_CONNECTED");
 
@@ -490,7 +492,10 @@ await client.transportConnect({
       }
 
       const tracks = stream.getTracks().filter((track) => track.readyState === "live");
-      for (const track of tracks) {
+      // Параллельный produce audio+video — экономит RTT на старте звонка.
+      // Внутри SfuMediaManager.produce каждый produce() — независимый round-trip к SFU,
+      // но они не зависят друг от друга и могут идти одновременно.
+      await Promise.all(tracks.map(async (track) => {
         const source = track.kind === "audio" ? "microphone" : "camera";
         const producer = await sfuManager.produce(track, { trackId: track.id, source });
         if (track.kind === "audio" || track.kind === "video") {
@@ -510,7 +515,7 @@ await client.transportConnect({
             }
           }
         }
-      }
+      }));
 
       rebuildRemoteStream();
 

@@ -169,7 +169,7 @@ export function ProfilePage() {
 
   // ── Render ──
   return (
-    <div className="min-h-screen bg-background pb-24">
+    <div className="chat-glass-scope min-h-screen pb-24" style={{ background: "radial-gradient(120% 80% at 50% 0%, #0a1628 0%, #071420 60%, #020309 100%)" }}>
       <ProfileHeader
         profile={displayProfile}
         profileMeta={displayProfileMeta}
@@ -194,7 +194,7 @@ export function ProfilePage() {
       />
 
       {/* ── Highlights ── */}
-      <div className="border-t border-border">
+      <div className="border-t border-[hsl(var(--glass-border))]">
         <div className="flex items-center gap-4 px-4 py-4 overflow-x-auto scrollbar-hide">
           {isOwnProfile && (
             <HighlightCircle
@@ -239,8 +239,8 @@ export function ProfilePage() {
       )}
 
       {/* ── Tabs ── */}
-      <div className="border-t border-border sticky top-0 z-10 bg-background">
-        <div className="flex">
+      <div className="border-t border-[hsl(var(--glass-border))] sticky top-0 z-10 bg-transparent backdrop-blur-xl">
+        <div className="flex gap-2 px-3 py-2">
           {allTabs.map(tab => {
             const Icon = tab.icon;
             const isActive = activeTab === tab.id;
@@ -248,12 +248,16 @@ export function ProfilePage() {
               <button
                 key={tab.id}
                 onClick={() => handleTabChange(tab.id as TabId)}
-                className={cn(
-                  "flex-1 flex items-center justify-center py-3 border-b-2 transition-colors",
-                  isActive ? "border-foreground text-foreground" : "border-transparent text-muted-foreground"
-                )}
+                className="flex-1 flex items-center justify-center py-2 transition-colors"
               >
-                <Icon className={cn("w-5 h-5", tab.id === "reels" && isActive && "fill-current")} />
+                <span className={cn(
+                  "w-10 h-10 flex items-center justify-center transition-all",
+                  isActive
+                    ? "chat-glass-chip text-white [border-radius:16px]"
+                    : "text-white/40 hover:text-white/70"
+                )}>
+                  <Icon className={cn("w-5 h-5", tab.id === "reels" && isActive && "fill-current")} />
+                </span>
               </button>
             );
           })}
@@ -283,7 +287,7 @@ export function ProfilePage() {
           {activeTab === "reels" && (
             <>
               <ProfileGrid
-                items={myReels.map(r => ({ id: r.id, thumbnail_url: r.thumbnail_url ?? undefined }))}
+                items={myReels.map(r => ({ id: r.id, thumbnail_url: r.thumbnail_url ?? undefined, post_media: r.video_url ? [{ media_url: r.video_url, media_type: "video" }] : [] }))}
                 loading={myReelsLoading && myReels.length === 0}
                 type="reels"
                 onItemClick={(item) => {

@@ -22,11 +22,11 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import {
   BellIcon,
   BookmarkIcon,
-  CameraIcon,
   CheckIcon,
   HomeIcon,
   LikeIcon,
   MessageIcon,
+  PhoneCallIcon,
   ReelsIcon,
   UserIcon,
   type AppIconProps,
@@ -43,14 +43,14 @@ interface NavItem {
 }
 
 
-// Default nav items: Лента → Reels → Уведомления → Чаты → Профиль | AR (отдельная кнопка)
+// Default nav items: Лента → Reels → Уведомления → Чаты → Звонки | Профиль (отдельная кнопка)
 const defaultNavItems: NavItem[] = [
   { to: "/", icon: HomeIcon, label: "Лента" },
-  { to: "/reels", icon: ReelsIcon, label: "Reels" },
+  { to: "/reels", icon: ReelsIcon, label: "Видео" },
   { to: "/notifications", icon: BellIcon, label: "Уведомления", hasBadge: true },
   { to: "/chats", icon: MessageIcon, label: "Чаты", hasBadge: true },
+  { to: "/chats?tab=calls", icon: PhoneCallIcon, label: "Звонки", isAction: true },
   { to: "/profile", icon: UserIcon, label: "Профиль", hasLongPress: true },
-  { to: "/ar", icon: CameraIcon, label: "AR" },
 ];
 
 const BOTTOM_NAV_BAR_HEIGHT_PX = 56;
@@ -62,7 +62,7 @@ interface BottomNavProps {
   onCreateClick?: () => void;
 }
 
-export const BottomNav = forwardRef<HTMLElement, BottomNavProps>(function BottomNav({ hidden = false, disableHideAnimation = false, onCreateClick }, ref) {
+export const BottomNav = forwardRef<HTMLElement, BottomNavProps>(function BottomNav({ hidden = false, disableHideAnimation = false }, ref) {
   const { isReelsPage } = useReelsContext();
   const location = useLocation();
   const navigate = useNavigate();
@@ -121,6 +121,24 @@ export const BottomNav = forwardRef<HTMLElement, BottomNavProps>(function Bottom
   };
 
   const navItems = getNavItems();
+
+  const isTabCallsRoute = location.pathname === "/chats" && new URLSearchParams(location.search).get("tab") === "calls";
+
+  const isNavItemActive = useCallback((item: NavItem) => {
+    if (item.to === "/chats") {
+      return location.pathname === "/chats" && !isTabCallsRoute;
+    }
+
+    if (item.to === "/chats?tab=calls") {
+      return isTabCallsRoute;
+    }
+
+    if (item.to === "/") {
+      return location.pathname === "/";
+    }
+
+    return location.pathname === item.to || location.pathname.startsWith(`${item.to}/`);
+  }, [isTabCallsRoute, location.pathname]);
 
   const handleSwitchAccount = async (accountId: string) => {
     try {
@@ -353,11 +371,10 @@ export const BottomNav = forwardRef<HTMLElement, BottomNavProps>(function Bottom
             className={cn(
               "flex-1 flex items-center justify-around",
               "rounded-full",
-              "bg-[rgba(10,22,40,0.72)] dark:bg-[rgba(15,15,25,0.78)]",
-              "backdrop-blur-[24px] saturate-[1.4] dark:saturate-[1.3]",
-              "border border-white/[0.18] dark:border-white/10",
-              "shadow-[0_8px_32px_rgba(0,120,200,0.2),0_2px_8px_rgba(0,0,0,0.3),inset_0_1px_0_rgba(255,255,255,0.12)]",
-              "dark:shadow-[0_8px_32px_rgba(15,69,255,0.15),0_2px_8px_rgba(0,0,0,0.5),inset_0_1px_0_rgba(255,255,255,0.06)]"
+              "bg-transparent",
+              "backdrop-blur-[10px] saturate-[1.1]",
+              "border border-white/16",
+              "shadow-[0_8px_20px_rgba(0,0,0,0.24)]"
             )}
             style={{
               height: `${BOTTOM_NAV_BAR_HEIGHT_PX}px`,
@@ -368,15 +385,16 @@ export const BottomNav = forwardRef<HTMLElement, BottomNavProps>(function Bottom
             {navItems.slice(0, -1).map((item) => {
               // For action items (not real routes), use button
               if (item.isAction) {
+                const isActionActive = isNavItemActive(item);
                 return (
                   <button
                     key={item.to}
                     className={cn(
                       "flex flex-col items-center justify-center flex-1 h-full",
-                      "transition-colors duration-150",
+                      "transition-all duration-200",
                       "active:opacity-70",
                       "min-w-[44px] min-h-[44px]",
-                      "text-white/60 hover:text-white"
+                      isActionActive ? "text-cyan-300" : "text-white/60 hover:text-white"
                     )}
                     style={{ 
                       WebkitTapHighlightColor: 'transparent',
@@ -386,8 +404,13 @@ export const BottomNav = forwardRef<HTMLElement, BottomNavProps>(function Bottom
                       navigate(item.to);
                     }}
                   >
-                    <div className="relative flex items-center justify-center">
-                      {item.icon && <item.icon active={false} size={22} label={item.label} />}
+                    <div
+                      className={cn(
+                        "relative flex items-center justify-center transition-all duration-200",
+                        isActionActive && "scale-110 -translate-y-[1px] drop-shadow-[0_0_10px_rgba(34,211,238,0.55)]"
+                      )}
+                    >
+                      {item.icon && <item.icon active={isActionActive} size={22} label={item.label} />}
                     </div>
                     <span className="text-[10px] font-medium mt-0.5 leading-tight">
                       {item.label}
@@ -407,24 +430,20 @@ export const BottomNav = forwardRef<HTMLElement, BottomNavProps>(function Bottom
                   onMouseLeave={(e) => handleTouchEnd(item, e)}
                   onContextMenu={(e) => handleContextMenu(item, e)}
                   onClick={(e) => {
-                    // Use React Router's own match logic — same source of truth
-                    // as the isActive prop passed to className/children render props.
-                    const matched = item.to === "/"
-                      ? location.pathname === "/"
-                      : location.pathname === item.to || location.pathname.startsWith(`${item.to}/`);
+                    const matched = isNavItemActive(item);
                     if (matched) {
                       // Already on this tab — don't navigate again, just scroll to top
                       e.preventDefault();
                       handleNavClick(item, true);
                     }
                   }}
-                  className={({ isActive }) =>
+                  className={() =>
                     cn(
                       "relative flex flex-col items-center justify-center flex-1 h-full",
-                      "transition-colors duration-150",
+                      "transition-all duration-200",
                       "active:opacity-70",
                       "min-w-[44px] min-h-[44px]",
-                      isActive ? "text-white" : "text-white/70"
+                      isNavItemActive(item) ? "text-cyan-300" : "text-white/58"
                     )
                   }
                   style={{ 
@@ -432,18 +451,16 @@ export const BottomNav = forwardRef<HTMLElement, BottomNavProps>(function Bottom
                     touchAction: 'manipulation',
                   }}
                 >
-                  {({ isActive }) => (
+                  {(() => {
+                    const isActive = isNavItemActive(item);
+                    return (
                     <>
-                      <span
-                        aria-hidden
+                      <div
                         className={cn(
-                          "pointer-events-none absolute inset-x-2 top-1/2 h-10 -translate-y-1/2 rounded-2xl transition-all duration-200",
-                          isActive
-                            ? "bg-gradient-to-r from-[rgba(0,180,216,0.2)] to-[rgba(0,200,150,0.15)] shadow-[0_0_20px_rgba(0,180,216,0.15)]"
-                            : "opacity-0 scale-95"
+                          "relative flex items-center justify-center transition-all duration-200",
+                          isActive && "scale-110 -translate-y-[1px] drop-shadow-[0_0_10px_rgba(34,211,238,0.55)]"
                         )}
-                      />
-                      <div className="relative flex items-center justify-center">
+                      >
                         {item.icon && (
                           <item.icon active={isActive} size={24} label={item.label} />
                         )}
@@ -458,28 +475,12 @@ export const BottomNav = forwardRef<HTMLElement, BottomNavProps>(function Bottom
                         {item.label}
                       </span>
                     </>
-                  )}
+                  );
+                })()}
                 </NavLink>
               );
             })}
           </nav>
-
-          {/* Create button */}
-          {onCreateClick && (
-            <button
-              className={cn(
-                "flex items-center justify-center",
-                "w-11 h-11 rounded-full",
-                "bg-gradient-to-br from-cyan-400 to-blue-500",
-                "shadow-[0_0_12px_rgba(0,180,216,0.4)]",
-                "transition-transform duration-150 active:scale-90"
-              )}
-              style={{ WebkitTapHighlightColor: 'transparent', touchAction: 'manipulation' }}
-              onClick={onCreateClick}
-            >
-              <span className="text-white text-xl leading-none font-light">+</span>
-            </button>
-          )}
 
           {/* Separate circular button for the last item (Profile) */}
           {(() => {
@@ -497,14 +498,12 @@ export const BottomNav = forwardRef<HTMLElement, BottomNavProps>(function Bottom
                   cn(
                     "flex items-center justify-center",
                     "w-14 h-14 rounded-full",
-                    "bg-[rgba(10,22,40,0.72)] dark:bg-[rgba(15,15,25,0.78)]",
-                    "backdrop-blur-[24px] saturate-[1.4] dark:saturate-[1.3]",
-                    "border border-white/[0.18] dark:border-white/10",
-                    "shadow-[0_8px_32px_rgba(0,120,200,0.2),0_2px_8px_rgba(0,0,0,0.3),inset_0_1px_0_rgba(255,255,255,0.12)]",
-                    "dark:shadow-[0_8px_32px_rgba(15,69,255,0.15),0_2px_8px_rgba(0,0,0,0.5),inset_0_1px_0_rgba(255,255,255,0.06)]",
-                    "transition-colors duration-150",
+                    "bg-transparent",
+                    "border border-transparent",
+                    "shadow-none",
+                    "transition-all duration-200",
                     "active:opacity-70",
-                    isActive ? "text-white" : "text-white/70"
+                    isActive ? "text-cyan-300" : "text-white/70"
                   )
                 }
                 style={{ 
@@ -513,7 +512,12 @@ export const BottomNav = forwardRef<HTMLElement, BottomNavProps>(function Bottom
                 }}
               >
                 {({ isActive }) => (
-                  <div className="relative flex items-center justify-center">
+                  <div
+                    className={cn(
+                      "relative flex items-center justify-center transition-all duration-200",
+                      isActive && "scale-110 -translate-y-[1px] drop-shadow-[0_0_10px_rgba(34,211,238,0.55)]"
+                    )}
+                  >
                     {lastItem.icon ? (
                       <lastItem.icon active={isActive} size={24} label={lastItem.label} />
                     ) : (

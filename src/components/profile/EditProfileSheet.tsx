@@ -152,82 +152,69 @@ export function EditProfileSheet({ isOpen, onClose, profile, userId, onSaved }: 
             onClick={onClose}
           />
           <motion.div
-            className="fixed inset-x-0 bottom-0 z-50 bg-background rounded-t-3xl overflow-hidden"
+            className="fixed inset-x-0 bottom-0 z-50 rounded-t-3xl flex flex-col"
+            style={{
+              height: "100dvh",
+              background: "rgba(255,255,255,0.08)",
+              backdropFilter: "blur(32px) saturate(1.6)",
+              WebkitBackdropFilter: "blur(32px) saturate(1.6)",
+              border: "1px solid rgba(255,255,255,0.18)",
+              borderBottom: "none",
+              boxShadow: "0 -12px 48px rgba(0,0,0,0.35)",
+              colorScheme: "dark",
+            }}
             initial={{ y: "100%" }}
             animate={{ y: 0 }}
             exit={{ y: "100%" }}
             transition={{ type: "spring", damping: 30, stiffness: 300 }}
-            style={{ maxHeight: "95dvh" }}
           >
             {/* Header */}
-            <div className="flex items-center justify-between px-4 py-4 border-b border-border sticky top-0 bg-background z-10">
-              <button onClick={onClose} className="w-8 h-8 flex items-center justify-center">
+            <div className="flex items-center justify-between px-4 py-4 sticky top-0 z-10"
+              style={{ borderBottom: "1px solid rgba(255,255,255,0.12)", background: "rgba(255,255,255,0.06)", backdropFilter: "blur(20px)" }}>
+              <button onClick={onClose} className="w-8 h-8 flex items-center justify-center text-white/60 hover:text-white transition-colors">
                 <X className="w-5 h-5" />
               </button>
-              <h2 className="font-semibold text-base">Редактировать профиль</h2>
-              <button
-                onClick={handleSave}
-                disabled={saving}
-                className="text-primary font-semibold text-sm disabled:opacity-50"
-              >
+              <h2 className="font-semibold text-base text-white">Редактировать профиль</h2>
+              <button onClick={handleSave} disabled={saving} className="text-sm font-semibold text-violet-300 disabled:opacity-40 transition-opacity">
                 {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : "Готово"}
               </button>
             </div>
 
-            <div className="overflow-y-auto pb-10">
+            <div className="overflow-y-auto flex-1 pb-10" style={{ overscrollBehavior: "contain" }}>
               {/* Avatar */}
-              <div className="flex flex-col items-center py-6 border-b border-border">
+              <div className="flex flex-col items-center py-6" style={{ borderBottom: "1px solid rgba(255,255,255,0.08)" }}>
                 <div className="relative">
                   <Avatar className="w-24 h-24">
                     <AvatarImage src={avatar || undefined} />
-                    <AvatarFallback className="bg-violet-500 text-white text-2xl">
+                    <AvatarFallback className="bg-violet-600 text-white text-2xl">
                       {form.display_name?.charAt(0)?.toUpperCase() || "?"}
                     </AvatarFallback>
                   </Avatar>
-                  <button
-                    onClick={() => fileInputRef.current?.click()}
-                    className="absolute inset-0 flex items-center justify-center bg-black/40 rounded-full"
-                  >
+                  <button onClick={() => fileInputRef.current?.click()}
+                    className="absolute inset-0 flex items-center justify-center rounded-full"
+                    style={{ background: "rgba(0,0,0,0.45)" }}>
                     <Camera className="w-6 h-6 text-white" />
                   </button>
                 </div>
-                <button
-                  onClick={() => fileInputRef.current?.click()}
-                  className="mt-3 text-sm text-primary font-medium"
-                >
+                <button onClick={() => fileInputRef.current?.click()} className="mt-3 text-sm font-medium text-violet-300">
                   Изменить фото профиля
                 </button>
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept="image/*"
-                  className="hidden"
-                  onChange={handleAvatarChange}
-                />
+                <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={handleAvatarChange} />
               </div>
 
               {/* Name Pronunciation */}
-              <div className="px-4 py-3 border-b border-border">
-                <label className="text-xs text-muted-foreground block mb-2">Произношение имени</label>
-                <NamePronunciationRecorder
-                  userId={userId}
-                  existingUrl={pronunciationUrl}
-                  onChanged={setPronunciationUrl}
-                />
+              <div className="px-4 py-3" style={{ borderBottom: "1px solid rgba(255,255,255,0.08)" }}>
+                <label className="text-xs text-white/70 block mb-2">Произношение имени</label>
+                <NamePronunciationRecorder userId={userId} existingUrl={pronunciationUrl} onChanged={setPronunciationUrl} />
               </div>
 
               {/* Fields */}
-              <div className="px-4 py-2 space-y-1">
-                <Field
-                  label="Имя"
-                  value={form.display_name}
-                  onChange={v => handleChange("display_name", v)}
-                  placeholder="Ваше имя"
-                />
-                <div className="py-3 border-b border-border">
-                  <label className="text-xs text-muted-foreground block mb-1">Имя пользователя</label>
-                  <div className="relative">
-                    <span className="absolute left-0 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">@</span>
+              <div className="px-4 pt-2 pb-4 space-y-1">
+                <GlassField label="Имя" value={form.display_name} onChange={v => handleChange("display_name", v)} placeholder="Ваше имя" />
+                <div className="py-2">
+                  <label className="text-xs text-white/70 block mb-1.5 px-1">Имя пользователя</label>
+                  <div className="relative px-1 py-1">
+                    <span className="absolute left-1 top-1/2 -translate-y-1/2 text-sm text-white/30">@</span>
                     <input
                       type="text"
                       value={form.username}
@@ -235,120 +222,63 @@ export function EditProfileSheet({ isOpen, onClose, profile, userId, onSaved }: 
                         const next = normalizeUsernameInput(e.target.value);
                         handleChange("username", next);
                         setUsernameError("");
-
                         const normalizedOwnUsername = normalizeUsernameInput(profile?.username || "");
-                        if (!next || next === normalizedOwnUsername) {
-                          setUsernameStatus("idle");
-                          return;
-                        }
-                        if (next.length < 3 || next.length > 30 || !/^[a-z0-9_]+$/.test(next)) {
-                          setUsernameStatus("idle");
-                          return;
-                        }
-
+                        if (!next || next === normalizedOwnUsername) { setUsernameStatus("idle"); return; }
+                        if (next.length < 3 || next.length > 30 || !/^[a-z0-9_]+$/.test(next)) { setUsernameStatus("idle"); return; }
                         setUsernameStatus("checking");
-                        const { data: existing, error } = await dbLoose
-                          .from("profiles")
-                          .select("user_id")
-                          .eq("username", next)
-                          .neq("user_id", userId)
-                          .limit(1)
-                          .maybeSingle();
-
-                        if (error) {
-                          setUsernameStatus("idle");
-                          return;
-                        }
-
-                        if (existing) {
-                          setUsernameStatus("taken");
-                          setUsernameError("Этот никнейм уже занят");
-                        } else {
-                          setUsernameStatus("available");
-                        }
+                        const { data: existing, error } = await dbLoose.from("profiles").select("user_id").eq("username", next).neq("user_id", userId).limit(1).maybeSingle();
+                        if (error) { setUsernameStatus("idle"); return; }
+                        if (existing) { setUsernameStatus("taken"); setUsernameError("Этот никнейм уже занят"); }
+                        else setUsernameStatus("available");
                       }}
                       placeholder="username"
                       maxLength={30}
-                      className="w-full pl-4 bg-transparent text-sm text-foreground outline-none placeholder:text-muted-foreground"
+                      style={{ background: "transparent", color: "white", WebkitTextFillColor: "white" } as React.CSSProperties}
+                      className="w-full pl-5 text-sm outline-none placeholder:text-white/25"
                     />
                   </div>
-                  {usernameError ? <p className="text-xs text-destructive mt-2">{usernameError}</p> : null}
-                  {!usernameError && usernameStatus === "checking" ? <p className="text-xs text-muted-foreground mt-2">Проверяем никнейм...</p> : null}
-                  {!usernameError && usernameStatus === "available" ? <p className="text-xs text-green-600 mt-2">Никнейм свободен</p> : null}
-                  {!usernameError && usernameStatus === "taken" ? <p className="text-xs text-destructive mt-2">Этот никнейм уже занят</p> : null}
-                  <p className="text-xs text-muted-foreground mt-2">Латинские буквы, цифры и _ (3-30 символов)</p>
+                  <div style={{ height: "1px", background: "rgba(255,255,255,0.1)", marginTop: "8px" }} />
+                  {usernameError && <p className="text-xs text-red-400 mt-1 px-1">{usernameError}</p>}
+                  {!usernameError && usernameStatus === "checking" && <p className="text-xs text-white/40 mt-1 px-1">Проверяем...</p>}
+                  {!usernameError && usernameStatus === "available" && <p className="text-xs text-emerald-400 mt-1 px-1">Никнейм свободен</p>}
+                  <p className="text-xs text-white/25 mt-1 px-1">Латинские буквы, цифры и _ (3–30 символов)</p>
                 </div>
-                <Field
-                  label="Вебсайт"
-                  value={form.website}
-                  onChange={v => handleChange("website", v)}
-                  placeholder="https://example.com"
-                  type="url"
-                />
-                <div className="py-3 border-b border-border">
-                  <label className="text-xs text-muted-foreground block mb-1">Биография</label>
-                  <textarea
-                    value={form.bio}
-                    onChange={e => handleChange("bio", e.target.value)}
-                    placeholder="Расскажите о себе..."
-                    rows={3}
-                    maxLength={150}
-                    className="w-full bg-transparent text-sm text-foreground resize-none outline-none placeholder:text-muted-foreground"
-                  />
-                  <p className={`text-xs text-right ${form.bio.length >= 140 ? "text-orange-400" : "text-muted-foreground"}`}>
-                    {form.bio.length}/150
-                  </p>
+                <GlassField label="Вебсайт" value={form.website} onChange={v => handleChange("website", v)} placeholder="https://example.com" type="url" />
+                <div className="py-2">
+                  <label className="text-xs text-white/70 block mb-1.5 px-1">Биография</label>
+                  <textarea value={form.bio} onChange={e => handleChange("bio", e.target.value)}
+                    onInput={e => { const t = e.currentTarget; t.style.height = "auto"; t.style.height = t.scrollHeight + "px"; }}
+                    placeholder="Расскажите о себе..." rows={1} maxLength={150}
+                    style={{ background: "transparent", color: "white", WebkitTextFillColor: "white", overflow: "hidden" } as React.CSSProperties}
+                    spellCheck={false}
+                    className="w-full text-sm resize-none outline-none px-1 py-1 placeholder:text-white/25" />
+                  <div className="flex justify-end">
+                    <p className={`text-xs ${form.bio.length >= 140 ? "text-orange-400" : "text-white/30"}`}>{form.bio.length}/150</p>
+                  </div>
+                  <div style={{ height: "1px", background: "rgba(255,255,255,0.1)" }} />
                 </div>
-                <Field
-                  label="Пол"
-                  value={form.gender}
-                  onChange={v => handleChange("gender", v)}
-                  placeholder="Не указан"
-                  select
-                  options={["", "Мужской", "Женский", "Другой", "Предпочитаю не указывать"]}
-                />
-                <Field
-                  label="Категория аккаунта"
-                  value={form.category}
-                  onChange={v => handleChange("category", v)}
-                  placeholder="Личный блог"
-                  select
-                  options={["", "Личный блог", "Публичная личность", "Бизнес", "Деятель искусства", "Музыкант", "Спортсмен", "Другое"]}
-                />
+                <GlassField label="Пол" value={form.gender} onChange={v => handleChange("gender", v)} placeholder="Не указан" select options={["", "Мужской", "Женский", "Другой", "Предпочитаю не указывать"]} />
+                <GlassField label="Категория аккаунта" value={form.category} onChange={v => handleChange("category", v)} placeholder="Личный блог" select options={["", "Личный блог", "Публичная личность", "Бизнес", "Деятель искусства", "Музыкант", "Спортсмен", "Другое"]} />
               </div>
 
               {/* Contact */}
               <div className="px-4 py-2 mt-2">
-                <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider mb-2">Контактная информация</p>
+                <p className="text-xs text-white/30 font-medium uppercase tracking-wider mb-2">Контактная информация</p>
                 <div className="space-y-1">
-                  <Field
-                    label="Email"
-                    value={form.contact_email}
-                    onChange={v => handleChange("contact_email", v)}
-                    placeholder="contact@example.com"
-                    type="email"
-                  />
-                  <Field
-                    label="Телефон"
-                    value={form.contact_phone}
-                    onChange={v => handleChange("contact_phone", v)}
-                    placeholder="+7 (999) 000-00-00"
-                    type="tel"
-                  />
+                  <GlassField label="Email" value={form.contact_email} onChange={v => handleChange("contact_email", v)} placeholder="contact@example.com" type="email" />
+                  <GlassField label="Телефон" value={form.contact_phone} onChange={v => handleChange("contact_phone", v)} placeholder="+7 (999) 000-00-00" type="tel" />
                 </div>
               </div>
 
               {/* Privacy */}
-              <div className="px-4 py-4 mt-2 border-t border-border">
+              <div className="px-4 py-4 mt-2" style={{ borderTop: "1px solid rgba(255,255,255,0.08)" }}>
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="text-sm font-medium text-foreground">Закрытый аккаунт</p>
-                    <p className="text-xs text-muted-foreground mt-0.5">Только одобренные смогут видеть ваш профиль</p>
+                    <p className="text-sm font-medium text-white">Закрытый аккаунт</p>
+                    <p className="text-xs text-white/40 mt-0.5">Только одобренные смогут видеть ваш профиль</p>
                   </div>
-                  <button
-                    onClick={() => handleChange("is_private", !form.is_private)}
-                    className={`w-12 h-6 rounded-full transition-colors ${form.is_private ? "bg-primary" : "bg-muted"}`}
-                  >
+                  <button onClick={() => handleChange("is_private", !form.is_private)}
+                    className={`w-12 h-6 rounded-full transition-colors ${form.is_private ? "bg-violet-600" : "bg-white/15"}`}>
                     <div className={`w-5 h-5 bg-white rounded-full shadow transition-transform mx-0.5 ${form.is_private ? "translate-x-6" : "translate-x-0"}`} />
                   </button>
                 </div>
@@ -361,45 +291,28 @@ export function EditProfileSheet({ isOpen, onClose, profile, userId, onSaved }: 
   );
 }
 
-function Field({
-  label,
-  value,
-  onChange,
-  placeholder,
-  type = "text",
-  select = false,
-  options = [],
+function GlassField({
+  label, value, onChange, placeholder, type = "text", select = false, options = [],
 }: {
-  label: string;
-  value: string;
-  onChange: (v: string) => void;
-  placeholder?: string;
-  type?: string;
-  select?: boolean;
-  options?: string[];
+  label: string; value: string; onChange: (v: string) => void;
+  placeholder?: string; type?: string; select?: boolean; options?: string[];
 }) {
+  const fieldStyle = { background: "transparent", color: "white", WebkitTextFillColor: "white" } as React.CSSProperties;
   return (
-    <div className="py-3 border-b border-border">
-      <label className="text-xs text-muted-foreground block mb-1">{label}</label>
+    <div className="py-2">
+      <label className="text-xs text-white/70 block mb-1.5 px-1">{label}</label>
       {select ? (
-        <select
-          value={value}
-          onChange={e => onChange(e.target.value)}
-          className="w-full bg-transparent text-sm text-foreground outline-none appearance-none"
-        >
-          {options.map(o => (
-            <option key={o} value={o} className="bg-background">{o || placeholder}</option>
-          ))}
+        <select value={value} onChange={e => onChange(e.target.value)}
+          style={{ ...fieldStyle, background: "transparent" }}
+          className="w-full text-sm appearance-none outline-none px-1 py-1">
+          {options.map(o => <option key={o} value={o} style={{ background: "#0d1526" }}>{o || placeholder}</option>)}
         </select>
       ) : (
-        <input
-          type={type}
-          value={value}
-          onChange={e => onChange(e.target.value)}
-          placeholder={placeholder}
-          className="w-full bg-transparent text-sm text-foreground outline-none placeholder:text-muted-foreground"
-        />
+        <input type={type} value={value} onChange={e => onChange(e.target.value)} placeholder={placeholder}
+          style={fieldStyle}
+          className="w-full text-sm outline-none px-1 py-1 placeholder:text-white/25" />
       )}
+      <div style={{ height: "1px", background: "rgba(255,255,255,0.1)", marginTop: "8px" }} />
     </div>
   );
 }

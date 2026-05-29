@@ -162,7 +162,7 @@ export function ChatInputBar({
   );
 
   return (
-      <div className="px-3 py-3">
+      <div className="chat-glass-bar px-3 py-3" style={{borderBottom:'none', borderTop:'1px solid hsl(var(--glass-border))'}}>
         {/* Edit banner */}
         {editingMessage && (
           <div className="mb-2 rounded-2xl bg-blue-900/40 backdrop-blur-xl border border-blue-500/30 px-3 py-2 flex items-start justify-between gap-2">
@@ -186,7 +186,7 @@ export function ChatInputBar({
 
         {/* Reply banner */}
         {!editingMessage && replyTo && (
-          <div className="mb-2 rounded-2xl bg-black/35 backdrop-blur-xl border border-white/10 px-3 py-2 flex items-start justify-between gap-2">
+          <div className="chat-glass-bubble mb-2 rounded-2xl px-3 py-2 flex items-start justify-between gap-2">
             <button
               className="min-w-0 text-left"
               onClick={() => replyTo.id ? onScrollToReply(replyTo.id) : undefined}
@@ -215,44 +215,30 @@ export function ChatInputBar({
           <div className="flex items-center gap-3">
             <button
               onClick={onCancelRecording}
-              className="w-12 h-12 rounded-full flex items-center justify-center shrink-0 backdrop-blur-xl border border-white/10"
-              style={{
-                background: "linear-gradient(145deg, rgba(255,255,255,0.08) 0%, rgba(255,255,255,0.02) 100%)",
-                boxShadow: "inset 0 1px 0 rgba(255,255,255,0.1), 0 4px 20px rgba(0,0,0,0.3)",
-              }}
+              className="chat-glass-icon-btn w-12 h-12 rounded-full flex items-center justify-center shrink-0"
             >
-              <X className="w-5 h-5 text-white/70" />
+              <X className="w-5 h-5" />
             </button>
 
-            <div
-              className="flex-1 flex items-center gap-3 h-12 px-5 rounded-full backdrop-blur-xl border border-white/10"
-              style={{
-                background: "linear-gradient(145deg, rgba(255,255,255,0.08) 0%, rgba(255,255,255,0.02) 100%)",
-                boxShadow: "inset 0 1px 0 rgba(255,255,255,0.1), 0 4px 20px rgba(0,0,0,0.3)",
-              }}
-            >
+            <div className="chat-glass-pill flex-1 flex items-center gap-3 h-12 px-5 rounded-full">
               <div className="w-2.5 h-2.5 rounded-full bg-red-500 animate-pulse" />
-              <span className="text-sm text-white/70">
+              <span className="text-sm opacity-80">
                 Запись... {formatTime(recordingTime)}
               </span>
             </div>
 
             <button
               onClick={onStopRecording}
-              className="w-12 h-12 rounded-full flex items-center justify-center shrink-0"
-              style={{
-                background: "linear-gradient(135deg, #00A3B4 0%, #0066CC 50%, #00C896 100%)",
-                boxShadow: "0 0 20px rgba(0,163,180,0.4), 0 4px 20px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.2)",
-              }}
+              className="chat-glass-primary-btn w-12 h-12 rounded-full flex items-center justify-center shrink-0"
             >
-              <Send className="w-5 h-5 text-white" />
+              <Send className="w-5 h-5" />
             </button>
           </div>
         ) : (
           <div className="flex items-center gap-3">
             <button
               onClick={() => onSetShowAttachmentSheet(true)}
-              className="w-11 h-11 rounded-full shrink-0 flex items-center justify-center border border-white/20 bg-white/5 text-white/60 hover:text-white/80 hover:bg-white/10 transition-colors"
+              className="chat-glass-icon-btn w-11 h-11 rounded-full shrink-0 flex items-center justify-center"
               aria-label="Вложение"
               type="button"
             >
@@ -312,7 +298,7 @@ export function ChatInputBar({
                 }}
                 onKeyDown={handleKeyDown}
                 onFocus={() => onSetShowEmojiPicker(false)}
-                className="w-full px-5 pr-20 rounded-2xl bg-black/40"
+                className="chat-glass-pill w-full px-5 pr-20 rounded-2xl focus:border-cyan-300/40 transition-colors"
               />
 
               {/* Icons inside input */}
@@ -337,6 +323,7 @@ export function ChatInputBar({
                 <button
                   onClick={() => onSetShowEmojiPicker(!showEmojiPicker)}
                   className={`transition-colors ${showEmojiPicker ? "text-cyan-400" : "text-white/50 hover:text-white/70"}`}
+                  aria-label="Открыть эмодзи"
                 >
                   <Smile className="w-5 h-5" />
                 </button>
@@ -409,15 +396,12 @@ export function ChatInputBar({
                     }
                   }}
                   disabled={isSending}
-                  className="w-12 h-12 rounded-full flex items-center justify-center transition-all"
-                  style={{
-                    background: isSilentSend
-                      ? "linear-gradient(135deg, #b45309 0%, #92400e 100%)"
-                      : "linear-gradient(135deg, #00A3B4 0%, #0066CC 50%, #00C896 100%)",
-                    boxShadow: "0 0 25px rgba(0,163,180,0.5), 0 4px 20px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.2)",
-                  }}
+                  className="chat-glass-primary-btn w-12 h-12 rounded-full flex items-center justify-center transition-all"
+                  style={isSilentSend ? {
+                    background: "linear-gradient(135deg, #b45309 0%, #92400e 100%)",
+                  } : undefined}
                 >
-                  <Send className="w-5 h-5 text-white" />
+                  <Send className="w-5 h-5" />
                 </button>
               </div>
             ) : (
@@ -428,14 +412,8 @@ export function ChatInputBar({
                 onPointerCancel={onRecordButtonUp}
                 onPointerLeave={onRecordButtonLeave}
                 onContextMenu={(e) => e.preventDefault()}
-                className="w-12 h-12 rounded-full flex items-center justify-center shrink-0 transition-all backdrop-blur-xl border border-cyan-400/30 select-none"
-                style={{
-                  background:
-                    recordMode === "video"
-                      ? "linear-gradient(145deg, rgba(139,92,246,0.3) 0%, rgba(0,102,204,0.2) 100%)"
-                      : "linear-gradient(145deg, rgba(0,163,180,0.3) 0%, rgba(0,102,204,0.2) 100%)",
-                  boxShadow: "0 0 20px rgba(0,163,180,0.3), inset 0 1px 0 rgba(255,255,255,0.15), 0 4px 20px rgba(0,0,0,0.3)",
-                }}
+                aria-label={recordMode === "voice" ? "Записать голосовое сообщение" : "Записать видеосообщение"}
+                className="chat-glass-icon-btn w-12 h-12 rounded-full flex items-center justify-center shrink-0 select-none"
               >
                 {recordMode === "voice" ? (
                   <Mic className="w-5 h-5 text-cyan-300" />

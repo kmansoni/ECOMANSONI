@@ -4,7 +4,6 @@ import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 const SUPABASE_URL = process.env.E2E_SUPABASE_URL ?? process.env.VITE_SUPABASE_URL ?? "";
 const SUPABASE_KEY = process.env.E2E_SUPABASE_KEY ?? process.env.VITE_SUPABASE_PUBLISHABLE_KEY ?? "";
 const E2E_PASSWORD = process.env.E2E_PASSWORD ?? "";
-const STORAGE_KEY = `sb-${SUPABASE_URL.match(/\/\/([a-z0-9]+)\./)?.[1] ?? "unknown"}-auth-token`;
 
 function makeSb(): SupabaseClient {
   return createClient(SUPABASE_URL, SUPABASE_KEY, {
@@ -14,33 +13,52 @@ function makeSb(): SupabaseClient {
 
 async function signupAndInject(page: Page, email: string, username: string) {
   const sb = makeSb();
-  const { data, error } = await sb.auth.signUp({
+  const { data: signupData, error: signupErr } = await sb.auth.signUp({
     email,
     password: E2E_PASSWORD,
     options: { data: { username, display_name: username } },
   });
 
-  if (error || !data.session) {
-    throw new Error(`Signup failed for ${email}: ${error?.message ?? "no session"}`);
+  if (signupErr || !signupData.session) {
+    throw new Error(`Signup failed for ${email}: ${signupErr?.message ?? "no session"}`);
   }
+  const userId = signupData.session.user.id;
+  const { access_token, refresh_token } = signupData.session;
 
-  const session = data.session;
-  const serialized = JSON.stringify({
-    access_token: session.access_token,
-    refresh_token: session.refresh_token,
-    token_type: session.token_type,
-    expires_in: session.expires_in,
-    expires_at: session.expires_at,
-    user: session.user,
+  // E2E auth hook: pass tokens via ?__e2e_session= and let useAuth call
+  // supabase.auth.setSession(). This avoids storage-injection races and
+  // works for both pages reliably.
+  const sessionParam = Buffer.from(
+    JSON.stringify({ access_token, refresh_token }),
+    "utf8",
+  )
+    .toString("base64")
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=+$/, "");
+
+  page.on("console", (msg) => {
+    // eslint-disable-next-line no-console
+    console.log(`[${email.split("@")[0]}|${msg.type()}] ${msg.text().slice(0, 240)}`);
+  });
+  page.on("pageerror", (err) => {
+    // eslint-disable-next-line no-console
+    console.log(`[${email.split("@")[0]}|pageerror] ${err.message.slice(0, 240)}`);
   });
 
-  await page.goto("/", { waitUntil: "domcontentloaded" });
-  await page.evaluate(
-    ({ key, value }) => localStorage.setItem(key, value),
-    { key: STORAGE_KEY, value: serialized },
-  );
+  await page.goto(`/?__e2e_session=${sessionParam}`, { waitUntil: "domcontentloaded" });
 
-  return { sb, userId: session.user.id };
+  // Wait for the SPA to leave /auth (i.e. setSession succeeded).
+  await page
+    .waitForFunction(() => !window.location.pathname.startsWith("/auth"), null, {
+      timeout: 30_000,
+    })
+    .catch(() => undefined);
+  const post = await page.evaluate(() => window.location.href);
+  // eslint-disable-next-line no-console
+  console.log(`[E2E-AUTH-POST] ${email} ${post}`);
+
+  return { sb, userId };
 }
 
 async function getOrCreateDm(sb: SupabaseClient, targetUserId: string): Promise<string> {
@@ -60,8 +78,9 @@ async function fetchSignals(sb: SupabaseClient, a: string, b: string) {
 
   if (!latestCall?.id) {
     return {
-      signals: [] as Array<{ signal_type: string; sender_id: string }> ,
+      signals: [] as Array<{ signal_type: string; sender_id: string }>,
       hasSfuHints: false,
+      hasCallRow: false,
     };
   }
 
@@ -80,6 +99,7 @@ async function fetchSignals(sb: SupabaseClient, a: string, b: string) {
   return {
     signals: (signals ?? []) as Array<{ signal_type: string; sender_id: string }>,
     hasSfuHints,
+    hasCallRow: true,
   };
 }
 
@@ -121,7 +141,11 @@ async function openDmAndFindCallButton(page: Page, convId: string, peerHints: st
 }
 
 async function hasActiveCallUi(page: Page): Promise<boolean> {
-  const endBtn = page.locator('button:has(.lucide-phone-off), button.bg-destructive').first();
+  // calls-v2: the call screen root has data-call-state="in_call"
+  const callStateEl = page.locator('[data-call-state="in_call"]').first();
+  if (await callStateEl.isVisible({ timeout: 500 }).catch(() => false)) return true;
+  // legacy fallback: hang-up button
+  const endBtn = page.locator('button:has(.lucide-phone-off), button.bg-destructive, [aria-label="Завершить"], [aria-label="End call"]').first();
   return endBtn.isVisible({ timeout: 500 }).catch(() => false);
 }
 
@@ -163,6 +187,7 @@ test("Simple call smoke (legacy/TURN path, no E2EE/SFU requirement)", async ({ b
     await incoming.waitFor({ state: "visible", timeout: 40_000 });
 
     const acceptBtn = pageB.locator('button[aria-label="Ответить"], button[aria-label="Answer"]').first();
+    await acceptBtn.waitFor({ state: "visible", timeout: 10_000 });
     await acceptBtn.click();
 
     // Calls smoke success criteria (legacy + calls-v2 compatible):
@@ -172,16 +197,21 @@ test("Simple call smoke (legacy/TURN path, no E2EE/SFU requirement)", async ({ b
     //    OR both peers are in active in-call UI state.
     let signalsOk = false;
     for (let i = 0; i < 16; i++) {
-      const { signals, hasSfuHints } = await fetchSignals(authA.sb, authA.userId, authB.userId);
+      const { signals, hasSfuHints, hasCallRow } = await fetchSignals(authA.sb, authA.userId, authB.userId);
       const hasInvite = signals.some((s) => s.signal_type === "call.invite");
       const hasAccept = signals.some((s) => s.signal_type === "call.accept");
       const hasSdpLeg = signals.some((s) => s.signal_type === "offer" || s.signal_type === "answer");
       const inCallUiA = await hasActiveCallUi(pageA);
       const inCallUiB = await hasActiveCallUi(pageB);
+      // Legacy path: signals in DB
       const signalingOk = hasInvite && hasAccept && (hasSdpLeg || hasSfuHints);
+      // Both peers in active call UI
       const uiOk = inCallUiA && inCallUiB;
+      // calls-v2 WS path: signals go over WebSocket (not stored to DB).
+      // Success = call row was created (caller invited) + callee accepted via UI + either peer shows call UI
+      const callsV2Ok = hasCallRow && (inCallUiA || inCallUiB || hasSfuHints);
 
-      if (signalingOk || uiOk) {
+      if (signalingOk || uiOk || callsV2Ok) {
         signalsOk = true;
         break;
       }
@@ -190,7 +220,60 @@ test("Simple call smoke (legacy/TURN path, no E2EE/SFU requirement)", async ({ b
 
     expect(signalsOk).toBe(true);
 
-    await pageA.waitForTimeout(3000);
+    // ─── Media verification: ensure both peers actually exchange tracks ────────
+    // Give SFU bootstrap + DTLS + first frames a window to settle.
+    await pageA.waitForTimeout(8000);
+
+    type MediaProbe = {
+      videos: Array<{ id: string; w: number; h: number; ready: number; audio: number; video: number; live: number }>;
+      pcs: number;
+      hint: string;
+    };
+
+    const probeMedia = async (page: Page): Promise<MediaProbe> => {
+      return await page.evaluate(() => {
+        const result: MediaProbe = { videos: [], pcs: 0, hint: "" };
+        const els = Array.from(document.querySelectorAll("video"));
+        for (const v of els) {
+          const stream = (v as HTMLVideoElement).srcObject as MediaStream | null;
+          let audio = 0, video = 0, live = 0;
+          if (stream && typeof stream.getTracks === "function") {
+            for (const t of stream.getTracks()) {
+              if (t.kind === "audio") audio++;
+              if (t.kind === "video") video++;
+              if (t.readyState === "live") live++;
+            }
+          }
+          result.videos.push({
+            id: (v as HTMLVideoElement).getAttribute("data-testid") ?? (v as HTMLVideoElement).className.slice(0, 40),
+            w: (v as HTMLVideoElement).videoWidth,
+            h: (v as HTMLVideoElement).videoHeight,
+            ready: (v as HTMLVideoElement).readyState,
+            audio, video, live,
+          });
+        }
+        return result;
+      });
+    };
+
+    let mediaOkA = false, mediaOkB = false;
+    let probeA: MediaProbe = { videos: [], pcs: 0, hint: "" };
+    let probeB: MediaProbe = { videos: [], pcs: 0, hint: "" };
+    for (let i = 0; i < 12; i++) {
+      probeA = await probeMedia(pageA);
+      probeB = await probeMedia(pageB);
+      // Success criterion: at least one <video> element on each page has a live video track
+      // AND playing video (videoWidth > 0).
+      mediaOkA = probeA.videos.some((v) => v.video > 0 && v.live > 0 && v.w > 0);
+      mediaOkB = probeB.videos.some((v) => v.video > 0 && v.live > 0 && v.w > 0);
+      if (mediaOkA && mediaOkB) break;
+      await pageA.waitForTimeout(2000);
+    }
+
+    console.log("[smoke] mediaProbe A:", JSON.stringify(probeA));
+    console.log("[smoke] mediaProbe B:", JSON.stringify(probeB));
+    expect(mediaOkA, "pageA must have live video track in <video>").toBe(true);
+    expect(mediaOkB, "pageB must have live video track in <video> (remote stream)").toBe(true);
 
     const endBtnA = pageA.locator("button:has(.lucide-phone-off), button.bg-destructive").first();
     if (await endBtnA.isVisible({ timeout: 2000 }).catch(() => false)) {

@@ -130,7 +130,7 @@ export function ProfileHeader({
   };
 
   return (
-    <>
+    <div className="profile-header-scope">
       {/* ── Top bar ── */}
       <div className="flex items-center justify-between px-4 py-3 safe-area-top">
         <div className="flex items-center gap-1.5">
@@ -148,14 +148,14 @@ export function ProfileHeader({
             <>
               <button
                 onClick={() => onNavigate("/analytics")}
-                className="w-10 h-10 rounded-full bg-card/80 border border-border flex items-center justify-center"
+                className="chat-glass-icon-btn w-10 h-10 rounded-full flex items-center justify-center"
                 aria-label="Аналитика"
               >
                 <TrendingUp className="w-5 h-5" />
               </button>
               <button
                 onClick={onQR}
-                className="w-10 h-10 rounded-full bg-card/80 border border-border flex items-center justify-center"
+                className="chat-glass-icon-btn w-10 h-10 rounded-full flex items-center justify-center"
                 aria-label="QR-код"
               >
                 <QrCode className="w-5 h-5" />
@@ -164,7 +164,7 @@ export function ProfileHeader({
           )}
           <button
             onClick={onMenu}
-            className="w-10 h-10 rounded-full bg-card/80 border border-border flex items-center justify-center"
+            className="chat-glass-icon-btn w-10 h-10 rounded-full flex items-center justify-center"
           >
             {isOwnProfile ? <Settings className="w-5 h-5" /> : <MoreHorizontal className="w-5 h-5" />}
           </button>
@@ -195,7 +195,7 @@ export function ProfileHeader({
                     loading="eager"
                     decoding="async"
                   />
-                  <AvatarFallback className="bg-violet-500 text-white text-2xl font-semibold">
+                  <AvatarFallback className="bg-gradient-to-br from-cyan-500 to-emerald-500 text-white text-2xl font-semibold">
                     {profile?.display_name?.charAt(0)?.toUpperCase() || <User className="w-8 h-8" />}
                   </AvatarFallback>
                 </Avatar>
@@ -226,22 +226,22 @@ export function ProfileHeader({
               {profileMeta?.status_emoji && <span>{profileMeta.status_emoji}</span>}
             </div>
             {profileMeta?.category && (
-              <p className="text-xs text-muted-foreground mb-2">{profileMeta.category}</p>
+              <p className="text-xs text-[hsl(var(--glass-muted-ink))] mb-2">{profileMeta.category}</p>
             )}
-            <div className="flex items-center gap-5">
-              <div className="text-center">
-                <p className="font-bold text-foreground text-sm">
+            <div className="flex items-center gap-3">
+              <div className="text-center px-4 py-1.5 rounded-2xl chat-glass-chip">
+                <p className="font-bold text-white text-sm">
                   {profile?.stats?.postsCount ?? postsCount}
                 </p>
-                <p className="text-xs text-muted-foreground">публикации</p>
+                <p className="text-xs text-white/60">публикации</p>
               </div>
-              <button onClick={onFollowers} className="text-center">
-                <p className="font-bold text-foreground text-sm">{formatNumber(displayFollowersCount)}</p>
-                <p className="text-xs text-muted-foreground">подписчики</p>
+              <button onClick={onFollowers} className="text-center px-4 py-1.5 rounded-2xl chat-glass-chip">
+                <p className="font-bold text-white text-sm">{formatNumber(displayFollowersCount)}</p>
+                <p className="text-xs text-white/60">подписчики</p>
               </button>
-              <button onClick={onFollowing} className="text-center">
-                <p className="font-bold text-foreground text-sm">{formatNumber(profile?.stats?.followingCount ?? 0)}</p>
-                <p className="text-xs text-muted-foreground">подписки</p>
+              <button onClick={onFollowing} className="text-center px-4 py-1.5 rounded-2xl chat-glass-chip">
+                <p className="font-bold text-white text-sm">{formatNumber(profile?.stats?.followingCount ?? 0)}</p>
+                <p className="text-xs text-white/60">подписки</p>
               </button>
             </div>
           </div>
@@ -280,7 +280,7 @@ export function ProfileHeader({
         {isOwnProfile && ["creator", "business"].includes(profileMeta?.account_type ?? "") && (
           <button
             onClick={() => onNavigate("/professional-dashboard")}
-            className="w-full mt-2 py-2 bg-gradient-to-r from-purple-600 to-pink-600 rounded-xl text-sm font-semibold text-white"
+            className="w-full mt-2 py-2 bg-gradient-to-r from-primary to-cyan-500 rounded-xl text-sm font-semibold text-white"
           >
             Профессиональный дашборд
           </button>
@@ -292,7 +292,7 @@ export function ProfileHeader({
             <>
               <button
                 onClick={onEditProfile}
-                className="flex-1 py-2 bg-muted rounded-xl text-sm font-semibold text-foreground hover:bg-muted/80 transition-colors"
+                className="chat-glass-chip flex-1 py-2 rounded-xl text-sm font-semibold text-foreground hover:brightness-110 transition"
               >
                 Редактировать профиль
               </button>
@@ -301,7 +301,7 @@ export function ProfileHeader({
                   const url = buildProfileUrl({ username: profile?.username, userId });
                   navigator.clipboard.writeText(url).then(() => toast.success("Ссылка скопирована"));
                 }}
-                className="flex-1 py-2 bg-muted rounded-xl text-sm font-semibold text-foreground hover:bg-muted/80 transition-colors"
+                className="chat-glass-chip flex-1 py-2 rounded-xl text-sm font-semibold text-foreground hover:brightness-110 transition"
               >
                 Поделиться профилем
               </button>
@@ -312,10 +312,10 @@ export function ProfileHeader({
                 onClick={handleFollowClick}
                 disabled={followPending}
                 className={cn(
-                  "flex-1 py-2 rounded-xl text-sm font-semibold transition-colors",
+                  "flex-1 py-2 rounded-xl text-sm font-semibold transition",
                   displayIsFollowing
-                    ? "bg-muted text-foreground hover:bg-muted/80"
-                    : "bg-primary text-primary-foreground hover:bg-primary/80",
+                    ? "chat-glass-chip text-foreground hover:brightness-110"
+                    : "chat-glass-primary-btn text-primary-foreground hover:brightness-110",
                   followPending && "opacity-70 cursor-not-allowed"
                 )}
               >
@@ -323,13 +323,13 @@ export function ProfileHeader({
               </button>
               <button
                 onClick={() => onNavigate(`/chat?userId=${targetUserId}`)}
-                className="flex-1 py-2 bg-muted rounded-xl text-sm font-semibold text-foreground hover:bg-muted/80 transition-colors"
+                className="chat-glass-chip flex-1 py-2 rounded-xl text-sm font-semibold text-foreground hover:brightness-110 transition"
               >
                 Сообщение
               </button>
               <button
                 onClick={onMenu}
-                className="w-10 py-2 bg-muted rounded-xl flex items-center justify-center"
+                className="chat-glass-icon-btn w-10 py-2 rounded-xl flex items-center justify-center"
               >
                 <ChevronDown className="w-4 h-4" />
               </button>
@@ -364,6 +364,6 @@ export function ProfileHeader({
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-    </>
+    </div>
   );
 }
