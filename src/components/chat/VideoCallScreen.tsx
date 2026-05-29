@@ -13,6 +13,8 @@ import {
   Monitor,
   Waves,
   Sparkles,
+  FlipHorizontal,
+  SwitchCamera,
 } from "lucide-react";
 import type { VideoCall, VideoCallStatus } from "@/contexts/VideoCallContext";
 import type { CalleeProfile } from "@/contexts/video-call/types";
@@ -23,7 +25,7 @@ import { GlassControlButton } from "@/components/ui/glass/GlassControlButton";
 import { CallStatusIndicator } from "@/components/ui/glass/CallStatusIndicator";
 import { CallBackground } from "@/components/ui/glass/CallBackground";
 import { GlassAvatarRing } from "@/components/ui/glass/GlassAvatarRing";
-import MaskOverlay from "@/components/mask/MaskOverlay";
+import MaskOverlay, { MASKS, type MaskId } from "@/components/mask/MaskOverlay";
 
 
 
@@ -140,12 +142,15 @@ export function VideoCallScreen({
   const { user } = useAuth();
   const localVideoRef = useRef<HTMLVideoElement>(null);
   const remoteVideoRef = useRef<HTMLVideoElement>(null);
-  const pipVideoRef = useRef<HTMLVideoElement>(null);
+  const pipVideoRef = useRef<HTMLVideoElement>(null); // kept for stream attachment
   const audioOutRef = useRef<HTMLAudioElement>(null);
   const remoteScreenRef = useRef<HTMLVideoElement>(null);
   const [callDuration, setCallDuration] = useState(0);
   const [audioOutputMode, setAudioOutputMode] = useState<AudioOutputMode>("earpiece");
   const [isSelfMain, setIsSelfMain] = useState(true);
+  const [isMirrored, setIsMirrored] = useState(true);
+  const [maskId, setMaskId] = useState<MaskId>("none");
+  const [showMaskPicker, setShowMaskPicker] = useState(false);
 
   useEffect(() => {
     const audioEl = audioOutRef.current;
@@ -280,63 +285,95 @@ export function VideoCallScreen({
 
         {hasRemoteVideo ? (
           <div className="absolute inset-0 w-full h-full">
-{isSelfMain ? (
+            {/* Main video — tap toggles mirror */}
+            {isSelfMain ? (
               <>
                 <video
                   ref={localVideoRef}
                   autoPlay playsInline muted
-                  className="w-full h-full object-cover scale-x-[-1] transition-all duration-500 cursor-pointer"
-                  style={{ opacity: isVideoOff ? 0.15 : 1, filter: isVideoOff ? "blur(2px) grayscale(0.7)" : "none", transition: "opacity 0.4s, filter 0.4s" }}
-                  onClick={() => setIsSelfMain(false)}
-                  title="Поменять местами"
+                  className="w-full h-full object-cover transition-all duration-500"
+                  style={{
+                    transform: isMirrored ? 'scaleX(-1)' : 'none',
+                    opacity: isVideoOff ? 0.15 : 1,
+                    filter: isVideoOff ? "blur(2px) grayscale(0.7)" : "none",
+                    transition: "opacity 0.4s, filter 0.4s, transform 0.3s",
+                  }}
+                  onClick={() => setIsMirrored(m => !m)}
                 />
-                <MaskOverlay videoRef={localVideoRef} />
+                <MaskOverlay videoRef={localVideoRef} maskId={maskId} />
               </>
-              ) : (
-              <>
+            ) : (
+              <video
+                ref={remoteVideoRef}
+                autoPlay playsInline
+                className="w-full h-full object-cover transition-all duration-500"
+                onClick={() => setIsMirrored(m => !m)}
+              />
+            )}
+
+            {/* PiP — tap swaps main/pip */}
+            <div
+              className="absolute top-20 right-4 w-28 h-40 z-10 cursor-pointer"
+              onClick={() => setIsSelfMain(s => !s)}
+            >
+              {isSelfMain ? (
                 <video
                   ref={remoteVideoRef}
                   autoPlay playsInline
-                  className="w-full h-full object-cover transition-all duration-500 cursor-pointer"
-                  onClick={() => setIsSelfMain(true)}
-                  title="Поменять местами"
+                  className="w-full h-full object-cover rounded-2xl border-2 border-white/30 shadow-lg"
                 />
-                <MaskOverlay videoRef={localVideoRef} />
-              </>
+              ) : (
+                <>
+                  <video
+                    ref={localVideoRef}
+                    autoPlay playsInline muted
+                    className="w-full h-full object-cover rounded-2xl border-2 border-white/30 shadow-lg"
+                    style={{
+                      transform: isMirrored ? 'scaleX(-1)' : 'none',
+                      opacity: isVideoOff ? 0.15 : 1,
+                      filter: isVideoOff ? "blur(2px) grayscale(0.7)" : "none",
+                    }}
+                  />
+                  <MaskOverlay videoRef={localVideoRef} maskId={maskId} />
+                </>
               )}
-            <div className="absolute top-20 right-4 w-28 h-40 z-10 transition-all duration-500">
-              {isSelfMain ? (
-                <video
-                  ref={pipVideoRef}
-                  autoPlay playsInline
-                  className="w-full h-full object-cover rounded-2xl border-2 border-white/30 shadow-lg transition-all duration-500 cursor-pointer"
-                  onClick={() => setIsSelfMain(true)}
-                  title="Поменять местами"
-                />
-) : (
-                 <>
-                   <video
-                     ref={localVideoRef}
-                     autoPlay playsInline muted
-                     className="w-full h-full object-cover rounded-2xl border-2 border-white/30 scale-x-[-1] shadow-lg transition-all duration-500 cursor-pointer"
-                     style={{ opacity: isVideoOff ? 0.15 : 1, filter: isVideoOff ? "blur(2px) grayscale(0.7)" : "none", transition: "opacity 0.4s, filter 0.4s" }}
-                     onClick={() => setIsSelfMain(false)}
-                     title="Поменять местами"
-                   />
-                   <MaskOverlay videoRef={localVideoRef} />
-                 </>
-               )}
+              {/* Swap hint */}
+              <div className="absolute bottom-1 left-1/2 -translate-x-1/2 bg-black/50 rounded-full px-2 py-0.5 text-[9px] text-white/70 flex items-center gap-1">
+                <SwitchCamera className="w-2.5 h-2.5" />
+                Сменить
+              </div>
             </div>
+
+            {/* Mask picker overlay */}
+            {showMaskPicker && (
+              <div className="absolute top-20 left-4 z-20 flex flex-col gap-2 bg-black/60 backdrop-blur-md rounded-2xl p-3">
+                {MASKS.map(m => (
+                  <button
+                    key={m.id}
+                    onClick={() => { setMaskId(m.id); setShowMaskPicker(false); }}
+                    className={`px-3 py-1.5 rounded-xl text-sm text-white transition-all ${maskId === m.id ? 'bg-cyan-500/60' : 'bg-white/10 hover:bg-white/20'}`}
+                  >
+                    {m.label}
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
         ) : (
           <div className="absolute inset-0 w-full h-full">
-             <video
-               ref={localVideoRef}
-               autoPlay playsInline muted
-               className="w-full h-full object-cover scale-x-[-1] transition-opacity duration-400"
-               style={{ opacity: isVideoOff ? 0.15 : 1, filter: isVideoOff ? "blur(2px) grayscale(0.7)" : "none", transition: "opacity 0.4s, filter 0.4s" }}
-             />
-             <MaskOverlay videoRef={localVideoRef} />
+            <video
+              ref={localVideoRef}
+              autoPlay playsInline muted
+              className="w-full h-full object-cover transition-opacity duration-400"
+              style={{
+                transform: isMirrored ? 'scaleX(-1)' : 'none',
+                opacity: isVideoOff ? 0.15 : 1,
+                filter: isVideoOff ? "blur(2px) grayscale(0.7)" : "none",
+                transition: "opacity 0.4s, filter 0.4s, transform 0.3s",
+              }}
+              onClick={() => setIsMirrored(m => !m)}
+            />
+            <MaskOverlay videoRef={localVideoRef} maskId={maskId} />
             {isVideoOff && (
               <div className="absolute inset-0 flex items-center justify-center bg-black/60 transition-all duration-400">
                 <VideoOff className="w-16 h-16 text-white/80 animate-fade-in" />
@@ -422,6 +459,10 @@ export function VideoCallScreen({
           hasRemoteScreen={!!hasRemoteScreen}
           remoteScreenRef={remoteScreenRef}
           remoteScreenStream={remoteScreenStream}
+          isMirrored={isMirrored}
+          onToggleMirror={() => setIsMirrored(m => !m)}
+          maskActive={maskId !== 'none'}
+          onToggleMask={() => setShowMaskPicker(p => !p)}
         />
       </div>
     );
@@ -526,6 +567,10 @@ interface VideoCallControlsProps {
   hasRemoteScreen?: boolean;
   remoteScreenRef?: React.RefObject<HTMLVideoElement>;
   remoteScreenStream?: MediaStream | null;
+  isMirrored?: boolean;
+  onToggleMirror?: () => void;
+  maskActive?: boolean;
+  onToggleMask?: () => void;
 }
 
 function VideoCallControls({
@@ -541,6 +586,10 @@ function VideoCallControls({
   hasRemoteScreen = false,
   remoteScreenRef,
   remoteScreenStream,
+  isMirrored = true,
+  onToggleMirror,
+  maskActive = false,
+  onToggleMask,
 }: VideoCallControlsProps) {
   const isAudio = variant === "audio";
   const wrapperClass = isAudio
@@ -580,6 +629,24 @@ function VideoCallControls({
           isActive={!isVideoOff}
           onClick={onToggleVideo}
         />
+        {!isAudio && onToggleMirror && (
+          <GlassControlButton
+            icon={<FlipHorizontal className="w-6 h-6" />}
+            label="Зеркало"
+            isActive={isMirrored}
+            onClick={onToggleMirror}
+            hideLabel
+          />
+        )}
+        {!isAudio && onToggleMask && (
+          <GlassControlButton
+            icon={<Sparkles className="w-6 h-6" />}
+            label="Маска"
+            isActive={maskActive}
+            onClick={onToggleMask}
+            hideLabel
+          />
+        )}
         <GlassControlButton
           icon={isMuted ? <MicOff className="w-6 h-6" /> : <Mic className="w-6 h-6" />}
           label="Звук"
