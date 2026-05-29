@@ -66,6 +66,7 @@ jobs:
           VITE_API_URL: ${{ secrets.VITE_API_URL }}
           VITE_API_KEY: ${{ secrets.VITE_API_KEY }}
           VITE_EXPECTED_SUPABASE_PROJECT_REF: ${{ secrets.VITE_EXPECTED_SUPABASE_PROJECT_REF }}
+          VITE_DEMO_MODE: "false"
           REQUIRE_CHAT_SCHEMA_PROBE: "1"
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
           CHAT_SCHEMA_EXPECTED_VERSION: "2"

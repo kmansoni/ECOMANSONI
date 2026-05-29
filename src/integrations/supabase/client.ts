@@ -155,6 +155,17 @@ function createDemoClient(): SupabaseClient {
       _callback(session ? "INITIAL_SESSION" : "SIGNED_OUT", session);
       return { data: { subscription: { unsubscribe: () => {} } } };
     },
+    setSession: async ({ access_token, refresh_token }: { access_token: string; refresh_token: string }) => {
+      const now = Math.floor(Date.now() / 1000);
+      const session: DemoSession = {
+        user: { id: deviceId, email: "demo@demo.local", user_metadata: {} },
+        access_token,
+        refresh_token,
+        expires_at: now + 3600,
+      };
+      setDemoSession(session);
+      return { data: { session, user: session.user }, error: null };
+    },
     refreshSession: async () => {
       const session = getDemoSession();
       return { data: { session } };
@@ -304,11 +315,16 @@ if (DEMO_MODE) {
   });
 
   const supabaseProxy = new Proxy(baseSupabase, {
-    get(target, prop, receiver) {
+    get(target, prop) {
       if (prop === "functions") {
         return functionsProxy;
       }
-      const value = Reflect.get(target, prop, receiver);
+      // NOTE: use `target` as receiver (not the Proxy) so that class getters
+      // and methods that touch private fields (`#field`) resolve against the
+      // real instance instead of the Proxy. Passing the Proxy as receiver
+      // breaks supabase-js because GoTrueClient / SupabaseClient use private
+      // fields internally.
+      const value = Reflect.get(target, prop, target);
       return typeof value === "function" ? value.bind(target) : value;
     },
   });
