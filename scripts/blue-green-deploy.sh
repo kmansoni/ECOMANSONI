@@ -74,7 +74,7 @@ ln -sfn "$INACTIVE_DIR" "$CURRENT_LINK"
 # Обновляем nginx root
 if [ -n "$NGINX_CONF" ]; then
   if grep -Eq "root[[:space:]]+$APP_DIR/(dist|current|releases/blue|releases/green)" "$NGINX_CONF"; then
-    sudo sed -Ei "s|root[[:space:]]+$APP_DIR/(dist|current|releases/blue|releases/green)|root $TARGET_ROOT|g" "$NGINX_CONF"
+    sudo sed -Ei "s#root[[:space:]]+$APP_DIR/(dist|current|releases/blue|releases/green)#root $TARGET_ROOT#g" "$NGINX_CONF"
   else
     log "WARNING: root directive for $APP_DIR not found in $NGINX_CONF"
   fi
