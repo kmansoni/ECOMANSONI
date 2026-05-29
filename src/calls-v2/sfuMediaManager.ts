@@ -439,16 +439,16 @@ export class SfuMediaManager {
     let encodings: mediasoupTypes.RtpEncodingParameters[] | undefined;
     let codecOptions: mediasoupTypes.ProducerCodecOptions | undefined;
     if (isVideo) {
-      if (isScreenShare) {
-        // Screen-share: одно качество, приоритет — резкость текста.
-        encodings = [
-          { maxBitrate: 1_500_000, scalabilityMode: 'L1T3' },
-        ];
-        codecOptions = {
-          videoGoogleStartBitrate: 1000,
-          videoGoogleMaxBitrate: 1500,
-          videoGoogleMinBitrate: 300,
-        };
+       if (isScreenShare) {
+         // Screen-share: единый слой высокого качества для четкости текста.
+         encodings = [
+           { maxBitrate: 2_500_000, scalabilityMode: 'L1T3' },
+         ];
+         codecOptions = {
+           videoGoogleStartBitrate: 1500,
+           videoGoogleMaxBitrate: 2500,
+           videoGoogleMinBitrate: 500,
+         };
       } else {
         // Camera: simulcast 3 layer (180p / 360p / 720p), VP8-friendly.
         encodings = [
@@ -540,6 +540,12 @@ export class SfuMediaManager {
       throw new Error('recvTransport not created. Call createRecvTransport first.');
     }
 
+    // Wait for DTLS handshake before consuming — CONSUMER_ADDED can arrive before
+    // the recv transport reaches 'connected', causing consume() to fail.
+    if (this.recvTransport.connectionState !== 'connected') {
+      await this.waitForRecvTransportConnected(10_000);
+    }
+
     let receiverFromCallback: RTCRtpReceiver | null = null;
 
     const consumer = await this.recvTransport.consume({
@@ -622,6 +628,31 @@ export class SfuMediaManager {
     });
     
     return tracks;
+  }
+
+  /** Wait until recvTransport DTLS handshake completes (state = 'connected'). */
+  async waitForRecvTransportConnected(timeoutMs = 10_000): Promise<void> {
+    const t = this.recvTransport;
+    if (!t) throw new Error('recvTransport not created');
+    if (t.connectionState === 'connected') return;
+    await new Promise<void>((resolve, reject) => {
+      const timer = window.setTimeout(() => {
+        t.off('connectionstatechange', onChange);
+        reject(new Error(`recvTransport DTLS timeout after ${timeoutMs}ms (state=${t.connectionState})`));
+      }, timeoutMs);
+      const onChange = (state: string) => {
+        if (state === 'connected') {
+          window.clearTimeout(timer);
+          t.off('connectionstatechange', onChange);
+          resolve();
+        } else if (state === 'failed' || state === 'closed') {
+          window.clearTimeout(timer);
+          t.off('connectionstatechange', onChange);
+          reject(new Error(`recvTransport entered ${state} before connected`));
+        }
+      };
+      t.on('connectionstatechange', onChange);
+    });
   }
 
   /** Resume consumer (после начального paused состояния) */

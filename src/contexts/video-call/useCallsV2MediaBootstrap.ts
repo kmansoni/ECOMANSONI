@@ -160,6 +160,18 @@ screenStream,
     const roomId = callsWsMediaRoomRef.current;
     const stream = screenStream;
 
+    // Helper function to wait for E2EE outbound key
+    const waitForE2EEKey = async (enc: CallMediaEncryption, timeoutMs: number): Promise<boolean> => {
+      const start = Date.now();
+      while (Date.now() - start < timeoutMs) {
+        if (enc.hasOutboundKey()) {
+          return true;
+        }
+        await new Promise(resolve => setTimeout(resolve, 50));
+      }
+      return false;
+    };
+
     if (!manager || !roomId) {
       if (screenShareProducerIdsRef.current.length > 0) {
         if (manager) {
@@ -196,6 +208,26 @@ screenStream,
       return;
     }
 
+    // Wait for E2EE key if required
+    if (REQUIRE_SFRAME && CallMediaEncryption.isSupported()) {
+      const enc = callMediaEncryptionRef.current;
+      if (!enc) {
+        toast.error("Шифрование недоступно", {
+          description: "Ключ для защиты демонстрации экрана не готов. Попробуйте позже",
+          duration: 5000,
+        });
+        return;
+      }
+      const keyReady = await waitForE2EEKey(enc, 5000);
+      if (!keyReady) {
+        toast.error("Шифрование недоступно", {
+          description: "Ключ для защиты демонстрации экрана не готов. Попробуйте позже",
+          duration: 5000,
+        });
+        return;
+      }
+    }
+
     const tracks = stream.getVideoTracks().filter((track) => track.readyState === "live");
     if (tracks.length === 0) {
       return;
@@ -221,7 +253,7 @@ screenStream,
     }
     screenShareProducerIdsRef.current = producerIds;
     logger.info("[VideoCallContext] calls-v2 screen-share producers ready", { roomId, count: producerIds.length });
-  }, [callMediaEncryptionRef, callsWsMediaRoomRef, callsWsRef, isScreenSharing, screenStream, sfuManagerRef]);
+  }, [callMediaEncryptionRef, callsWsMediaRoomRef, callsWsRef, epochGuardRef, isScreenSharing, screenStream, sfuManagerRef, dispatchFsm]);
 
   useEffect(() => {
     void syncScreenShareProducer();
