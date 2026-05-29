@@ -1,3 +1,4 @@
+-- ALLOW_DESTRUCTIVE_MIGRATION
 -- Cleanup: drop dead auth_accounts.password_hash column + fix auth_upsert_account_v1
 -- Date: 2026-04-22
 --
