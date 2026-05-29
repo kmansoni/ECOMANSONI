@@ -6,7 +6,7 @@ interface GlassControlButtonProps {
   label: string;
   onClick: () => void;
   isActive?: boolean;
-  variant?: "default" | "danger";
+  variant?: "default" | "danger" | "success";
   size?: "sm" | "md" | "lg";
   disabled?: boolean;
   className?: string;
@@ -25,11 +25,17 @@ export function GlassControlButton({
   className = "",
 }: GlassControlButtonProps) {
   const isDanger = variant === "danger";
+  const isSuccess = variant === "success";
 
   const style: React.CSSProperties = isDanger
     ? {
         background: "linear-gradient(145deg, #ef4444 0%, #dc2626 100%)",
         boxShadow: "0 4px 20px rgba(239,68,68,0.4), inset 0 1px 0 rgba(255,255,255,0.2)",
+      }
+    : isSuccess
+    ? {
+        background: "linear-gradient(145deg, #22c55e 0%, #16a34a 100%)",
+        boxShadow: "0 4px 20px rgba(34,197,94,0.5), inset 0 1px 0 rgba(255,255,255,0.2)",
       }
     : {
         background: isActive
@@ -54,7 +60,7 @@ export function GlassControlButton({
         className={`${SIZE_MAP[size]} min-w-[48px] min-h-[48px] rounded-full flex items-center justify-center backdrop-blur-xl transition-opacity ${disabled ? "opacity-40 cursor-not-allowed" : ""}`}
         style={style}
       >
-        <span className={isDanger || isActive ? "text-white" : "text-gray-800"}>
+        <span className={isDanger || isSuccess || isActive ? "text-white" : "text-gray-800"}>
           {icon}
         </span>
       </motion.button>

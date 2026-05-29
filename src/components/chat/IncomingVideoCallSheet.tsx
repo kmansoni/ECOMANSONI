@@ -56,12 +56,25 @@ export function IncomingVideoCallSheet({ call, onAccept, onDecline }: IncomingVi
           size="lg"
           onClick={onDecline}
         />
-        <GlassControlButton
-          icon={isVideoCall ? <Video className="w-7 h-7" /> : <Phone className="w-7 h-7" />}
-          label="Ответить"
-          size="lg"
-          onClick={onAccept}
-        />
+        <div className="relative">
+          <motion.div
+            className="absolute inset-0 rounded-full bg-green-500/40"
+            animate={{ scale: [1, 1.6, 1], opacity: [0.6, 0, 0.6] }}
+            transition={{ duration: 1.4, repeat: Infinity, ease: "easeInOut" }}
+          />
+          <motion.div
+            className="absolute inset-0 rounded-full bg-green-500/25"
+            animate={{ scale: [1, 2, 1], opacity: [0.4, 0, 0.4] }}
+            transition={{ duration: 1.4, repeat: Infinity, ease: "easeInOut", delay: 0.3 }}
+          />
+          <GlassControlButton
+            icon={isVideoCall ? <Video className="w-7 h-7" /> : <Phone className="w-7 h-7" />}
+            label="Ответить"
+            variant="success"
+            size="lg"
+            onClick={onAccept}
+          />
+        </div>
       </div>
     </motion.div>
   );
