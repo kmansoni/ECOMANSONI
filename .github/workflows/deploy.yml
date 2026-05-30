@@ -231,11 +231,12 @@ jobs:
           script: |
             set -euo pipefail
             APP_DIR="${{ secrets.ADMINVPS_APP_DIR }}"
-            echo "nginx user: $(ps aux | grep nginx | grep -v grep | awk '{print $1}' | head -1)"
-            echo "dist owner: $(ls -la $APP_DIR/ | grep dist)"
-            echo "current owner: $(ls -la $APP_DIR/ | grep current)"
-            stat "$APP_DIR/dist/index.html" 2>/dev/null || echo "index.html not found"
-            sudo -u www-data cat "$APP_DIR/current/index.html" > /dev/null 2>&1 && echo "www-data can read" || echo "www-data CANNOT read"
+            echo "=== sites-enabled ==="
+            ls -la /etc/nginx/sites-enabled/
+            echo "=== mansoni root ==="
+            grep "root" /etc/nginx/sites-enabled/mansoni 2>/dev/null || echo "no mansoni site"
+            echo "=== nginx error log (last 10) ==="
+            sudo tail -10 /var/log/nginx/error.log 2>/dev/null || echo "no error log"
             sed "s|__APP_DIR__|$APP_DIR|g" "$APP_DIR/nginx.conf" | sudo tee /etc/nginx/sites-available/mansoni > /dev/null
             sudo ln -sfn /etc/nginx/sites-available/mansoni /etc/nginx/sites-enabled/mansoni
             sudo nginx -t
