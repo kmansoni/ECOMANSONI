@@ -231,9 +231,11 @@ jobs:
           script: |
             set -euo pipefail
             APP_DIR="${{ secrets.ADMINVPS_APP_DIR }}"
-            echo "APP_DIR=$APP_DIR"
-            echo "current symlink: $(readlink -f $APP_DIR/current 2>/dev/null || echo MISSING)"
-            ls "$APP_DIR/current/" 2>/dev/null | head -5 || echo "current dir empty or missing"
+            echo "nginx user: $(ps aux | grep nginx | grep -v grep | awk '{print $1}' | head -1)"
+            echo "dist owner: $(ls -la $APP_DIR/ | grep dist)"
+            echo "current owner: $(ls -la $APP_DIR/ | grep current)"
+            stat "$APP_DIR/dist/index.html" 2>/dev/null || echo "index.html not found"
+            sudo -u www-data cat "$APP_DIR/current/index.html" > /dev/null 2>&1 && echo "www-data can read" || echo "www-data CANNOT read"
             sed "s|__APP_DIR__|$APP_DIR|g" "$APP_DIR/nginx.conf" | sudo tee /etc/nginx/sites-available/mansoni > /dev/null
             sudo ln -sfn /etc/nginx/sites-available/mansoni /etc/nginx/sites-enabled/mansoni
             sudo nginx -t
