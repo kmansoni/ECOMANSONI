@@ -1077,12 +1077,6 @@ dispatchFsm,
     }
 
     logger.info("[VideoCallContext] answerCall: Activating UI-lock BEFORE getUserMedia");
-    if (call.caller_profile?.display_name) {
-      setPendingCalleeProfile({
-        display_name: call.caller_profile.display_name,
-        avatar_url: call.caller_profile.avatar_url,
-      });
-    }
     setIsCallUiActive(true); // Activate UI-lock BEFORE getUserMedia
     setPendingIncomingCall(null);
     clearIncomingCall();

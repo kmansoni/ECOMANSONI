@@ -49,8 +49,6 @@ export class SfuMediaManager {
     */
    private producerSenders: Map<string, RTCRtpSender> = new Map();
    private consumerReceivers: Map<string, RTCRtpReceiver> = new Map();
-   // RTCPeerConnection не thread-safe для параллельных produce() — сериализуем через очередь.
-   private _produceQueue: Promise<unknown> = Promise.resolve();
    private relayStatsCollector = new RelayStatsCollector({ maxHistorySize: 120 });
    private lastRelayRoute: "none" | "p2p" | "relay" = "none";
    private _watchdogTimer: number | null = null;
@@ -405,12 +403,6 @@ export class SfuMediaManager {
   /**
    * Produce a track через sendTransport.
    * Вернёт producer, rtpParameters передаются через onProduce callback.
-   *
-   * Для video включаем simulcast (3 layer) + degradationPreference="maintain-framerate":
-   * — SFU/получатель сможет выбрать low/mid/high layer вместо полного фриза;
-   * — при ухудшении сети WebRTC снижает разрешение, сохраняя fps (важно для движения).
-   * Audio оставляем как есть (Opus, single encoding).
-   * Screen-share (source: "screen") — single high-bitrate layer + maintain-resolution.
    */
   async produce(
     track: MediaStreamTrack,
@@ -421,73 +413,15 @@ export class SfuMediaManager {
       throw new Error('sendTransport not created. Call createSendTransport first.');
     }
 
-    // Сериализуем вызовы: RTCPeerConnection внутри sendTransport не выдерживает
-    // параллельных addTrack+createOffer — Safari/Firefox падают с InvalidStateError.
-    const result = await (this._produceQueue = this._produceQueue.then(() => this._doProduceOnce(track, appData))) as mediasoupTypes.Producer;
-    return result;
-  }
-
-  private async _doProduceOnce(
-    track: MediaStreamTrack,
-    appData?: Record<string, unknown>
-  ): Promise<mediasoupTypes.Producer> {
     let senderFromCallback: RTCRtpSender | null = null;
 
-    const isVideo = track.kind === 'video';
-    const isScreenShare = isVideo && appData?.source === 'screen';
-
-    let encodings: mediasoupTypes.RtpEncodingParameters[] | undefined;
-    let codecOptions: mediasoupTypes.ProducerCodecOptions | undefined;
-    if (isVideo) {
-      if (isScreenShare) {
-        // Screen-share: одно качество, приоритет — резкость текста.
-        encodings = [
-          { maxBitrate: 1_500_000, scalabilityMode: 'L1T3' },
-        ];
-        codecOptions = {
-          videoGoogleStartBitrate: 1000,
-          videoGoogleMaxBitrate: 1500,
-          videoGoogleMinBitrate: 300,
-        };
-      } else {
-        // Camera: simulcast 3 layer (180p / 360p / 720p), VP8-friendly.
-        encodings = [
-          { rid: 'r0', maxBitrate: 150_000,  scaleResolutionDownBy: 4, scalabilityMode: 'L1T3' },
-          { rid: 'r1', maxBitrate: 500_000,  scaleResolutionDownBy: 2, scalabilityMode: 'L1T3' },
-          { rid: 'r2', maxBitrate: 1_500_000, scaleResolutionDownBy: 1, scalabilityMode: 'L1T3' },
-        ];
-        codecOptions = {
-          videoGoogleStartBitrate: 600,
-          videoGoogleMaxBitrate: 1500,
-          videoGoogleMinBitrate: 150,
-        };
-      }
-    }
-
-    const producer = await this.sendTransport!.produce({
+    const producer = await this.sendTransport.produce({
       track,
-      encodings,
-      codecOptions,
       appData: appData || {},
       onRtpSender: (rtpSender) => {
         senderFromCallback = rtpSender;
       },
     });
-
-    // Для камеры — отдавать приоритет fps над разрешением (плавное движение).
-    // Для screen-share — наоборот, держать разрешение для читаемости.
-    if (isVideo) {
-      try {
-        const sender = senderFromCallback ?? producer.rtpSender ?? null;
-        if (sender) {
-          const params = sender.getParameters();
-          params.degradationPreference = isScreenShare ? 'maintain-resolution' : 'maintain-framerate';
-          await sender.setParameters(params);
-        }
-      } catch (e) {
-        logger.warn('[SfuMediaManager] failed to set degradationPreference', e);
-      }
-    }
 
     this.producers.set(producer.id, producer);
 
