@@ -230,7 +230,8 @@ jobs:
           port: 22
           script: |
             set -euo pipefail
-            sudo cp "${{ secrets.ADMINVPS_APP_DIR }}/nginx.conf" /etc/nginx/sites-available/mansoni
+            APP_DIR="${{ secrets.ADMINVPS_APP_DIR }}"
+            sed "s|__APP_DIR__|$APP_DIR|g" "$APP_DIR/nginx.conf" | sudo tee /etc/nginx/sites-available/mansoni > /dev/null
             sudo ln -sfn /etc/nginx/sites-available/mansoni /etc/nginx/sites-enabled/mansoni
             sudo nginx -t
             sudo systemctl reload nginx
