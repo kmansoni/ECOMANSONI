@@ -231,6 +231,9 @@ jobs:
           script: |
             set -euo pipefail
             APP_DIR="${{ secrets.ADMINVPS_APP_DIR }}"
+            echo "APP_DIR=$APP_DIR"
+            echo "current symlink: $(readlink -f $APP_DIR/current 2>/dev/null || echo MISSING)"
+            ls "$APP_DIR/current/" 2>/dev/null | head -5 || echo "current dir empty or missing"
             sed "s|__APP_DIR__|$APP_DIR|g" "$APP_DIR/nginx.conf" | sudo tee /etc/nginx/sites-available/mansoni > /dev/null
             sudo ln -sfn /etc/nginx/sites-available/mansoni /etc/nginx/sites-enabled/mansoni
             sudo nginx -t
