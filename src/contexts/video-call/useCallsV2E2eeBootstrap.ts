@@ -56,7 +56,7 @@ export function useCallsV2E2eeBootstrap({
   onDecryptionKeyReady,
   onE2eeActivated,
 }: UseCallsV2E2eeBootstrapParams) {
-  const { attachCallsV2E2eeSignals } = useCallsV2E2eeSignals({
+   const { attach } = useCallsV2E2eeSignals({
     user,
     callsWsRoomRef,
     lastSnapshotRoomVersionRef,
@@ -118,12 +118,12 @@ export function useCallsV2E2eeBootstrap({
       rekeyMachineRef.current = new RekeyStateMachine();
     }
     epochGuardRef.current.markAuthenticated();
-    attachCallsV2E2eeSignals(client);
+     attach(client);
   }, [
     callKeyExchangeRef,
     callMediaEncryptionRef,
     epochGuardRef,
-    attachCallsV2E2eeSignals,
+     attach,
     handleE2eePipeBreakRef,
     rekeyMachineRef,
     user,

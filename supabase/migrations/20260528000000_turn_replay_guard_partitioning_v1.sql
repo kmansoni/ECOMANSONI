@@ -7,13 +7,19 @@
 -- - Automatic cleanup via native partition drop
 
 create table if not exists public.turn_replay_guard (
-  user_scope text not null,
-  nonce_hash text not null,
-  expires_at timestamptz not null,
-  created_at timestamptz not null default now(),
-  region_hint text not null default 'global',
-  primary key (user_scope, nonce_hash, expires_at)
-) partition by range (expires_at);
+   user_scope text not null,
+   nonce_hash text not null,
+   expires_at timestamptz not null,
+   created_at timestamptz not null default now(),
+   region_hint text not null default 'global',
+   primary key (user_scope, nonce_hash, expires_at)
+ ) partition by range (expires_at);
+-- Enable RLS — anti-replay data must not be accessible publicly
+ALTER TABLE public.turn_replay_guard ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON public.turn_replay_guard FROM anon, authenticated;
+-- Service role can manage all entries (for TURN credential service)
+CREATE POLICY IF NOT EXISTS "Service can manage turn replay guard"
+  ON public.turn_replay_guard FOR ALL TO service_role USING (true);
 
 -- Create monthly partitions for next 12 months
 do $$

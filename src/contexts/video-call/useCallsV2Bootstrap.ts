@@ -282,8 +282,14 @@ export function useCallsV2Bootstrap({
         };
         logger.info("[VideoCallContext] WS call.invite received", { callId: callId.slice(0, 8) });
         setPendingIncomingCall((prev) => {
-          if (prev?.id === syntheticCall.id) return prev;
-          // Different or no previous call - accept the new one
+          if (prev?.id === syntheticCall.id) {
+            // Realtime may have delivered the call row before caller persisted roomId.
+            // Upgrade the existing object if WS invite carries the missing room binding.
+            const prevR = prev as typeof prev & { calls_v2_room_id?: string | null };
+            const nextR = syntheticCall as typeof syntheticCall & { calls_v2_room_id?: string | null };
+            if (!prevR.calls_v2_room_id && nextR.calls_v2_room_id) return syntheticCall;
+            return prev;
+          }
           if (prev) {
             logger.warn("[VideoCallContext] WS call.invite replacing pending call", {
               existingCallId: prev.id,

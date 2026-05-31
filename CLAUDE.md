@@ -348,6 +348,119 @@ Mansoni работает как CTO + Lead Engineer + DevOps в одном ли�
 - Все Supabase queries с .limit()
 - Код humanized: неотличим от человеческого
 
+---
+
+## Calls Architecture (ADR)
+
+### State Ownership (Tri-State Model)
+
+```
+Server / DB / WS Authority     → durable call truth (call_id, participants, status)
+CallRuntime / CallSession      → operational session state (signaling, media, crypto)
+React Provider / UI            → presentation state (isCallUiActive, toasts, panels)
+```
+
+**Forbidden:**
+- React не владеет SFU/media/protocol state
+- Runtime не импортирует React напрямую
+- domain не знает про runtime/ui/adapters
+
+---
+
+### Dependency Graph
+
+```
+UI (VideoCallScreen)
+  ↓ reads commands
+Provider (VideoCallProvider) — React composition root
+  ↓ wires
+hooks (useVideoCall, useIncomingCalls) — React facade
+  ↓ delegates
+features/calls/runtime — pure JS, no React/Supabase/WS
+  ↓ uses ports
+features/calls/adapters — Supabase, WebSocket, Telemetry
+features/calls/protocol — Zod schemas, close codes, message parsers
+features/calls/domain — pure types, events, FSM, guards (no imports)
+```
+
+---
+
+### Folder Structure
+
+```text
+src/features/calls/
+├── domain/
+│   ├── call.types.ts           # VideoCall, CalleeProfile
+│   ├── call.events.ts          # CallEvent types
+│   ├── callStateMachine.ts     # FSM: transition, guards
+│   └── callGuards.ts           # isCallActive, isCallConnecting, etc.
+│
+├── protocol/
+│   ├── callsWs.schemas.ts      # Zod schemas
+│   ├── callsWs.codec.ts        # message parsers
+│   ├── callsWs.closePolicy.ts  # close codes
+│   └── callsProtocol.version.ts
+│
+├── runtime/
+│   ├── ports.ts                # interfaces (CallSignalingPort, CallMediaPort, etc.)
+│   ├── callRuntime.ts          # main runtime
+│   ├── callSession.ts          # session state management
+│   ├── callKeyExchange.ts      # E2EE key exchange
+│   └── callIdentity.ts          # device identity
+│
+├── device/                     # camera, mic, permissions
+├── transport/                  # SFU, send/recv transports
+├── encryption/                 # E2EE transforms
+│
+├── adapters/
+│   ├── supabasePersistence.ts  # implements CallPersistencePort
+│   ├── wsSignaling.ts          # implements CallSignalingPort
+│   └── telemetry.ts
+│
+├── ui/
+│   ├── VideoCallScreen.tsx
+│   ├── IncomingCallSheet.tsx
+│   └── components/
+│
+└── __tests__/
+
+src/app/providers/
+└── VideoCallProvider.tsx       # React composition root (~100-150 строк после refactoring)
+
+src/hooks/
+├── useVideoCall.ts             # React facade → runtime
+└── useIncomingCalls.ts
+```
+
+---
+
+### Forbidden Imports (Architecture Rules)
+
+```
+❌ runtime не импортирует React/UI
+❌ runtime не импортирует Supabase напрямую
+❌ ui не импортирует adapters напрямую
+❌ domain не импортирует ничего из runtime/ui/adapters
+❌ adapters импортируют только ports + concrete IO
+```
+
+---
+
+### Migration Phases
+
+```
+Phase 0 — ADR + dependency rules (this section)
+Phase 1 — domain/protocol extraction (re-exports from existing calls-v2)
+Phase 2 — ports + runtime shell
+Phase 3 — adapters extraction
+Phase 4 — device/transport/encryption split
+Phase 5 — Provider as composition root (hooks decomposition)
+Phase 6 — hooks facade cleanup
+Phase 7 — remove legacy re-exports
+```
+
+---
+
 ## AI Engine (Python-бэкенд)
 
 `ai_engine/orchestrator/`:

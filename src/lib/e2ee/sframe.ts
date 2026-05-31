@@ -256,19 +256,25 @@ export class SFrameContext {
     return data.byteLength > parsed.headerLength + 16;
   }
 
-  /** Текущее значение счётчика */
-  getCounter(): number {
-    return this.counter;
-  }
+/** Текущее значение счётчика */
+   getCounter(): number {
+     return this.counter;
+   }
 
-  /** Сброс состояния */
-  reset(): void {
-    this.counter = 0;
-    this.key = null;
-    this.keyId = 0;
-    this.highestSeenCounter = -1;
-    this.seenCounters.clear();
-  }
+   /** Текущее значение эпохи — используется для IV uniqueness при ротации ключей */
+   getEpoch(): number {
+     return this.epoch;
+   }
+
+/** Сброс состояния */
+   reset(): void {
+     this.counter = 0;
+     this.key = null;
+     this.keyId = 0;
+     this.epoch = 0;
+     this.highestSeenCounter = -1;
+     this.seenCounters.clear();
+   }
 
   // ─── Приватные методы ───────────────────────────────────────────────────────
 

@@ -59,11 +59,10 @@ interface TurnCredentialsResponse {
 }
 
 function buildTurnRequestMetadata(): { nonce: string; requestId: string } {
-  const fallback = `${Date.now()}_${Math.random().toString(16).slice(2)}`;
-  const requestId = globalThis.crypto?.randomUUID?.() ?? fallback;
-  const nonce = requestId;
-  return { nonce, requestId };
-}
+   const requestId = globalThis.crypto?.randomUUID?.() ?? `${Date.now()}_${crypto.getRandomValues(new Uint32Array(1))[0].toString(36)}`;
+   const nonce = requestId;
+   return { nonce, requestId };
+ }
 
 function normalizeIceServerUrls(urls: RTCIceServer["urls"]): string[] {
   const values = Array.isArray(urls) ? urls : [urls];

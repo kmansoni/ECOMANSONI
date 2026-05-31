@@ -78,8 +78,8 @@ export class MediaEncryptor {
   private config: InsertableStreamsConfig;
   private activeTransforms: Map<string, ActiveTransformEntry> = new Map();
   private scriptTransforms: Map<string, ScriptTransformEntry> = new Map();
-  private currentEncryptionKey: { key: CryptoKey; keyId: number } | null = null;
-  private currentDecryptionKeys: Map<string, { key: CryptoKey; keyId: number }> = new Map();
+private currentEncryptionKey: { key: CryptoKey; keyId: number; epoch: number } | null = null;
+   private currentDecryptionKeys: Map<string, { key: CryptoKey; keyId: number; epoch: number }> = new Map();
   private stats: MediaEncryptorStats = {
     encryptedFrames: 0,
     decryptedFrames: 0,
@@ -92,22 +92,29 @@ export class MediaEncryptor {
     this.sframeContext = new SFrameContext();
   }
 
-  /**
-   * Set the current encryption key for outgoing media
-   */
-  async setEncryptionKey(key: CryptoKey, keyId: number): Promise<void> {
-    await this.sframeContext.setEncryptionKey(key, keyId);
-    this.currentEncryptionKey = { key, keyId };
+/**
+     * Set the current encryption key for outgoing media
+     */
+   async setEncryptionKey(key: CryptoKey, keyId: number): Promise<void> {
+     await this.sframeContext.setEncryptionKey(key, keyId);
+     const epoch = this.sframeContext.getEpoch();
+     this.currentEncryptionKey = { key, keyId, epoch };
 
-    // Propagate to script-transform workers (if any)
-    for (const { worker } of this.scriptTransforms.values()) {
-      worker.postMessage({ type: 'setEncryptionKey', key, keyId });
-    }
-  }
+     // Propagate to script-transform workers (if any)
+     // Include epoch for IV uniqueness during key rotation
+     for (const { worker } of this.scriptTransforms.values()) {
+       worker.postMessage({ 
+         type: 'setEncryptionKey', 
+         key, 
+         keyId, 
+         epoch
+       });
+     }
+   }
 
   /**
-   * Set a decryption key for incoming media from a specific peer
-   */
+    * Set a decryption key for incoming media from a specific peer
+    */
   async setDecryptionKey(key: CryptoKey, keyId: number, peerId: string): Promise<void> {
     let ctx = this.decryptionContexts.get(peerId);
     if (!ctx) {
@@ -115,17 +122,24 @@ export class MediaEncryptor {
       this.decryptionContexts.set(peerId, ctx);
     }
     await ctx.setEncryptionKey(key, keyId);
-    this.currentDecryptionKeys.set(peerId, { key, keyId });
+    this.currentDecryptionKeys.set(peerId, { key, keyId, epoch: ctx.getEpoch() });
 
     // Propagate to script-transform workers (if any)
+    // Include epoch for IV reconstruction
     for (const { worker } of this.scriptTransforms.values()) {
-      worker.postMessage({ type: 'setDecryptionKey', key, keyId, peerId });
+      worker.postMessage({ 
+        type: 'setDecryptionKey', 
+        key, 
+        keyId, 
+        peerId,
+        epoch: ctx.getEpoch() 
+      });
     }
   }
 
   private _createScriptWorker(trackId: string): Worker {
     const source = `
-      const encState = { key: null, keyId: 0, counter: 0 };
+      const encState = { key: null, keyId: 0, counter: 0, epoch: 0 };
       const decStates = new Map();
 
       function encodeVarInt(value) {
@@ -152,13 +166,14 @@ export class MediaEncryptor {
         return [value, i - offset];
       }
 
-      function buildIV(counter) {
+      // buildIV(epoch, counter) — epoch в первых 4 байтах, counter в последних 8
+      // This ensures IV uniqueness after key rotation when counter resets to 0
+      function buildIV(epoch, counter) {
         const iv = new ArrayBuffer(12);
         const view = new DataView(iv);
+        view.setUint32(0, epoch >>> 0, false);
+        view.setUint32(4, Math.floor(counter / 0x100000000) >>> 0, false);
         view.setUint32(8, counter >>> 0, false);
-        if (counter > 0xffffffff) {
-          view.setUint32(4, Math.floor(counter / 0x100000000) >>> 0, false);
-        }
         return iv;
       }
 
@@ -220,9 +235,11 @@ export class MediaEncryptor {
           encState.key = msg.key;
           encState.keyId = msg.keyId & 0xff;
           encState.counter = 0;
+          // Use epoch from message (already incremented in SFrameContext)
+          encState.epoch = msg.epoch >>> 0;
         }
         if (msg.type === 'setDecryptionKey') {
-          decStates.set(msg.peerId, { key: msg.key, keyId: msg.keyId & 0xff });
+          decStates.set(msg.peerId, { key: msg.key, keyId: msg.keyId & 0xff, epoch: msg.epoch >>> 0 });
         }
       });
 
@@ -240,7 +257,7 @@ export class MediaEncryptor {
                 if (!encState.key) return;
                 const counter = encState.counter++;
                 const header = buildHeader(encState.keyId, counter);
-                const iv = buildIV(counter);
+                const iv = buildIV(encState.epoch, counter);
                 const encrypted = await crypto.subtle.encrypt(
                   { name: 'AES-GCM', iv, additionalData: header, tagLength: 128 },
                   encState.key,
@@ -263,7 +280,8 @@ export class MediaEncryptor {
                 if (!parsed) return;
                 const headerBuf = frame.data.slice(0, parsed.headerLength);
                 const payloadBuf = frame.data.slice(parsed.headerLength);
-                const iv = buildIV(parsed.counter);
+                // Use epoch from state for IV reconstruction
+                const iv = buildIV(state.epoch, parsed.counter);
                 const plain = await crypto.subtle.decrypt(
                   { name: 'AES-GCM', iv, additionalData: headerBuf, tagLength: 128 },
                   state.key,
@@ -358,6 +376,7 @@ export class MediaEncryptor {
           type: 'setEncryptionKey',
           key: this.currentEncryptionKey.key,
           keyId: this.currentEncryptionKey.keyId,
+          epoch: this.sframeContext.getEpoch(),
         });
       }
       return;

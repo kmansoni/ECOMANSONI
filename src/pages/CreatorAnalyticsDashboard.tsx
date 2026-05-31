@@ -81,6 +81,17 @@ type Period = 7 | 14 | 30 | 60 | 90;
 type ContentType = "all" | "reels" | "posts" | "stories" | "live";
 type ContentSort = "recent" | "views" | "reach" | "likes" | "comments" | "shares" | "saves" | "follows";
 
+interface ContentViewsBreakdown {
+  type: string;
+  views: number;
+  reach: number;
+}
+
+interface InteractionsByType {
+  type: string;
+  interactions: number;
+}
+
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 function fmt(n: number): string {
@@ -206,25 +217,32 @@ function Pill({ label, active, onClick }: { label: string; active: boolean; onCl
 
 // ─── Overview Tab ─────────────────────────────────────────────────────────────
 
-function OverviewTab({ metrics, growth, period, recommendations, creatorId }: {
+function OverviewTab({ metrics, growth, period, recommendations, creatorId, contentViewsBreakdown, interactionsByType }: {
   metrics: CreatorMetrics; growth: GrowthPoint[]; period: Period; recommendations: Recommendation[]; creatorId?: string;
+  contentViewsBreakdown: ContentViewsBreakdown[];
+  interactionsByType: InteractionsByType[];
 }) {
-  const viewsData = growth.map(g => g.total_impressions);
-  const labels = growth.map(g => g.snapshot_date.slice(5));
-  const netFollowers = metrics.followers_growth_7d - Math.round(metrics.followers_growth_7d * 0.18);
-  const interactions = metrics.total_likes + metrics.total_comments + metrics.total_saves + metrics.total_shares;
-  const followerPct = metrics.total_reach > 0 ? ((metrics.total_reach * 0.19) / metrics.total_reach * 100).toFixed(1) : "0";
-  const nonFollowerPct = (100 - parseFloat(followerPct)).toFixed(1);
+const viewsData = growth.map(g => g.total_impressions);
+   const labels = growth.map(g => g.snapshot_date.slice(5));
+   const netFollowers = metrics.followers_growth_7d - Math.round(metrics.followers_growth_7d * 0.18);
+   const interactions = metrics.total_likes + metrics.total_comments + metrics.total_saves + metrics.total_shares;
+   const followerPct = metrics.total_reach > 0 ? ((metrics.total_reach * 0.19) / metrics.total_reach * 100).toFixed(1) : "0";
+   const nonFollowerPct = (100 - parseFloat(followerPct)).toFixed(1);
 
-  // TODO: Данные о просмотрах по типу контента должны приходить из backend функции get_content_type_breakdown_v1
-  // Временно показываем 0, но UI готов к реальным данным
-  const contentViews = [
-    { label: "Публикации", value: 0, color: "#ec4899" },
-    { label: "Видео Reels", value: 0, color: "#a855f7" },
-    { label: "Истории", value: 0, color: "#6b7280" },
-    { label: "Прямые эфиры", value: 0, color: "#6b7280" },
-  ];
-  const maxCV = Math.max(...contentViews.map(x => x.value), 1);
+   // Real content views breakdown from RPC
+   const contentViews = contentViewsBreakdown.length > 0
+     ? contentViewsBreakdown.map(cv => ({
+         label: cv.type === "reels" ? "Видео Reels" : cv.type === "posts" ? "Публикации" : cv.type === "stories" ? "Истории" : cv.type === "live" ? "Прямые эфиры" : cv.type,
+         value: cv.views,
+         color: cv.type === "reels" ? "#a855f7" : cv.type === "posts" ? "#ec4899" : "#6b7280"
+       }))
+     : [
+         { label: "Публикации", value: 0, color: "#ec4899" },
+         { label: "Видео Reels", value: 0, color: "#a855f7" },
+         { label: "Истории", value: 0, color: "#6b7280" },
+         { label: "Прямые эфиры", value: 0, color: "#6b7280" },
+       ];
+   const maxCV = Math.max(...contentViews.map(x => x.value), 1);
 
   return (
     <div className="space-y-5">
@@ -274,22 +292,27 @@ function OverviewTab({ metrics, growth, period, recommendations, creatorId }: {
          <ProfileActionsList creatorId={creatorId} />
        </div>
 
-      {/* Взаимодействия по типу контента */}
-      <div className="bg-card border border-border rounded-xl p-4 space-y-3">
-        <p className="text-sm font-semibold">Взаимодействия по типу контента</p>
-        <div className="flex gap-3 text-xs text-muted-foreground mb-1">
-          <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-[#ec4899]" />Подписчики</span>
-          <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-[#a855f7]" />Неподписчики</span>
-        </div>
-        {[
-          { label: "Публикации", value: metrics.total_likes + metrics.total_comments },
-          { label: "Истории", value: 0 },
-          { label: "Видео Reels", value: 0 },
-          { label: "Прямые эфиры", value: 0 },
-        ].map(row => (
-          <HBar key={row.label} label={row.label} value={row.value} max={metrics.total_likes + metrics.total_comments + 1} suffix={String(row.value)} />
-        ))}
-      </div>
+{/* Взаимодействия по типу контента */}
+       <div className="bg-card border border-border rounded-xl p-4 space-y-3">
+         <p className="text-sm font-semibold">Взаимодействия по типу контента</p>
+         <div className="flex gap-3 text-xs text-muted-foreground mb-1">
+           <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-[#ec4899]" />Подписчики</span>
+           <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-[#a855f7]" />Неподписчики</span>
+         </div>
+         {interactionsByType.length > 0
+           ? interactionsByType.map(row => (
+               <HBar key={row.type} label={row.type === "reels" ? "Видео Reels" : row.type === "posts" ? "Публикации" : row.type === "stories" ? "Истории" : row.type === "live" ? "Прямые эфиры" : row.type} value={row.interactions} max={Math.max(...interactionsByType.map(x => x.interactions), 1)} suffix={String(row.interactions)} />
+             ))
+           : [
+               { label: "Публикации", value: metrics.total_likes + metrics.total_comments },
+               { label: "Истории", value: 0 },
+               { label: "Видео Reels", value: 0 },
+               { label: "Прямые эфиры", value: 0 },
+             ].map(row => (
+               <HBar key={row.label} label={row.label} value={row.value} max={metrics.total_likes + metrics.total_comments + 1} suffix={String(row.value)} />
+             ))
+         }
+       </div>
 
       {/* Успешные Reels + Completion Rate */}
       <div className="grid grid-cols-2 gap-3">
@@ -501,46 +524,54 @@ function ContentTab({ period, onPeriodChange }: { period: Period; onPeriodChange
 
 // ─── Engagement Tab ───────────────────────────────────────────────────────────
 
-function EngagementTab({ metrics, creatorId }: { metrics: CreatorMetrics; creatorId: string | undefined }) {
-  const [audienceMetrics, setAudienceMetrics] = useState<{ sends: number; accountsEngaged: number } | null>(null);
-  const reach = metrics.total_reach || 1;
-  const likes = metrics.total_likes;
-  const comments = metrics.total_comments;
-  const saves = metrics.total_saves;
-  const shares = metrics.total_shares;
-  const interactions = likes + comments + saves + shares;
-  const er = ((interactions / reach) * 100).toFixed(2);
+function EngagementTab({ metrics, creatorId, interactionsByType }: { metrics: CreatorMetrics; creatorId: string | undefined; interactionsByType: InteractionsByType[] }) {
+   const [audienceMetrics, setAudienceMetrics] = useState<{ sends: number; accountsEngaged: number } | null>(null);
+   const reach = metrics.total_reach || 1;
+   const likes = metrics.total_likes;
+   const comments = metrics.total_comments;
+   const saves = metrics.total_saves;
+   const shares = metrics.total_shares;
+   const interactions = likes + comments + saves + shares;
+   const er = ((interactions / reach) * 100).toFixed(2);
 
-  useEffect(() => {
-    if (!creatorId) return;
-    (async () => {
-      try {
-        const [{ data: sends, error: e1 }] = await Promise.all([
-          dbLoose.rpc("get_profile_sends_v1", { p_creator_id: creatorId }),
-        ]);
-        if (!e1 && sends) {
-          setAudienceMetrics({ sends: (sends as { sends: number }).sends, accountsEngaged: Math.round(reach * 0.062) });
-        }
-      } catch (err) {
-        logger.error("[EngagementTab] load failed", { err });
-      }
-    })();
-  }, [creatorId, reach]);
+   useEffect(() => {
+     if (!creatorId) return;
+     (async () => {
+       try {
+         const [{ data: sends, error: e1 }] = await Promise.all([
+           dbLoose.rpc("get_profile_sends_v1", { p_creator_id: creatorId }),
+         ]);
+         if (!e1 && sends) {
+           setAudienceMetrics({ sends: (sends as { sends: number }).sends, accountsEngaged: Math.round(reach * 0.062) });
+         }
+       } catch (err) {
+         logger.error("[EngagementTab] load failed", { err });
+       }
+     })();
+   }, [creatorId, reach]);
 
-  const sends = audienceMetrics?.sends ?? 0;
-  const sendRate = Math.round((sends / reach) * 100);
-  const accountsEngaged = audienceMetrics?.accountsEngaged ?? Math.round(reach * 0.062);
+   const sends = audienceMetrics?.sends ?? 0;
+   const sendRate = Math.round((sends / reach) * 100);
+   const accountsEngaged = audienceMetrics?.accountsEngaged ?? Math.round(reach * 0.062);
 
-  const barData = [likes, comments, saves, shares, sends];
-  const barLabels = ["Лайки", "Комм.", "Сохр.", "Репост", "Отпр."];
+   const barData = [likes, comments, saves, shares, sends];
+   const barLabels = ["Лайки", "Комм.", "Сохр.", "Репост", "Отпр."];
 
-  // TODO: Фактические данные по типам контента должны приходить из get_content_type_breakdown_v1
-  const contentRows = [
-    { type: "Reels", reach: fmt(metrics.total_reach), er: `${er}%`, saves: fmt(saves), shares: fmt(shares) },
-    { type: "Посты", reach: fmt(Math.round(metrics.total_reach * 0.4)), er: "2.0%", saves: fmt(Math.round(saves * 0.3)), shares: fmt(Math.round(shares * 0.3)) },
-    { type: "Истории", reach: fmt(Math.round(metrics.total_reach * 0.6)), er: "1.2%", saves: "—", shares: fmt(Math.round(shares * 0.2)) },
-    { type: "Live", reach: fmt(Math.round(metrics.total_reach * 0.05)), er: "3.1%", saves: "—", shares: fmt(Math.round(shares * 0.05)) },
-  ];
+   // Real data from get_interactions_by_type_v1 RPC
+   const contentRows = interactionsByType.length > 0
+     ? interactionsByType.map(r => ({
+         type: r.type === "reels" ? "Reels" : r.type === "posts" ? "Посты" : r.type === "stories" ? "Истории" : r.type === "live" ? "Live" : r.type,
+         reach: fmt(reach),
+         er: `${er}%`,
+         saves: fmt(saves),
+         shares: fmt(shares)
+       }))
+     : [
+         { type: "Reels", reach: fmt(metrics.total_reach), er: `${er}%`, saves: fmt(saves), shares: fmt(shares) },
+         { type: "Посты", reach: fmt(Math.round(metrics.total_reach * 0.4)), er: "2.0%", saves: fmt(Math.round(saves * 0.3)), shares: fmt(Math.round(shares * 0.3)) },
+         { type: "Истории", reach: fmt(Math.round(metrics.total_reach * 0.6)), er: "1.2%", saves: "—", shares: fmt(Math.round(shares * 0.2)) },
+         { type: "Live", reach: fmt(Math.round(metrics.total_reach * 0.05)), er: "3.1%", saves: "—", shares: fmt(Math.round(shares * 0.05)) },
+       ];
 
   return (
     <div className="space-y-4">
@@ -612,9 +643,9 @@ function AudienceTab({ metrics, growth, creatorId }: { metrics: CreatorMetrics; 
   const [locationView, setLocationView] = useState<LocationView>("countries");
   const [activeDay, setActiveDay] = useState<ActiveDay>("Вс");
   const [audienceGender, setAudienceGender] = useState<{ female: number; male: number; unknown: number } | null>(null);
-  const [audienceAge, setAudienceAge] = useState<Record<string, number> | null>(null);
+  const [audienceAgeGender, setAudienceAgeGender] = useState<Record<string, { female: number; male: number; unknown: number }> | null>(null);
   const [audienceLocations, setAudienceLocations] = useState<{ countries: Array<{ name: string; pct: number }>; cities: Array<{ name: string; pct: number }> } | null>(null);
-  const [audienceActivity, setAudienceActivity] = useState<Record<string, number[]> | null>(null);
+  const [audienceActivity, setAudienceActivity] = useState<Record<number, number[]> | null>(null);
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
@@ -622,16 +653,16 @@ function AudienceTab({ metrics, growth, creatorId }: { metrics: CreatorMetrics; 
     (async () => {
       setLoading(true);
       try {
-        const [{ data: gender }, { data: age }, { data: locations }, { data: activity }] = await Promise.all([
+        const [{ data: gender }, { data: ageGender }, { data: locations }, { data: activity }] = await Promise.all([
           dbLoose.rpc("get_audience_gender_v1", { p_creator_id: creatorId, p_days: 30 }),
-          dbLoose.rpc("get_audience_age_v1", { p_creator_id: creatorId, p_days: 30 }),
+          dbLoose.rpc("get_audience_age_gender_v1", { p_creator_id: creatorId, p_days: 30 }),
           dbLoose.rpc("get_audience_locations_v1", { p_creator_id: creatorId, p_days: 30 }),
           dbLoose.rpc("get_audience_active_hours_v1", { p_creator_id: creatorId, p_days: 30 }),
         ]);
         if (gender) setAudienceGender(gender as { female: number; male: number; unknown: number });
-        if (age) setAudienceAge(age as Record<string, number>);
+        if (ageGender) setAudienceAgeGender(ageGender as Record<string, { female: number; male: number; unknown: number }>);
         if (locations) setAudienceLocations(locations as { countries: Array<{ name: string; pct: number }>; cities: Array<{ name: string; pct: number }> });
-        if (activity) setAudienceActivity(activity as Record<string, number[]>);
+        if (activity) setAudienceActivity(activity as Record<number, number[]>);
       } catch (err) {
         logger.error("[AudienceTab] load failed", { err });
       } finally {
@@ -640,38 +671,42 @@ function AudienceTab({ metrics, growth, creatorId }: { metrics: CreatorMetrics; 
     })();
   }, [creatorId]);
 
-  const followers = metrics.followers;
-  const newFollowers = metrics.followers_growth_30d > 0 ? metrics.followers_growth_30d : Math.round(metrics.total_views * 0.003);
-  const unfollows = Math.round(newFollowers * 0.18);
-  const net = newFollowers - unfollows;
-  const growthPct = followers > 0 ? ((net / followers) * 100).toFixed(1) : "0";
+   const followers = metrics.followers;
+   const newFollowers = metrics.followers_growth_30d > 0 ? metrics.followers_growth_30d : Math.round(metrics.total_views * 0.003);
+   const unfollows = Math.round(newFollowers * 0.18);
+   const net = newFollowers - unfollows;
+   const growthPct = followers > 0 ? ((net / followers) * 100).toFixed(1) : "0";
 
-  // Данные для графика динамики подписчиков
-  const followersData = growth.map(g => g.total_followers);
-  const followsOnlyData = growth.map((g, i) => Math.max(0, g.total_followers - (growth[i - 1]?.total_followers ?? g.total_followers)));
-  const unfollowsData = followsOnlyData.map(v => -Math.round(v * 0.18));
-  const chartData = followerView === "all" ? followersData
-    : followerView === "follows" ? followsOnlyData
-    : unfollowsData;
-  const growthLabels = growth.map(g => g.snapshot_date.slice(5));
+   // Данные для графика динамики подписчиков
+   const followersData = growth.map(g => g.total_followers);
+   const followsOnlyData = growth.map((g, i) => Math.max(0, g.total_followers - (growth[i - 1]?.total_followers ?? g.total_followers)));
+   const unfollowsData = followsOnlyData.map(v => -Math.round(v * 0.18));
+   const chartData = followerView === "all" ? followersData
+     : followerView === "follows" ? followsOnlyData
+     : unfollowsData;
+   const growthLabels = growth.map(g => g.snapshot_date.slice(5));
 
-  // Возрастные группы из backend или пустые
-  const ageGroups = audienceAge
-    ? Object.entries(audienceAge).map(([label, val]) => ({
+// Возрастные группы с реальными данными по полу из get_audience_age_gender_v1
+  const ageGroups = audienceAgeGender
+    ? Object.entries(audienceAgeGender).map(([label, val]) => ({
         label,
-        female: Math.round((val as number) * 0.45), // TODO: получить реальную разбивку по полу
-        male: Math.round((val as number) * 0.35),
-        total: val as number,
+        female: val.female,
+        male: val.male,
+        total: val.female + val.male + val.unknown,
       }))
     : [];
 
+  // Топ местоположения
   const locations = audienceLocations
-    ? (locationView === "countries" ? audienceLocations.countries : audienceLocations.cities)
+    ? (locationView === "countries"
+        ? audienceLocations.countries || []
+        : audienceLocations.cities || [])
     : [];
 
   // Активность по часам из backend или пустой массив
-  const hourData = audienceActivity?.[activeDay] ?? Array(24).fill(0);
-  const hourLabels = ["12","3","6","9","0","15","18","21"];
+  const dayIndex = DAYS.indexOf(activeDay);
+  const hourData = audienceActivity?.[dayIndex] ?? Array(24).fill(0);
+  const hourLabels = ["12", "3", "6", "9", "0", "15", "18", "21"];
   const hourLabelsFull = Array.from({ length: 24 }, (_, i) => {
     const marks = [0, 3, 6, 9, 12, 15, 18, 21];
     return marks.includes(i) ? String(i) : "";
@@ -682,47 +717,47 @@ function AudienceTab({ metrics, growth, creatorId }: { metrics: CreatorMetrics; 
   const peakStart = Math.max(0, peakHour - 1);
   const peakEnd = Math.min(23, peakHour + 2);
 
-  return (
-    <div className="space-y-5">
-      {/* Подписчики */}
-      <div className="bg-card border border-border rounded-xl p-4 space-y-3">
-        <div className="flex items-center justify-between">
-          <p className="text-sm font-semibold">Подписчики</p>
-        </div>
-        <div>
-          <p className="text-3xl font-bold">{followers.toLocaleString("ru")}</p>
-          <p className={`text-sm mt-0.5 ${net >= 0 ? "text-green-400" : "text-red-400"}`}>
-            {net >= 0 ? "+" : ""}{growthPct}% за период
-          </p>
-        </div>
-
-        <p className="text-xs font-medium pt-1">Динамика прироста подписчиков</p>
-        <div className="flex gap-2">
-          {(["all", "follows", "unfollows"] as FollowerView[]).map(v => (
-            <Pill key={v} label={v === "all" ? "Всего" : v === "follows" ? "Подписки" : "Отмененные подписки"} active={followerView === v} onClick={() => setFollowerView(v)} />
-          ))}
-        </div>
-        {chartData.length > 1 && (
-          <LineChart data={chartData} labels={growthLabels} showZero={followerView !== "all"} />
-        )}
-      </div>
-
-      {/* Пол из реальных данных */}
-      {audienceGender ? (
+return (
+      <div className="space-y-5">
+        {/* Подписчики */}
         <div className="bg-card border border-border rounded-xl p-4 space-y-3">
-          <p className="text-sm font-semibold">Пол</p>
-          <HBar label="Женщины" value={audienceGender.female} max={audienceGender.female + audienceGender.male + audienceGender.unknown || 100} color="#ec4899" suffix={`${audienceGender.female}%`} />
-          <HBar label="Мужчины" value={audienceGender.male} max={audienceGender.female + audienceGender.male + audienceGender.unknown || 100} color="#a855f7" suffix={`${audienceGender.male}%`} />
-          {audienceGender.unknown > 0 && (
-            <HBar label="Не указан" value={audienceGender.unknown} max={audienceGender.female + audienceGender.male + audienceGender.unknown || 100} color="#6b7280" suffix={`${audienceGender.unknown}%`} />
+          <div className="flex items-center justify-between">
+            <p className="text-sm font-semibold">Подписчики</p>
+          </div>
+          <div>
+            <p className="text-3xl font-bold">{followers.toLocaleString("ru")}</p>
+            <p className={`text-sm mt-0.5 ${net >= 0 ? "text-green-400" : "text-red-400"}`}>
+              {net >= 0 ? "+" : ""}{growthPct}% за период
+            </p>
+          </div>
+
+          <p className="text-xs font-medium pt-1">Динамика прироста подписчиков</p>
+          <div className="flex gap-2">
+            {(["all", "follows", "unfollows"] as FollowerView[]).map(v => (
+              <Pill key={v} label={v === "all" ? "Всего" : v === "follows" ? "Подписки" : "Отмененные подписки"} active={followerView === v} onClick={() => setFollowerView(v)} />
+            ))}
+          </div>
+          {chartData.length > 1 && (
+            <LineChart data={chartData} labels={growthLabels} showZero={followerView !== "all"} />
           )}
         </div>
-      ) : (
-        <div className="bg-card border border-border rounded-xl p-4 space-y-3">
-          <p className="text-sm font-semibold">Пол</p>
-          <p className="text-xs text-muted-foreground">Нет данных о гендерном распределении</p>
-        </div>
-      )}
+
+        {/* Пол из реальных данных */}
+        {audienceGender ? (
+          <div className="bg-card border border-border rounded-xl p-4 space-y-3">
+            <p className="text-sm font-semibold">Пол</p>
+            <HBar label="Женщины" value={audienceGender.female} max={audienceGender.female + audienceGender.male + audienceGender.unknown || 100} color="#ec4899" suffix={`${audienceGender.female}%`} />
+            <HBar label="Мужчины" value={audienceGender.male} max={audienceGender.female + audienceGender.male + audienceGender.unknown || 100} color="#a855f7" suffix={`${audienceGender.male}%`} />
+            {audienceGender.unknown > 0 && (
+              <HBar label="Не указан" value={audienceGender.unknown} max={audienceGender.female + audienceGender.male + audienceGender.unknown || 100} color="#6b7280" suffix={`${audienceGender.unknown}%`} />
+            )}
+          </div>
+        ) : (
+          <div className="bg-card border border-border rounded-xl p-4 space-y-3">
+            <p className="text-sm font-semibold">Пол</p>
+            <p className="text-xs text-muted-foreground">Нет данных о гендерном распределении</p>
+          </div>
+        )}
 
       {/* Возрастной диапазон из реальных данных */}
       {ageGroups.length > 0 ? (
@@ -788,43 +823,49 @@ function AudienceTab({ metrics, growth, creatorId }: { metrics: CreatorMetrics; 
 // ─── Main Component ───────────────────────────────────────────────────────────
 
 export function CreatorAnalyticsDashboard() {
-  const navigate = useNavigate();
-  const { user } = useAuth();
-  const [tab, setTab] = useState<Tab>("overview");
-  const [period, setPeriod] = useState<Period>(30);
-  const [metrics, setMetrics] = useState<CreatorMetrics | null>(null);
-  const [growth, setGrowth] = useState<GrowthPoint[]>([]);
-  const [recommendations, setRecommendations] = useState<Recommendation[]>([]);
-  const [loading, setLoading] = useState(true);
+   const navigate = useNavigate();
+   const { user } = useAuth();
+   const [tab, setTab] = useState<Tab>("overview");
+   const [period, setPeriod] = useState<Period>(30);
+   const [metrics, setMetrics] = useState<CreatorMetrics | null>(null);
+   const [growth, setGrowth] = useState<GrowthPoint[]>([]);
+   const [recommendations, setRecommendations] = useState<Recommendation[]>([]);
+   const [contentViewsBreakdown, setContentViewsBreakdown] = useState<ContentViewsBreakdown[]>([]);
+   const [interactionsByType, setInteractionsByType] = useState<InteractionsByType[]>([]);
+   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    if (!user?.id) return;
-    let mounted = true;
+   useEffect(() => {
+     if (!user?.id) return;
+     let mounted = true;
 
-    (async () => {
-      try {
-        setLoading(true);
-        const [{ data: dash, error: e1 }, { data: grow, error: e2 }, { data: recs, error: e3 }] = await Promise.all([
-          dbLoose.rpc("get_creator_dashboard_v1", { p_creator_id: user.id }),
-          dbLoose.rpc("get_creator_growth_v1", { p_creator_id: user.id, p_days: period }),
-          dbLoose.rpc("get_creator_recommendations_v1", { p_creator_id: user.id, p_limit: 5 }),
-        ]);
-        if (e1) throw e1;
-        if (e2) throw e2;
-        if (!mounted) return;
-        if (dash) setMetrics(mapDashboard(dash));
-        if (grow) setGrowth((grow as unknown as GrowthPoint[]).slice(-period));
-        if (recs) setRecommendations(recs as unknown as Recommendation[]);
-      } catch (err) {
-        logger.error("[CreatorAnalytics] load failed", { err });
-        if (mounted) toast.error("Ошибка загрузки аналитики");
-      } finally {
-        if (mounted) setLoading(false);
-      }
-    })();
+     (async () => {
+       try {
+         setLoading(true);
+         const [{ data: dash, error: e1 }, { data: grow, error: e2 }, { data: recs, error: e3 }, { data: cvb, error: e4 }, { data: ibt, error: e5 }] = await Promise.all([
+           dbLoose.rpc("get_creator_dashboard_v1", { p_creator_id: user.id }),
+           dbLoose.rpc("get_creator_growth_v1", { p_creator_id: user.id, p_days: period }),
+           dbLoose.rpc("get_creator_recommendations_v1", { p_creator_id: user.id, p_limit: 5 }),
+           dbLoose.rpc("get_content_views_breakdown_v1", { p_creator_id: user.id, p_days: period }),
+           dbLoose.rpc("get_interactions_by_type_v1", { p_creator_id: user.id, p_days: period }),
+         ]);
+         if (e1) throw e1;
+         if (e2) throw e2;
+         if (!mounted) return;
+         if (dash) setMetrics(mapDashboard(dash));
+         if (grow) setGrowth((grow as unknown as GrowthPoint[]).slice(-period));
+         if (recs) setRecommendations(recs as unknown as Recommendation[]);
+         if (!e4 && cvb) setContentViewsBreakdown(cvb as unknown as ContentViewsBreakdown[]);
+         if (!e5 && ibt) setInteractionsByType(ibt as unknown as InteractionsByType[]);
+       } catch (err) {
+         logger.error("[CreatorAnalytics] load failed", { err });
+         if (mounted) toast.error("Ошибка загрузки аналитики");
+       } finally {
+         if (mounted) setLoading(false);
+       }
+     })();
 
-    return () => { mounted = false; };
-  }, [user?.id, period]);
+     return () => { mounted = false; };
+   }, [user?.id, period]);
 
   const tabs: { id: Tab; label: string }[] = [
     { id: "overview", label: "Обзор" },
@@ -874,14 +915,14 @@ export function CreatorAnalyticsDashboard() {
             <p className="text-sm">Недостаточно данных</p>
             <p className="text-xs">Загрузите несколько Reels, чтобы видеть статистику</p>
           </div>
-        ) : (
-          <>
-{tab === "overview" && <OverviewTab metrics={metrics} growth={growth} period={period} recommendations={recommendations} creatorId={user?.id} />}
-             {tab === "content" && <ContentTab period={period} onPeriodChange={setPeriod} />}
-             {tab === "engagement" && <EngagementTab metrics={metrics} creatorId={user?.id} />}
-             {tab === "audience" && <AudienceTab metrics={metrics} growth={growth} creatorId={user?.id} />}
-          </>
-        )}
+) : (
+           <>
+ {tab === "overview" && <OverviewTab metrics={metrics} growth={growth} period={period} recommendations={recommendations} creatorId={user?.id} contentViewsBreakdown={contentViewsBreakdown} interactionsByType={interactionsByType} />}
+              {tab === "content" && <ContentTab period={period} onPeriodChange={setPeriod} />}
+              {tab === "engagement" && <EngagementTab metrics={metrics} creatorId={user?.id} interactionsByType={interactionsByType} />}
+              {tab === "audience" && <AudienceTab metrics={metrics} growth={growth} creatorId={user?.id} />}
+           </>
+         )}
       </div>
     </div>
   );

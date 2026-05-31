@@ -222,6 +222,24 @@ export async function getCreatorInsights(days = 30): Promise<CreatorInsights> {
   if (error) {
     throw error;
   }
+  if (!data) {
+    return {
+      days,
+      since: new Date().toISOString().split('T')[0],
+      views_total: 0,
+      views_non_followers: 0,
+      views_non_followers_pct: 0,
+      followers_total: 0,
+      followers_gained: 0,
+      reels_total: 0,
+      likes_total: 0,
+      comments_total: 0,
+      views_by_day: [],
+      views_by_hour: [],
+      top_reels: [],
+      followers_gender: { male: 0, female: 0, unknown: 0 }
+    };
+  }
   return data as CreatorInsights;
 }
 

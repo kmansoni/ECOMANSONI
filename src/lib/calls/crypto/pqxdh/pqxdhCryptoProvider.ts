@@ -1,4 +1,4 @@
-import type { KeyPackageData, EpochKeyMaterial, CallIdentity } from '../../../calls-v2';
+import type { KeyPackageData, EpochKeyMaterial, CallIdentity } from '@/calls-v2';
 import { CryptoProvider } from '../cryptoProvider';
 // В реальной реализации здесь будет использование библиотек пост‑квантовой криптографии (например, liboqs‑wasm) для ML‑KEM и X3DH.
 
@@ -53,11 +53,16 @@ export class PQXDHCryptoProvider implements CryptoProvider {
   async createKeyPackage(peerPublicKeyBase64: string, epoch: number): Promise<KeyPackageData> {
     // Заглушка: инкапсулировать эпохальный ключ с использованием ML‑KEM открытого ключа пира
     // Здесь бы произошло: derive shared secret via ML‑KEM, затем обернуть эпохальный ключ через AES‑KW, подписать.
-    return Promise.resolve({
-      epoch: epoch,
-      publicKey: '', // base64 открытого ключа нашей стороны
-      // В реальности также нужны ciphertext, sig, salt, senderIdentity
-    } as KeyPackageData);
+    // В реальности также нужны ciphertext, sig, salt, senderIdentity
+    const dummyKeyPackage: KeyPackageData = {
+      epoch,
+      senderPublicKey: '',
+      ciphertext: '',
+      sig: '',
+      salt: '',
+      senderIdentity: { ...this.identity },
+    };
+    return dummyKeyPackage;
   }
 
   async processKeyPackage(pkg: KeyPackageData): Promise<EpochKeyMaterial> {

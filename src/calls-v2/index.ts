@@ -1,6 +1,7 @@
 export { SfuMediaManager } from './sfuMediaManager';
 export { CallKeyExchange } from './callKeyExchange';
 export { CallMediaEncryption } from './callMediaEncryption';
+export type { CallMediaEncryptionConfig } from './callMediaEncryption';
 export { CallsWsClient } from './wsClient';
 export { RekeyStateMachine, DEFAULT_REKEY_CONFIG } from './rekeyStateMachine';
 export { EpochGuard } from './epochGuard';
@@ -39,3 +40,5 @@ export type {
   RelayStatsCollectorConfig,
   RelayMetrics,
 } from './relayStats';
+// Re-export hasInsertableStreamsSupport from helpers for external use
+export { hasInsertableStreamsSupport } from '../contexts/video-call/videoCallProvider.helpers';

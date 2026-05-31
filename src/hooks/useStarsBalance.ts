@@ -1,5 +1,5 @@
 import { useState, useCallback } from "react";
-import { createClient } from "@/lib/supabase/client";
+import { createClient } from "@/integrations/supabase/client";
 
 export function useStarsBalance(userId?: string) {
   const [balance, setBalance] = useState<number | null>(null);

@@ -76,6 +76,16 @@ export function useCallsV2E2eeSignals({
     return Uint8Array.from(atob(b64), (char) => char.charCodeAt(0));
   }, []);
 
+  const bytesToBase64 = useCallback((bytes: Uint8Array): string => {
+    let binary = '';
+    for (let i = 0; i < bytes.length; i++) {
+      const byte = bytes.at(i);
+      if (byte === undefined) continue;
+      binary += String.fromCharCode(byte);
+    }
+    return btoa(binary);
+  }, []);
+
   const deriveSenderKeyId = useCallback(async (senderPublicKeyB64: string): Promise<string> => {
     const senderPublicKeyBytes = base64ToBytes(senderPublicKeyB64);
     const keyMaterial = senderPublicKeyBytes.length > 65
@@ -243,11 +253,11 @@ export function useCallsV2E2eeSignals({
                   });
                 });
              } else {
-               pendingProducersToConsumeRef.current.set(prod.producerId, {
-                 roomId: activeRoomId,
-                 peerDeviceId: prod.peerDeviceId,
-                 peerUserId: peerUserIdByDeviceIdRef.current.get(prod.peerDeviceId),
-               });
+                pendingProducersToConsumeRef.current.set(prod.producerId, {
+                  roomId: activeRoomId,
+                  peerDeviceId: prod.peerDeviceId,
+                  peerUserId: peerUserIdByDeviceIdRef.current.get(prod.peerDeviceId),
+                } as { roomId: string; peerDeviceId?: string; peerUserId?: string });
                logger.debug("[VideoCallContext] snapshot producer queued for pending consume", {
                  producerId: prod.producerId,
                  roomId: activeRoomId,
@@ -295,13 +305,17 @@ export function useCallsV2E2eeSignals({
        // Повторное чтение рефа без null-guard на строке getSessionId() — race-condition.
        void (async () => {
          try {
-           const kx = callKeyExchangeRef.current;
-           const enc = callMediaEncryptionRef.current;
-           if (!kx || !enc) {
-             logger.warn("[VideoCallContext] REKEY_BEGIN: key exchange or encryption not ready, skipping");
-             return;
-           }
-           const epochKey = await kx.createEpochKey(epoch);
+            const kx = callKeyExchangeRef.current;
+            const enc = callMediaEncryptionRef.current;
+            if (!kx || !enc) {
+              logger.warn("[VideoCallContext] REKEY_BEGIN: key exchange or encryption not ready, skipping");
+              return;
+            }
+            const existingKey = kx.getCurrentEpochKey();
+            if (existingKey && existingKey.epoch === epoch) {
+              return; // уже есть ключ для этого epoch, не пересоздаём
+            }
+            const epochKey = await kx.createEpochKey(epoch);
            await enc.setEncryptionKey(epochKey);
 
            const senderPublicKey = await kx.getPublicKeyBase64();
@@ -326,22 +340,24 @@ export function useCallsV2E2eeSignals({
            const identityPubKeyJwk = await exportEcdsaPublicKey(identityKeyPair.publicKey);
            const sigB64 = btoa(String.fromCharCode(...new Uint8Array(sigBytes)));
 
-           const discoveryNonce = crypto.randomUUID();
-           const mySigningPublicKey = await kx.getSigningPublicKeyBase64();
-           void client.keyPackage({
-             roomId,
-             fromDeviceId: getStableCallsDeviceId(),
-             toDeviceId: leaderDeviceId,
-             senderKeyId,
-             targetDeviceId: leaderDeviceId,
-             epoch,
-             keyPackageType: "DISCOVERY",
-             discoveryNonce,
-             ciphertext: senderPublicKey,
-             sig: sigB64,
-             senderPublicKey,
-             senderSigningPublicKey: mySigningPublicKey,
-             salt: "",
+            const discoveryNonce = crypto.randomUUID();
+            const mySigningPublicKey = await kx.getSigningPublicKeyBase64();
+            // Discovery: используем случайный salt вместо пустого — защищает HKDF от детерминированной деривации
+            const discoverySalt = crypto.getRandomValues(new Uint8Array(32));
+            void client.keyPackage({
+              roomId,
+              fromDeviceId: getStableCallsDeviceId(),
+              toDeviceId: leaderDeviceId,
+              senderKeyId,
+              targetDeviceId: leaderDeviceId,
+              epoch,
+              keyPackageType: "DISCOVERY",
+              discoveryNonce,
+              ciphertext: senderPublicKey,
+              sig: sigB64,
+              senderPublicKey,
+              senderSigningPublicKey: mySigningPublicKey,
+              salt: bytesToBase64(discoverySalt),
              senderIdentity: {
                userId: user?.id ?? "",
                deviceId: getStableCallsDeviceId(),
@@ -404,9 +420,11 @@ export function useCallsV2E2eeSignals({
 
           const isDiscovery = keyPackageType === "DISCOVERY";
 
-          // Non-discovery packets MUST have a signature (C-1 fix: prevents MITM downgrade to plaintext)
-          if (!isDiscovery && (!sigB64 || sigB64.length === 0)) {
-            logger.warn("[VideoCallContext] KEY_PACKAGE rejected: missing signature on non-discovery packet", { epoch, roomId });
+          // Sig is REQUIRED for ALL key packages (discovery + non-discovery), regardless of
+          // whether identityPubKeyJwk is present. Unsigned key packages are rejected to prevent
+          // MITM attacks where an attacker sends a forged senderPublicKey without a signature.
+          if (!sigB64 || sigB64.length === 0) {
+            logger.warn("[VideoCallContext] KEY_PACKAGE rejected: missing signature", { epoch, roomId, isDiscovery });
             return;
           }
 
@@ -420,7 +438,7 @@ export function useCallsV2E2eeSignals({
             return;
           }
 
-          if (keyExchange && mediaEncryption && senderPublicKeyB64 && ciphertextB64 && (sigB64 || isDiscovery)) {
+          if (keyExchange && mediaEncryption && senderPublicKeyB64 && ciphertextB64 && sigB64) {
             const senderIdentityObj = rawPayload?.senderIdentity as
               | { userId?: string; deviceId?: string; sessionId?: string }
               | undefined;
@@ -464,18 +482,26 @@ export function useCallsV2E2eeSignals({
               }
             }
 
-            const pkgData: KeyPackageData = {
-              senderPublicKey: senderPublicKeyB64 ?? "",
-              ciphertext: ciphertextB64 ?? "",
-              sig: sigB64 ?? "",
-              epoch,
-              salt: (rawPayload?.salt as string | undefined) ?? "",
-              senderIdentity: {
-                userId: senderUserId,
-                deviceId: senderDeviceId,
-                sessionId: senderSessionId,
-              },
-            };
+const pkgData: KeyPackageData = {
+               senderPublicKey: senderPublicKeyB64 ?? "",
+               ciphertext: ciphertextB64 ?? "",
+               sig: sigB64 ?? "",
+               epoch,
+               salt: (rawPayload?.salt as string | undefined) ?? "",
+               messageId: (rawPayload?.messageId as string | undefined) ?? msgId ?? "",
+               senderIdentity: {
+                 userId: senderUserId,
+                 deviceId: senderDeviceId,
+                 sessionId: senderSessionId,
+               },
+             };
+
+             // H-3: messageId required for anti-replay protection
+             const messageId = pkgData.messageId;
+             if (!isDiscovery && (!messageId || messageId.length === 0)) {
+               logger.warn("[VideoCallContext] KEY_PACKAGE rejected: messageId is missing — anti-replay required", { epoch });
+               return;
+             }
 
             if (isDiscovery) {
               if (ciphertextB64 !== senderPublicKeyB64) {
@@ -572,44 +598,46 @@ export function useCallsV2E2eeSignals({
 
                   const pkg = await kx.createKeyPackage(senderPublicKeyB64, epoch);
                   const senderKeyId = await deriveSenderKeyId(pkg.senderPublicKey);
-                  const leaderSessionId = kx.getSessionId();
-                  const leaderSigningPublicKey = await kx.getSigningPublicKeyBase64();
-                  const identityKeyPair = await getOrCreateIdentityKeyPair();
-                  const identityPubKeyJwk = await exportEcdsaPublicKey(identityKeyPair.publicKey);
-                  const identitySigRaw = await signIdentity(
-                    identityKeyPair.privateKey,
-                    user?.id ?? "",
-                    getStableCallsDeviceId(),
-                    leaderSessionId,
-                    pkg.senderPublicKey,
-                    pkg.ciphertext,
-                    epoch,
-                    pkg.salt,
-                  );
-                  const identitySig = btoa(String.fromCharCode(...new Uint8Array(identitySigRaw)));
-                  void client.keyPackage({
-                    roomId,
-                    fromDeviceId: getStableCallsDeviceId(),
-                    toDeviceId: senderDeviceId,
-                    senderKeyId,
-                    targetDeviceId: senderDeviceId,
-                    epoch,
-                    keyPackageType: "WRAPPED_EPOCH_KEY",
-                    ciphertext: pkg.ciphertext,
-                    sig: pkg.sig,
-                    identitySig,
-                    senderPublicKey: pkg.senderPublicKey,
-                    senderSigningPublicKey: leaderSigningPublicKey,
-                    salt: pkg.salt,
-                    senderIdentity: {
-                      userId: user?.id ?? "",
-                      deviceId: getStableCallsDeviceId(),
-                      sessionId: leaderSessionId,
-                      identityPubKeyJwk,
-                    },
-                  }).catch((err) => {
-                    logger.warn("[VideoCallContext] leader KEY_PACKAGE response failed", err);
-                  });
+const leaderSessionId = kx.getSessionId();
+                   const leaderSigningPublicKey = await kx.getSigningPublicKeyBase64();
+                   const identityKeyPair = await getOrCreateIdentityKeyPair();
+                   const identityPubKeyJwk = await exportEcdsaPublicKey(identityKeyPair.publicKey);
+                   const identitySigRaw = await signIdentity(
+                     identityKeyPair.privateKey,
+                     user?.id ?? "",
+                     getStableCallsDeviceId(),
+                     leaderSessionId,
+                     pkg.senderPublicKey,
+                     pkg.ciphertext,
+                     epoch,
+                     pkg.salt,
+                     pkg.messageId,
+                   );
+const identitySig = btoa(String.fromCharCode(...new Uint8Array(identitySigRaw)));
+                   void client.keyPackage({
+                     roomId,
+                     fromDeviceId: getStableCallsDeviceId(),
+                     toDeviceId: senderDeviceId,
+                     senderKeyId,
+                     targetDeviceId: senderDeviceId,
+                     epoch,
+                     keyPackageType: "WRAPPED_EPOCH_KEY",
+                     ciphertext: pkg.ciphertext,
+                     sig: pkg.sig,
+                     identitySig,
+                     senderPublicKey: pkg.senderPublicKey,
+                     senderSigningPublicKey: leaderSigningPublicKey,
+                     salt: pkg.salt,
+                     messageId: pkg.messageId,
+                     senderIdentity: {
+                       userId: user?.id ?? "",
+                       deviceId: getStableCallsDeviceId(),
+                       sessionId: leaderSessionId,
+                       identityPubKeyJwk,
+                     },
+                   }).catch((err) => {
+                     logger.warn("[VideoCallContext] leader KEY_PACKAGE response failed", err);
+                   });
                 } catch (e2) {
                   logger.warn("[VideoCallContext] leader KEY_PACKAGE creation failed", e2);
                 }
@@ -872,5 +900,14 @@ export function useCallsV2E2eeSignals({
     producerPeerKeyRef,
   ]);
 
-  return { attachCallsV2E2eeSignals };
+   // Detach function to clean up listeners
+   const detachCallback = useCallback(() => {
+        if (detachSignalsRef.current) {
+            detachSignalsRef.current();
+            detachSignalsRef.current = null;
+            attachedSignalsClientRef.current = null;
+        }
+   }, []); // empty deps because the refs we use are stable (they are useRefs in this hook)
+
+   return { attach: attachCallsV2E2eeSignals, detach: detachCallback };
 }

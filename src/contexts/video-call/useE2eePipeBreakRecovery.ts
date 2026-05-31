@@ -1,6 +1,6 @@
 import { useCallback, useEffect } from "react";
 import { logger } from "@/lib/logger";
-import { toast } from "sonner";
+import { callNotifications } from "./notificationService";
 import type { PipeBreakInfo } from "@/lib/e2ee/insertableStreams";
 import type { ConsumerReplayDescriptor } from "@/calls-v2/types";
 import type { SfuMediaManager } from "@/calls-v2/sfuMediaManager";
@@ -44,7 +44,7 @@ export function useE2eePipeBreakRecovery(
     const encryption = callMediaEncryptionRef.current;
     if (!sfuManager || !encryption) {
       logger.error('[VideoCallContext] E2EE pipe recovery impossible — no sfuManager or encryption', { trackId });
-      toast.error('Ошибка шифрования — переподключение невозможно');
+      callNotifications.error({ title: 'Ошибка шифрования — переподключение невозможно' });
       pipeBreakRecoveryInFlightRef.current.delete(recoveryKey);
       return;
     }
@@ -62,7 +62,7 @@ export function useE2eePipeBreakRecovery(
         const track = sfuManager.closeProducer(trackId);
         if (!track || track.readyState !== 'live') {
           logger.error('[VideoCallContext] E2EE sender recovery: track dead', { trackId });
-          toast.error('Ошибка шифрования — медиа-трек недоступен');
+          callNotifications.error({ title: 'Ошибка шифрования — медиа-трек недоступен' });
           return;
         }
 
@@ -103,7 +103,7 @@ export function useE2eePipeBreakRecovery(
         const storedParams = consumerCreateParamsRef.current.get(trackId);
         if (!storedParams) {
           logger.error('[VideoCallContext] E2EE receiver recovery: no stored params', { trackId, peerId });
-          toast.error('Ошибка дешифровки — параметры потеряны');
+          callNotifications.error({ title: 'Ошибка дешифровки — параметры потеряны' });
           return;
         }
 
@@ -163,11 +163,11 @@ export function useE2eePipeBreakRecovery(
       }
     } catch (err) {
       logger.error('[VideoCallContext] E2EE pipe recovery failed', { trackId, direction, error: err });
-      toast.error(
-        direction === 'encrypt'
+      callNotifications.error({
+        title: direction === 'encrypt'
           ? 'Ошибка шифрования медиа — собеседник может не слышать вас'
           : 'Ошибка дешифровки медиа — вы можете не слышать собеседника'
-      );
+      });
     } finally {
       pipeBreakRecoveryInFlightRef.current.delete(recoveryKey);
     }

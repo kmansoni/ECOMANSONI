@@ -224,6 +224,9 @@ export class RekeyStateMachine {
     this.pendingEpoch = newEpoch;
     this.state = 'REKEY_PENDING';
     this.peerAcks.clear();
+    // Обновляем lastRekeyTime сразу при инициации — даже если rekey будет abort'нут,
+    // он по-прежнему учитывается в minRekeyIntervalMs что защищает от spam-атак.
+    this.lastRekeyTime = now;
 
     for (const peerId of this.activePeers) {
       this.peerAcks.set(peerId, { peerId, acked: false });

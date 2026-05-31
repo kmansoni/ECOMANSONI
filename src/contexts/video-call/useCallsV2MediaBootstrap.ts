@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, type MutableRefObject } from "react";
-import { toast } from "sonner";
 import { logger } from "@/lib/logger";
+import { callNotifications } from "./notificationService";
 import { SfuMediaManager } from "@/calls-v2/sfuMediaManager";
 import { CallMediaEncryption } from "@/calls-v2/callMediaEncryption";
 import type { CallsWsClient } from "@/calls-v2/wsClient";
@@ -254,9 +254,9 @@ screenStream,
 
     if (!mediaBootstrapToastShownRef.current.has(roomId)) {
       mediaBootstrapToastShownRef.current.add(roomId);
-      toast.error("Ошибка подключения медиа", {
+      callNotifications.error({
+        title: "Ошибка подключения медиа",
         description: "SFU не завершил создание медиа-транспортов. Повторите звонок или смените сеть.",
-        duration: 5000,
       });
     }
 
@@ -295,6 +295,9 @@ screenStream,
     if (callsWsRoomRef.current !== roomId) return;
     if (callsWsMediaRoomRef.current === roomId) return;
     if (callsWsMediaBootstrapInFlightRoomRef.current === roomId) return;
+
+    // completed: true → media already bootstrapped for this call, skip
+    if (mediaBootstrapCompletedRef.current.get(call.id)) return;
 
     const blockedUntil = mediaBootstrapBlockedUntilRef.current.get(roomId) ?? 0;
     if (Date.now() < blockedUntil) return;

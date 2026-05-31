@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <script>
+      // GitHub Pages SPA fallback:
+      // If the user hits a deep link, Pages serves /404.html which redirects to /?/<path>.
+      // This script restores the original path so React Router can handle it.
+      (function () {
+        var l = window.location;
+        if (l.search && l.search.startsWith('?/')) {
+          var query = l.search.slice(2);
+          
+          // Prevent malformed URLs like ?/&/&/&... from infinite loops
+          if (query.startsWith('&/&') || query.match(/(&\/){3,}/)) {
+            // Corrupted URL - reset to home
+            window.history.replaceState(null, '', l.pathname);
+            return;
+          }
+          
+          var parts = query.split('&');
+          var path = parts.shift() || '';
+          var remaining = parts.length ? ('?' + parts.join('&')) : '';
+          var base = l.pathname;
+          if (!base.endsWith('/')) base = base + '/';
+          
+          // Use replaceState to update browser history before React Router initializes
+          // This ensures the router sees the original path, not the ?/ encoded version
+          window.history.replaceState(null, '', base + path + remaining + l.hash);
+        }
+      })();
+    </script>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="format-detection" content="telephone=no" />
+      <meta name="referrer" content="strict-origin-when-cross-origin" />
+      <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; script-src-elem 'self' 'unsafe-inline'; worker-src 'self' blob:; child-src 'self' blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' https: data: blob:; font-src 'self' https: data:; connect-src 'self' https: wss: ws:; media-src 'self' https: blob:; frame-src 'self' https:; object-src 'none'; base-uri 'self';" />
+    <!-- TODO: Set the document title to the name of your application -->
+    <title>mansoni</title>
+    <meta name="description" content="Социальная сеть mansoni">
+    <meta name="author" content="mansoni" />
+
+    <!-- TODO: Update og:title to match your application name -->
+    
+    
+    <meta property="og:type" content="website" />
+     <meta property="og:image" content="" />
+
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:site" content="@mansoni" />
+    <meta name="twitter:image" content="" />
+    <meta property="og:title" content="mansoni">
+  <meta name="twitter:title" content="mansoni">
+  <meta property="og:description" content="Социальная сеть mansoni">
+  <meta name="twitter:description" content="Социальная сеть mansoni">
+  <link rel="icon" type="image/png" href="https://storage.googleapis.com/gpt-engineer-file-uploads/cPeXRra4uUQ0AEG8Mui49FbVGp73/uploads/1769982762295-296e92f8a59e339a7d403032aab87b66-a2004440-7949-409c-8198-d96636af0cf2.png">
+  <link rel="manifest" href="/manifest.json">
+  <script type="module" crossorigin src="/assets/index-CEV1FMo9.js"></script>
+  <link rel="modulepreload" crossorigin href="/assets/react-vendor-B3Qu9i-x.js">
+  <link rel="modulepreload" crossorigin href="/assets/chart-vendor-K9DTHxsN.js">
+  <link rel="modulepreload" crossorigin href="/assets/animation-vendor-DDT8aVKJ.js">
+  <link rel="modulepreload" crossorigin href="/assets/supabase-vendor-BOCL3uOH.js">
+  <link rel="modulepreload" crossorigin href="/assets/radix-vendor-B55fmqmQ.js">
+  <link rel="stylesheet" crossorigin href="/assets/index-BzfYS3Ny.css">
+</head>
+
+  <body>
+    <div id="root"></div>
+    <script>
+      // Service Worker registration — sw.js (media cache + push)
+      if ('serviceWorker' in navigator) {
+        window.addEventListener('load', function () {
+          navigator.serviceWorker.register('/sw.js', { scope: '/' })
+            .then(function (registration) {
+              // Проверяем обновление SW при каждой загрузке страницы
+              registration.addEventListener('updatefound', function () {
+                var newWorker = registration.installing;
+                if (!newWorker) return;
+                newWorker.addEventListener('statechange', function () {
+                  if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+                    // Новая версия SW готова — активируем немедленно
+                    newWorker.postMessage({ type: 'SKIP_WAITING' });
+                  }
+                });
+              });
+            })
+            .catch(function (err) {
+              console.warn('[SW] Registration failed:', err);
+            });
+
+          // При смене активного SW — перезагружаем страницу для применения нового кэша
+          var refreshing = false;
+          navigator.serviceWorker.addEventListener('controllerchange', function () {
+            if (!refreshing) {
+              refreshing = true;
+              window.location.reload();
+            }
+          });
+        });
+      }
+    </script>
+  </body>
+</html>
+

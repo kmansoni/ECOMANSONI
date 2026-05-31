@@ -1,0 +1,935 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>mansoni · Halo — дизайн супер-мессенджера 2026</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+<style>
+/* =====================================================================
+   mansoni · HALO DESIGN LANGUAGE 2026
+   Три оси: Продвинутость · Безопасность · Забота
+   - Продвинутость: жидкое стекло, aurora-градиенты, глубина и блики
+   - Безопасность: шифрование/щиты/верификация как первичный визуальный слой
+   - Забота: мягкие формы, спокойные интервалы, тёплые акценты, ясная микрокопия
+   ===================================================================== */
+
+*, *::before, *::after { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; }
+
+:root {
+  --radius-xs: 12px;
+  --radius-sm: 16px;
+  --radius-md: 22px;
+  --radius-lg: 30px;
+  --radius-xl: 40px;
+  --pill: 999px;
+
+  --ease: cubic-bezier(0.22, 1, 0.36, 1);
+  --spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+
+  /* Aurora — продвинутость */
+  --grad-aurora: linear-gradient(135deg, #6a5cff 0%, #00d4ff 48%, #ff6ad5 100%);
+  --grad-violet: linear-gradient(135deg, #8b5cf6 0%, #ec4899 100%);
+  --grad-mint:   linear-gradient(135deg, #00f0a8 0%, #00b4d8 100%);
+  /* Shield — безопасность */
+  --grad-shield: linear-gradient(135deg, #10b981 0%, #06b6d4 100%);
+  /* Care — забота (тёплый янтарь/коралл) */
+  --grad-care:   linear-gradient(135deg, #ff9a62 0%, #ff5d8f 100%);
+
+  font-family: 'Manrope', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  letter-spacing: -0.011em;
+  -webkit-font-smoothing: antialiased;
+}
+
+body[data-theme="dark"] {
+  --bg-1: #1a1240; --bg-2: #052033; --bg-3: #3a0c2b; --bg-base: #07091a;
+  --ink: #f0f2ff; --ink-soft: #b8bdd6; --ink-mute: #757b95;
+  --glass: rgba(20,22,40,0.55);
+  --glass-strong: rgba(28,32,56,0.80);
+  --glass-soft: rgba(255,255,255,0.04);
+  --border: rgba(255,255,255,0.12);
+  --inner: inset 0 1px 0 rgba(255,255,255,0.08), inset 0 -1px 0 rgba(0,0,0,0.2);
+  --shadow: 0 30px 80px -30px rgba(0,0,0,0.6), 0 8px 24px -12px rgba(0,0,0,0.4);
+  --input-bg: rgba(255,255,255,0.06);
+  --divider: rgba(255,255,255,0.08);
+  --accent: #8b7dff; --accent-soft: rgba(139,125,255,0.18);
+  --success: #34d399; --danger: #f87171; --warning: #fbbf24; --shield: #2dd4bf; --care: #ff8aa0;
+  --bubble-in: rgba(255,255,255,0.07);
+  --bubble-out: linear-gradient(135deg, rgba(106,92,255,0.95), rgba(139,125,255,0.85));
+}
+body[data-theme="light"] {
+  --bg-1: #f6f4ff; --bg-2: #e8f2ff; --bg-3: #fff0f6; --bg-base: #f3f4fb;
+  --ink: #0e1530; --ink-soft: #4b5266; --ink-mute: #8089a0;
+  --glass: rgba(255,255,255,0.55);
+  --glass-strong: rgba(255,255,255,0.82);
+  --glass-soft: rgba(255,255,255,0.55);
+  --border: rgba(255,255,255,0.7);
+  --inner: inset 0 1px 0 rgba(255,255,255,0.9), inset 0 -1px 0 rgba(14,21,48,0.04);
+  --shadow: 0 20px 60px -20px rgba(80,60,160,0.25), 0 8px 24px -12px rgba(14,21,48,0.12);
+  --input-bg: rgba(255,255,255,0.7);
+  --divider: rgba(14,21,48,0.08);
+  --accent: #6a5cff; --accent-soft: rgba(106,92,255,0.14);
+  --success: #10b981; --danger: #ef4444; --warning: #f59e0b; --shield: #0d9488; --care: #ff5d8f;
+  --bubble-in: rgba(255,255,255,0.85);
+  --bubble-out: linear-gradient(135deg, #6a5cff, #8b7dff);
+}
+
+body {
+  min-height: 100vh;
+  color: var(--ink);
+  padding: 24px 16px 96px;
+  background:
+    radial-gradient(1200px 600px at 10% -10%, var(--bg-1) 0%, transparent 60%),
+    radial-gradient(900px 600px at 90% 0%, var(--bg-2) 0%, transparent 55%),
+    radial-gradient(800px 500px at 50% 110%, var(--bg-3) 0%, transparent 55%),
+    var(--bg-base);
+  transition: background 0.6s var(--ease), color 0.4s var(--ease);
+}
+
+/* ── Glass surfaces ─────────────────────────────────────── */
+.glass {
+  background: var(--glass);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow), var(--inner);
+  backdrop-filter: blur(24px) saturate(180%);
+  -webkit-backdrop-filter: blur(24px) saturate(180%);
+}
+.glass-strong {
+  background: var(--glass-strong);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow), var(--inner);
+  backdrop-filter: blur(40px) saturate(200%);
+  -webkit-backdrop-filter: blur(40px) saturate(200%);
+}
+
+/* Liquid highlight */
+.liquid { position: relative; overflow: hidden; isolation: isolate; }
+.liquid::before {
+  content:''; position:absolute; inset:-40%;
+  background: radial-gradient(circle at var(--mx,50%) var(--my,50%), rgba(255,255,255,0.32) 0%, rgba(255,255,255,0) 38%);
+  opacity:0; transition:opacity .4s var(--ease); pointer-events:none; z-index:0;
+}
+body[data-theme="dark"] .liquid::before {
+  background: radial-gradient(circle at var(--mx,50%) var(--my,50%), rgba(139,125,255,0.28) 0%, rgba(139,125,255,0) 38%);
+}
+.liquid:hover::before { opacity:1; }
+.liquid > * { position:relative; z-index:1; }
+
+/* ── Top control bar ────────────────────────────────────── */
+.topbar {
+  max-width: 1320px; margin: 0 auto; padding: 14px 18px;
+  display:flex; align-items:center; gap:16px; flex-wrap:wrap;
+}
+.brand { display:flex; align-items:center; gap:12px; }
+.brand-logo {
+  width:40px; height:40px; border-radius:13px; background: var(--grad-aurora);
+  box-shadow: 0 10px 28px -10px rgba(106,92,255,0.7);
+  display:grid; place-items:center; color:white; font-weight:800; font-size:18px;
+}
+.brand-title { font-weight:800; font-size:16px; letter-spacing:-0.02em; }
+.brand-sub { font-size:11px; color:var(--ink-mute); }
+.spacer { flex:1; }
+
+.seg { display:inline-flex; gap:2px; padding:4px; border-radius:var(--pill);
+  background: var(--glass-soft); border:1px solid var(--border); }
+.seg button {
+  border:none; cursor:pointer; padding:8px 14px; border-radius:var(--pill);
+  font-size:13px; font-weight:600; background:transparent; color:var(--ink-soft);
+  transition: all .25s var(--ease); font-family:inherit;
+}
+.seg button[data-active="true"] { background: var(--grad-aurora); color:white; box-shadow:0 6px 16px -6px rgba(106,92,255,0.5); }
+
+.navchips { display:flex; gap:6px; flex-wrap:wrap; }
+.chip {
+  width:42px; height:42px; border-radius:14px; border:1px solid var(--border);
+  background:var(--glass-soft); color:var(--ink-soft); cursor:pointer;
+  display:grid; place-items:center; transition: all .25s var(--ease);
+}
+.chip[data-active="true"] { background:var(--accent-soft); color:var(--accent); border-color:transparent; transform:translateY(-1px); }
+.chip:hover { color:var(--ink); }
+
+/* ── Device frame ───────────────────────────────────────── */
+.stage { margin-top:26px; display:flex; justify-content:center; }
+.frame { padding:10px; border-radius:var(--radius-xl); background:var(--glass-strong);
+  border:1px solid var(--border); box-shadow:var(--shadow); }
+.frame[data-vp="desktop"] { width:100%; max-width:1320px; }
+.frame[data-vp="mobile"] { width:392px; }
+.frame-inner { border-radius:var(--radius-lg); overflow:hidden; position:relative; background:transparent; }
+.frame[data-vp="desktop"] .frame-inner { height:760px; }
+.frame[data-vp="mobile"] .frame-inner { height:760px; }
+
+/* ── Buttons ───────────────────────────────────────────── */
+.btn {
+  display:inline-flex; align-items:center; justify-content:center; gap:8px;
+  border:none; cursor:pointer; font-family:inherit; font-weight:700; font-size:14px;
+  padding:12px 18px; border-radius:var(--radius-sm); color:var(--ink);
+  background:var(--glass-soft); border:1px solid var(--border);
+  transition: transform .2s var(--spring), box-shadow .25s var(--ease), background .25s var(--ease);
+}
+.btn:hover { transform:translateY(-2px); }
+.btn:active { transform:translateY(0) scale(.98); }
+.btn-primary { background:var(--grad-aurora); color:white; border-color:transparent; box-shadow:0 14px 30px -12px rgba(106,92,255,0.6); }
+.btn-shield  { background:var(--grad-shield); color:white; border-color:transparent; box-shadow:0 14px 30px -12px rgba(16,185,129,0.5); }
+.btn-care    { background:var(--grad-care); color:white; border-color:transparent; box-shadow:0 14px 30px -12px rgba(255,93,143,0.5); }
+.btn-ghost   { background:transparent; }
+.btn-block { width:100%; }
+.btn-icon { width:44px; height:44px; padding:0; border-radius:14px; }
+
+/* ── Badges & pills ────────────────────────────────────── */
+.badge { display:inline-flex; align-items:center; gap:5px; font-size:11px; font-weight:700;
+  padding:4px 10px; border-radius:var(--pill); }
+.badge-grad { background:var(--grad-aurora); color:white; }
+.badge-shield { background:rgba(16,185,129,0.16); color:var(--shield); }
+.badge-care { background:rgba(255,93,143,0.16); color:var(--care); }
+.badge-soft { background:var(--glass-soft); color:var(--ink-soft); border:1px solid var(--border); }
+
+.dot { width:9px; height:9px; border-radius:50%; }
+.dot-online { background:var(--success); box-shadow:0 0 0 3px color-mix(in srgb, var(--success) 25%, transparent); }
+
+/* ── Avatar ─────────────────────────────────────────────── */
+.avatar { border-radius:50%; display:grid; place-items:center; color:white; font-weight:700;
+  background:var(--grad-violet); position:relative; flex:none; }
+.avatar[data-online="true"]::after {
+  content:''; position:absolute; right:-1px; bottom:-1px; width:30%; height:30%;
+  background:var(--success); border-radius:50%; border:2.5px solid var(--bg-base);
+}
+.av-ring { padding:2px; border-radius:50%; background:var(--grad-aurora); }
+
+/* ── Inputs ─────────────────────────────────────────────── */
+.field { width:100%; padding:13px 16px; border-radius:var(--radius-sm);
+  background:var(--input-bg); border:1px solid var(--border); color:var(--ink);
+  font-family:inherit; font-size:14px; outline:none; transition: border .2s var(--ease), box-shadow .2s var(--ease); }
+.field::placeholder { color:var(--ink-mute); }
+.field:focus { border-color:var(--accent); box-shadow:0 0 0 4px var(--accent-soft); }
+
+/* ── Layout helpers ─────────────────────────────────────── */
+.row { display:flex; align-items:center; gap:12px; }
+.col { display:flex; flex-direction:column; }
+.muted { color:var(--ink-mute); }
+.soft { color:var(--ink-soft); }
+.divider { height:1px; background:var(--divider); }
+.scroll { overflow-y:auto; scrollbar-width:thin; }
+.scroll::-webkit-scrollbar { width:8px; }
+.scroll::-webkit-scrollbar-thumb { background:var(--border); border-radius:8px; }
+.truncate { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+
+/* ── App shell (desktop) ────────────────────────────────── */
+.appshell { display:grid; grid-template-columns:84px 340px 1fr; height:100%; }
+.rail { padding:16px 0; display:flex; flex-direction:column; align-items:center; gap:10px;
+  border-right:1px solid var(--divider); }
+.rail-logo { width:46px; height:46px; border-radius:15px; background:var(--grad-aurora);
+  display:grid; place-items:center; color:white; font-weight:800; font-size:20px;
+  box-shadow:0 10px 26px -10px rgba(106,92,255,0.7); }
+.rail-item { width:52px; height:52px; border-radius:16px; display:grid; place-items:center;
+  color:var(--ink-mute); cursor:pointer; position:relative; transition: all .25s var(--ease); }
+.rail-item:hover { color:var(--ink); background:var(--glass-soft); }
+.rail-item[data-active="true"] { color:var(--accent); background:var(--accent-soft); }
+.rail-item[data-active="true"]::before { content:''; position:absolute; left:-16px; top:14px; bottom:14px; width:3px;
+  border-radius:3px; background:var(--grad-aurora); }
+.rail-badge { position:absolute; top:8px; right:8px; min-width:16px; height:16px; padding:0 4px;
+  border-radius:8px; background:var(--care); color:white; font-size:10px; font-weight:800; display:grid; place-items:center; }
+
+.panel { border-right:1px solid var(--divider); display:flex; flex-direction:column; min-width:0; }
+.panel-head { padding:18px 18px 14px; display:flex; flex-direction:column; gap:14px; }
+.panel-title { font-size:22px; font-weight:800; letter-spacing:-0.02em; }
+.searchwrap { position:relative; }
+.searchwrap svg { position:absolute; left:14px; top:50%; transform:translateY(-50%); color:var(--ink-mute); }
+.searchwrap .field { padding-left:42px; }
+
+.content { display:flex; flex-direction:column; min-width:0; }
+
+/* ── Chat list ──────────────────────────────────────────── */
+.chatitem { display:flex; gap:12px; padding:12px 16px; cursor:pointer; border-radius:var(--radius-sm);
+  margin:2px 8px; transition: background .2s var(--ease); position:relative; }
+.chatitem:hover { background:var(--glass-soft); }
+.chatitem[data-active="true"] { background:var(--accent-soft); }
+.chatitem .meta { flex:1; min-width:0; }
+.chatitem .top { display:flex; align-items:center; gap:6px; }
+.chatitem .name { font-weight:700; font-size:14px; }
+.chatitem .time { margin-left:auto; font-size:11px; color:var(--ink-mute); }
+.chatitem .preview { font-size:13px; color:var(--ink-soft); margin-top:2px; }
+.unread { min-width:20px; height:20px; padding:0 6px; border-radius:10px; background:var(--grad-aurora);
+  color:white; font-size:11px; font-weight:800; display:grid; place-items:center; }
+
+/* ── Conversation ───────────────────────────────────────── */
+.conv-head { padding:14px 18px; display:flex; align-items:center; gap:12px; border-bottom:1px solid var(--divider); }
+.conv-body { flex:1; padding:20px; display:flex; flex-direction:column; gap:12px;
+  background:
+    radial-gradient(600px 300px at 80% 0%, var(--accent-soft) 0%, transparent 60%),
+    radial-gradient(500px 300px at 0% 100%, rgba(255,106,213,0.06) 0%, transparent 60%); }
+.bubble { max-width:64%; padding:11px 15px; border-radius:20px; font-size:14px; line-height:1.45;
+  box-shadow:0 6px 18px -10px rgba(0,0,0,0.3); position:relative; }
+.bubble.in { background:var(--bubble-in); border-bottom-left-radius:7px; align-self:flex-start;
+  border:1px solid var(--border); }
+.bubble.out { background:var(--bubble-out); color:white; border-bottom-right-radius:7px; align-self:flex-end; }
+.bubble .stamp { font-size:10px; margin-top:5px; opacity:.7; display:flex; gap:4px; align-items:center; justify-content:flex-end; }
+.day-sep { align-self:center; font-size:11px; color:var(--ink-mute); padding:4px 12px; border-radius:var(--pill);
+  background:var(--glass-soft); border:1px solid var(--border); }
+
+.e2ee-note { align-self:center; max-width:80%; text-align:center; font-size:12px; color:var(--shield);
+  background:rgba(16,185,129,0.10); border:1px solid rgba(16,185,129,0.25); padding:8px 14px;
+  border-radius:var(--radius-sm); display:flex; gap:8px; align-items:center; }
+
+.composer { padding:12px 16px; display:flex; align-items:center; gap:10px; border-top:1px solid var(--divider); }
+.composer .field { border-radius:var(--pill); }
+
+/* ── Cards / sections ───────────────────────────────────── */
+.card { padding:18px; border-radius:var(--radius-md); }
+.section-pad { padding:22px; }
+.h-title { font-size:24px; font-weight:800; letter-spacing:-0.02em; margin:0; }
+.h-sub { color:var(--ink-soft); font-size:14px; margin:4px 0 0; }
+
+.secrow { display:flex; align-items:center; gap:14px; padding:14px 16px; border-radius:var(--radius-sm);
+  background:var(--glass-soft); border:1px solid var(--border); }
+.secicon { width:42px; height:42px; border-radius:13px; display:grid; place-items:center; color:white; flex:none; }
+
+.toggle { width:48px; height:28px; border-radius:var(--pill); background:var(--input-bg);
+  border:1px solid var(--border); position:relative; cursor:pointer; transition:background .25s var(--ease); flex:none; }
+.toggle::after { content:''; position:absolute; top:2px; left:2px; width:22px; height:22px; border-radius:50%;
+  background:white; transition: transform .28s var(--spring); box-shadow:0 2px 6px rgba(0,0,0,0.25); }
+.toggle[data-on="true"] { background:var(--grad-shield); border-color:transparent; }
+.toggle[data-on="true"]::after { transform:translateX(20px); }
+
+/* Security gauge */
+.gauge { display:flex; align-items:center; gap:16px; }
+.gauge-ring { width:96px; height:96px; border-radius:50%; flex:none; display:grid; place-items:center;
+  background: conic-gradient(var(--shield) 0% 92%, var(--input-bg) 92% 100%); position:relative; }
+.gauge-ring::after { content:''; position:absolute; inset:9px; border-radius:50%; background:var(--glass-strong); }
+.gauge-num { position:relative; z-index:1; font-weight:800; font-size:24px; }
+
+/* Mobile tabbar */
+.tabbar { position:absolute; left:14px; right:14px; bottom:16px; padding:8px;
+  display:flex; align-items:center; justify-content:space-around; border-radius:var(--pill); }
+.tab { border:none; background:transparent; cursor:pointer; padding:9px 12px; border-radius:14px;
+  display:flex; flex-direction:column; align-items:center; gap:2px; color:var(--ink-mute);
+  font-family:inherit; font-size:10px; font-weight:600; transition: all .25s var(--spring); }
+.tab[data-active="true"] { color:var(--accent); transform:translateY(-2px); }
+.fab { width:50px; height:50px; border-radius:50%; border:none; cursor:pointer; background:var(--grad-aurora);
+  color:white; display:grid; place-items:center; box-shadow:0 14px 30px -10px rgba(106,92,255,0.7); }
+
+/* Call screen */
+.call { height:100%; position:relative; display:flex; flex-direction:column;
+  background: radial-gradient(700px 500px at 50% 20%, rgba(106,92,255,0.25) 0%, transparent 60%), var(--bg-base); }
+.call-main { flex:1; display:grid; place-items:center; position:relative; }
+.call-avatar { width:140px; height:140px; border-radius:50%; background:var(--grad-violet); display:grid; place-items:center;
+  color:white; font-size:54px; font-weight:800; box-shadow:0 30px 80px -20px rgba(139,125,255,0.6);
+  animation: breathe 4s var(--ease) infinite; }
+@keyframes breathe { 0%,100%{ transform:scale(1); } 50%{ transform:scale(1.04); } }
+.call-pip { position:absolute; right:18px; bottom:18px; width:110px; height:150px; border-radius:18px;
+  background:var(--grad-mint); border:2px solid var(--border); box-shadow:var(--shadow); }
+.call-controls { padding:24px; display:flex; align-items:center; justify-content:center; gap:14px; }
+.call-btn { width:58px; height:58px; border-radius:50%; border:none; cursor:pointer; display:grid; place-items:center;
+  background:var(--glass-strong); color:var(--ink); transition: transform .2s var(--spring); }
+.call-btn:hover { transform:translateY(-3px); }
+.call-btn.end { background:var(--danger); color:white; }
+
+/* Showcase grid */
+.showcase { max-width:1320px; margin:34px auto 0; }
+.showcase h2 { font-size:14px; text-transform:uppercase; letter-spacing:0.12em; color:var(--ink-mute); margin:0 0 14px; }
+.grid { display:grid; gap:16px; grid-template-columns:repeat(auto-fill, minmax(280px,1fr)); }
+
+.pillrow { display:flex; gap:8px; flex-wrap:wrap; }
+
+/* Reveal animation */
+.reveal { animation: reveal .5s var(--ease) both; }
+@keyframes reveal { from { opacity:0; transform:translateY(14px) scale(.985); } to { opacity:1; transform:none; } }
+
+.hidden { display:none !important; }
+
+@media (max-width: 1000px) {
+  .frame[data-vp="desktop"] { display:none; }
+}
+</style>
+</head>
+<body data-theme="dark">
+
+<!-- ── TOP CONTROL BAR ─────────────────────────────────── -->
+<div class="topbar glass-strong">
+  <div class="brand">
+    <div class="brand-logo">M</div>
+    <div>
+      <div class="brand-title">mansoni · Halo</div>
+      <div class="brand-sub">Продвинутость · Безопасность · Забота — 2026</div>
+    </div>
+  </div>
+  <div class="spacer"></div>
+
+  <div class="seg" id="themeSeg">
+    <button data-v="light">Светлая</button>
+    <button data-v="dark" data-active="true">Тёмная</button>
+  </div>
+  <div class="seg" id="vpSeg">
+    <button data-v="desktop" data-active="true">Desktop</button>
+    <button data-v="mobile">Mobile</button>
+  </div>
+
+  <div class="navchips" id="navChips"></div>
+</div>
+
+<!-- ── DEVICE STAGE ────────────────────────────────────── -->
+<div class="stage">
+  <div class="frame" data-vp="desktop" id="frame">
+    <div class="frame-inner" id="frameInner"></div>
+  </div>
+</div>
+
+<!-- ── COMPONENT SHOWCASE ──────────────────────────────── -->
+<div class="showcase">
+  <h2>Язык дизайна · компоненты</h2>
+  <div class="grid">
+
+    <div class="glass card reveal">
+      <div class="soft" style="font-size:12px; margin-bottom:12px; font-weight:700;">Кнопки</div>
+      <div class="pillrow">
+        <button class="btn btn-primary liquid" onmousemove="liquid(event)">Действие</button>
+        <button class="btn btn-shield liquid" onmousemove="liquid(event)">Защитить</button>
+        <button class="btn btn-care liquid" onmousemove="liquid(event)">Забота</button>
+        <button class="btn">Обычная</button>
+      </div>
+    </div>
+
+    <div class="glass card reveal">
+      <div class="soft" style="font-size:12px; margin-bottom:12px; font-weight:700;">Статусы безопасности</div>
+      <div class="pillrow">
+        <span class="badge badge-shield">🔒 E2EE</span>
+        <span class="badge badge-grad">✓ Verified</span>
+        <span class="badge badge-care">💜 Забота</span>
+        <span class="badge badge-soft">⏱ Исчезает 24ч</span>
+      </div>
+    </div>
+
+    <div class="glass card reveal">
+      <div class="soft" style="font-size:12px; margin-bottom:12px; font-weight:700;">Поля ввода</div>
+      <div class="col" style="gap:10px;">
+        <input class="field" placeholder="Поиск людей и чатов…" />
+        <input class="field" type="password" value="••••••••••" />
+      </div>
+    </div>
+
+    <div class="glass card reveal">
+      <div class="soft" style="font-size:12px; margin-bottom:12px; font-weight:700;">Переключатели заботы</div>
+      <div class="col" style="gap:12px;">
+        <div class="row"><span class="soft" style="flex:1; font-size:14px;">Тихие часы</span><div class="toggle" data-on="true" onclick="this.dataset.on=this.dataset.on==='true'?'false':'true'"></div></div>
+        <div class="row"><span class="soft" style="flex:1; font-size:14px;">Сквозное шифрование</span><div class="toggle" data-on="true" onclick="this.dataset.on=this.dataset.on==='true'?'false':'true'"></div></div>
+        <div class="row"><span class="soft" style="flex:1; font-size:14px;">Скрин-защита</span><div class="toggle" data-on="false" onclick="this.dataset.on=this.dataset.on==='true'?'false':'true'"></div></div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<script>
+/* ── Icon set (минимальный набор линейных иконок) ─────── */
+const ICONS = {
+  chats:'<path d="M21 11.5a8.5 8.5 0 0 1-12.3 7.6L3 21l1.9-5.7A8.5 8.5 0 1 1 21 11.5Z"/>',
+  calls:'<path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2 4.2 2 2 0 0 1 4 2h3a2 2 0 0 1 2 1.7c.1 1 .4 1.9.7 2.8a2 2 0 0 1-.5 2.1L8 9.8a16 16 0 0 0 6 6l1.2-1.2a2 2 0 0 1 2.1-.5c.9.3 1.8.6 2.8.7A2 2 0 0 1 22 16.9Z"/>',
+  shield:'<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z"/><path d="m9 12 2 2 4-4"/>',
+  profile:'<circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/>',
+  settings:'<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.6 1.6 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.6 1.6 0 0 0-2.7 1.1V21a2 2 0 1 1-4 0v-.1A1.6 1.6 0 0 0 7 19.4a1.6 1.6 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1A1.6 1.6 0 0 0 2.6 14H2a2 2 0 1 1 0-4h.1A1.6 1.6 0 0 0 4 7l-.1-.1A2 2 0 1 1 6.7 4.1l.1.1A1.6 1.6 0 0 0 9 4.6V4a2 2 0 1 1 4 0v.1A1.6 1.6 0 0 0 17 7l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.6 1.6 0 0 0 1.1 2.7H21a2 2 0 1 1 0 4h-.1Z"/>',
+  search:'<circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/>',
+  send:'<path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/>',
+  plus:'<path d="M12 5v14M5 12h14"/>',
+  mic:'<rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/>',
+  video:'<rect x="2" y="6" width="14" height="12" rx="3"/><path d="m22 8-6 4 6 4Z"/>',
+  phone:'<path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2 4.2 2 2 0 0 1 4 2h3a2 2 0 0 1 2 1.7c.1 1 .4 1.9.7 2.8a2 2 0 0 1-.5 2.1L8 9.8a16 16 0 0 0 6 6l1.2-1.2a2 2 0 0 1 2.1-.5c.9.3 1.8.6 2.8.7A2 2 0 0 1 22 16.9Z"/>',
+  lock:'<rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/>',
+  bell:'<path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10 21a2 2 0 0 0 4 0"/>',
+  heart:'<path d="M19 14c1.5-1.5 3-3.3 3-5.5A3.5 3.5 0 0 0 12 5 3.5 3.5 0 0 0 2 8.5C2 10.7 3.5 12.5 5 14l7 7Z"/>',
+  paperclip:'<path d="M21 11.5 12.5 20a5 5 0 0 1-7-7l9-9a3.5 3.5 0 0 1 5 5l-9 9a2 2 0 0 1-3-3l8.5-8.5"/>',
+  more:'<circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/>',
+  speaker:'<path d="M11 5 6 9H2v6h4l5 4Z"/><path d="M15.5 8.5a5 5 0 0 1 0 7M19 5a9 9 0 0 1 0 14"/>',
+  micoff:'<path d="M9 9v2a3 3 0 0 0 5 2M15 10V6a3 3 0 0 0-6 0M2 2l20 20M5 11a7 7 0 0 0 11 5M12 18v3"/>',
+  fingerprint:'<path d="M12 10a2 2 0 0 0-2 2c0 4-1 6-1 6M12 6a6 6 0 0 0-6 6c0 5-2 7-2 7M16 11c0 6 1 8 1 8M12 12v2c0 4 1 6 1 6"/>',
+  feed:'<rect x="3" y="3" width="7" height="7" rx="2"/><rect x="14" y="3" width="7" height="7" rx="2"/><rect x="3" y="14" width="7" height="7" rx="2"/><rect x="14" y="14" width="7" height="7" rx="2"/>',
+  wallet:'<rect x="3" y="6" width="18" height="14" rx="3"/><path d="M3 10h18M16 15h2"/>',
+  spark:'<path d="M12 3v4M12 17v4M3 12h4M17 12h4M6 6l2.5 2.5M15.5 15.5 18 18M18 6l-2.5 2.5M8.5 15.5 6 18"/><circle cx="12" cy="12" r="2.5"/>',
+  ai:'<rect x="4" y="6" width="16" height="13" rx="4"/><path d="M9 12h.01M15 12h.01M12 2v4M8 19l-1 3M16 19l1 3"/>',
+  play:'<path d="M6 4 20 12 6 20Z"/>',
+  comment:'<path d="M21 11.5a8.5 8.5 0 0 1-12.3 7.6L3 21l1.9-5.7A8.5 8.5 0 1 1 21 11.5Z"/>',
+  share:'<circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><path d="m8.6 13.5 6.8 4M15.4 6.5 8.6 10.5"/>',
+  qr:'<rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><path d="M14 14h3v3M21 14v7h-7M17 21h.01"/>',
+  bookmark:'<path d="M6 3h12a1 1 0 0 1 1 1v17l-7-4-7 4V4a1 1 0 0 1 1-1Z"/>',
+  globe:'<circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18A14 14 0 0 1 12 3Z"/>',
+};
+function svg(name, size=22){
+  return '<svg width="'+size+'" height="'+size+'" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">'+(ICONS[name]||'')+'</svg>';
+}
+function liquid(e){ const r=e.currentTarget.getBoundingClientRect(); e.currentTarget.style.setProperty('--mx',((e.clientX-r.left)/r.width*100)+'%'); e.currentTarget.style.setProperty('--my',((e.clientY-r.top)/r.height*100)+'%'); }
+window.liquid = liquid;
+
+/* ── State ──────────────────────────────────────────────── */
+const SECTIONS = [
+  { id:'chats', label:'Чаты', icon:'chats', badge:'12' },
+  { id:'feed', label:'Лента', icon:'feed' },
+  { id:'calls', label:'Звонки', icon:'calls' },
+  { id:'ai', label:'AI', icon:'ai' },
+  { id:'wallet', label:'Кошелёк', icon:'wallet' },
+  { id:'security', label:'Безопасность', icon:'shield' },
+  { id:'care', label:'Забота', icon:'heart' },
+  { id:'profile', label:'Профиль', icon:'profile' },
+  { id:'settings', label:'Настройки', icon:'settings' },
+];
+let state = { theme:'dark', vp:'desktop', section:'chats' };
+
+/* ── Nav chips ──────────────────────────────────────────── */
+const navChips = document.getElementById('navChips');
+function renderChips(){
+  navChips.innerHTML = SECTIONS.map(s =>
+    `<button class="chip" data-id="${s.id}" data-active="${state.section===s.id}" title="${s.label}">${svg(s.icon,19)}</button>`
+  ).join('');
+  navChips.querySelectorAll('.chip').forEach(b => b.onclick = () => { state.section=b.dataset.id; render(); });
+}
+
+/* ── Theme / viewport toggles ───────────────────────────── */
+document.querySelectorAll('#themeSeg button').forEach(b => b.onclick = () => {
+  state.theme=b.dataset.v; document.body.dataset.theme=state.theme;
+  document.querySelectorAll('#themeSeg button').forEach(x=>x.dataset.active=(x===b));
+});
+document.querySelectorAll('#vpSeg button').forEach(b => b.onclick = () => {
+  state.vp=b.dataset.v; document.getElementById('frame').dataset.vp=state.vp;
+  document.querySelectorAll('#vpSeg button').forEach(x=>x.dataset.active=(x===b));
+  render();
+});
+
+/* ── Sample data ────────────────────────────────────────── */
+const CHATS = [
+  { n:'Анна Соколова', p:'Спасибо! Жду встречи 💜', t:'14:32', u:2, e:true, on:true, c:'#8b5cf6' },
+  { n:'Команда Halo', p:'Дмитрий: задеплоили SFU', t:'13:05', u:0, e:true, on:false, c:'#06b6d4', grp:true },
+  { n:'Михаил', p:'Голосовое · 0:42', t:'12:48', u:0, e:true, on:true, c:'#f59e0b' },
+  { n:'Семья', p:'Мама: уже едем 🚗', t:'вчера', u:5, e:true, on:false, c:'#ec4899', grp:true },
+  { n:'Saved Messages', p:'Заметка: идеи для дизайна', t:'вчера', u:0, e:false, on:false, c:'#10b981', saved:true },
+  { n:'Secret · Лена', p:'🔥 исчезающее сообщение', t:'пн', u:0, e:true, on:false, c:'#6a5cff', secret:true },
+];
+
+/* ── Renderers ──────────────────────────────────────────── */
+function render(){
+  renderChips();
+  const inner = document.getElementById('frameInner');
+  inner.innerHTML = state.vp==='desktop' ? desktopShell() : mobileShell();
+  bindLiquid();
+}
+function bindLiquid(){ document.querySelectorAll('#frameInner .liquid').forEach(el => el.addEventListener('mousemove', liquid)); }
+
+function rail(){
+  return `<div class="rail">
+    <div class="rail-logo">M</div>
+    <div style="height:8px"></div>
+    ${SECTIONS.map(s=>`<div class="rail-item" data-active="${state.section===s.id}" data-id="${s.id}" title="${s.label}">
+      ${svg(s.icon,22)}${s.badge?`<span class="rail-badge">${s.badge}</span>`:''}</div>`).join('')}
+    <div style="flex:1"></div>
+    <div class="av-ring"><div class="avatar" data-online="true" style="width:42px;height:42px;font-size:15px;border:2px solid var(--bg-base)">А</div></div>
+  </div>`;
+}
+
+function desktopShell(){
+  let main='', mid='';
+  if(state.section==='chats'){ mid = chatListPanel(); main = conversation(); }
+  else if(state.section==='feed'){ mid = simplePanel('Лента','Подписки и рекомендации'); main = feedCenter(); }
+  else if(state.section==='calls'){ mid = callListPanel(); main = callScreen(); }
+  else if(state.section==='ai'){ mid = simplePanel('AI-ассистент','Приватный помощник'); main = aiCenter(); }
+  else if(state.section==='wallet'){ mid = simplePanel('Кошелёк','Stars и платежи'); main = walletCenter(); }
+  else if(state.section==='security'){ mid = simplePanel('Безопасность','Центр защиты'); main = securityCenter(); }
+  else if(state.section==='care'){ mid = simplePanel('Забота','Цифровое благополучие'); main = careCenter(); }
+  else if(state.section==='profile'){ mid = simplePanel('Профиль','Ваш аккаунт'); main = profile(); }
+  else { mid = settingsPanel(); main = settingsDetail(); }
+
+  const shell = `<div class="appshell reveal">${rail()}${mid}<div class="content">${main}</div></div>`;
+  setTimeout(bindRail,0);
+  return shell;
+}
+function bindRail(){ document.querySelectorAll('#frameInner .rail-item').forEach(el=> el.onclick=()=>{ state.section=el.dataset.id; render(); }); }
+
+function simplePanel(title, sub){
+  return `<div class="panel"><div class="panel-head">
+    <div class="panel-title">${title}</div>
+    <div class="searchwrap">${svg('search',18)}<input class="field" placeholder="Поиск в разделе…"></div>
+  </div><div class="scroll" style="padding:0 8px"><div class="soft" style="padding:16px;font-size:13px">${sub}</div></div></div>`;
+}
+
+function chatListPanel(){
+  return `<div class="panel">
+    <div class="panel-head">
+      <div class="row"><div class="panel-title">Чаты</div><div class="spacer"></div>
+        <button class="btn btn-icon liquid" title="Новый чат">${svg('plus',20)}</button></div>
+      <div class="searchwrap">${svg('search',18)}<input class="field" placeholder="Поиск людей и чатов…"></div>
+      <div class="pillrow">
+        <span class="badge badge-grad">Все</span>
+        <span class="badge badge-soft">Личные</span>
+        <span class="badge badge-soft">Группы</span>
+        <span class="badge badge-shield">🔒 Секретные</span>
+      </div>
+    </div>
+    <div class="scroll" style="flex:1">
+      ${CHATS.map((c,i)=>chatItem(c,i===0)).join('')}
+    </div>
+  </div>`;
+}
+function chatItem(c, active){
+  return `<div class="chatitem" data-active="${!!active}">
+    <div class="avatar" data-online="${!!c.on}" style="width:50px;height:50px;font-size:18px;background:linear-gradient(135deg, ${c.c}, ${c.c}aa)">${c.saved?'★':(c.grp?'#':c.n[0])}</div>
+    <div class="meta">
+      <div class="top">
+        <span class="name truncate">${c.n}</span>
+        ${c.e?`<span style="color:var(--shield);display:inline-flex">${svg('lock',13)}</span>`:''}
+        ${c.secret?`<span class="badge badge-shield" style="padding:1px 6px">24ч</span>`:''}
+        <span class="time">${c.t}</span>
+      </div>
+      <div class="row"><div class="preview truncate" style="flex:1">${c.p}</div>${c.u?`<span class="unread">${c.u}</span>`:''}</div>
+    </div>
+  </div>`;
+}
+
+function conversation(){
+  return `<div class="content" style="height:100%;display:flex;flex-direction:column">
+    <div class="conv-head">
+      <div class="avatar" data-online="true" style="width:44px;height:44px;font-size:16px;background:var(--grad-violet)">А</div>
+      <div class="col" style="min-width:0">
+        <div class="row" style="gap:6px"><b style="font-size:15px">Анна Соколова</b><span class="badge badge-grad" style="padding:1px 7px">✓</span></div>
+        <div class="row" style="gap:6px"><span style="color:var(--shield);display:inline-flex">${svg('lock',12)}</span><span class="muted" style="font-size:12px">сквозное шифрование · в сети</span></div>
+      </div>
+      <div class="spacer"></div>
+      <button class="call-btn liquid" style="width:44px;height:44px;background:var(--glass-soft)">${svg('phone',19)}</button>
+      <button class="call-btn liquid" style="width:44px;height:44px;background:var(--glass-soft)">${svg('video',19)}</button>
+      <button class="call-btn liquid" style="width:44px;height:44px;background:var(--glass-soft)">${svg('more',19)}</button>
+    </div>
+    <div class="conv-body scroll">
+      <div class="e2ee-note">${svg('lock',15)} Сообщения защищены сквозным шифрованием. Никто вне чата их не прочитает.</div>
+      <div class="day-sep">Сегодня</div>
+      <div class="bubble in reveal">Привет! Глянула новый дизайн — это очень бережно и понятно 💜</div>
+      <div class="bubble out reveal">Спасибо! Хотел, чтобы безопасность чувствовалась, а не пугала<div class="stamp">14:30 ✓✓</div></div>
+      <div class="bubble in reveal">Иконка щита прямо в шапке — сразу спокойно</div>
+      <div class="bubble out reveal">Да, и ключ верификации можно сверить в один тап<div class="stamp">14:31 ✓✓</div></div>
+      <div class="bubble in reveal">Спасибо! Жду встречи 💜</div>
+    </div>
+    <div class="composer">
+      <button class="btn btn-icon btn-ghost">${svg('paperclip',20)}</button>
+      <input class="field" placeholder="Сообщение…">
+      <button class="btn btn-icon btn-ghost">${svg('mic',20)}</button>
+      <button class="btn btn-icon btn-primary liquid">${svg('send',19)}</button>
+    </div>
+  </div>`;
+}
+
+function callListPanel(){
+  const calls=[
+    {n:'Анна Соколова',t:'вход · 14:02 · 12 мин',v:true,c:'#8b5cf6'},
+    {n:'Команда Halo',t:'группа · вчера · 48 мин',v:true,c:'#06b6d4'},
+    {n:'Михаил',t:'пропущенный · вчера',miss:true,c:'#f59e0b'},
+  ];
+  return `<div class="panel"><div class="panel-head">
+    <div class="row"><div class="panel-title">Звонки</div><div class="spacer"></div>
+      <button class="btn btn-icon liquid">${svg('plus',20)}</button></div>
+    <div class="searchwrap">${svg('search',18)}<input class="field" placeholder="Поиск контакта…"></div>
+    <span class="badge badge-shield" style="align-self:flex-start">🔒 Все звонки зашифрованы (E2EE)</span>
+  </div><div class="scroll" style="flex:1">
+    ${calls.map(c=>`<div class="chatitem">
+      <div class="avatar" style="width:48px;height:48px;font-size:17px;background:linear-gradient(135deg,${c.c},${c.c}aa)">${c.n[0]}</div>
+      <div class="meta"><div class="name">${c.n}</div>
+        <div class="preview" style="color:${c.miss?'var(--danger)':'var(--ink-soft)'}">${c.t}</div></div>
+      <button class="btn btn-icon btn-ghost">${svg(c.v?'video':'phone',19)}</button>
+    </div>`).join('')}
+  </div></div>`;
+}
+
+function callScreen(){
+  return `<div class="call reveal">
+    <div class="conv-head" style="border:none;background:transparent">
+      <span class="badge badge-shield">${svg('lock',13)} Зашифрованный звонок</span>
+      <div class="spacer"></div><span class="muted" style="font-size:13px">07:42</span>
+    </div>
+    <div class="call-main">
+      <div class="col" style="align-items:center;gap:18px">
+        <div class="call-avatar">А</div>
+        <div class="col" style="align-items:center;gap:4px">
+          <b style="font-size:22px">Анна Соколова</b>
+          <span class="muted">HD видео · стабильное соединение</span>
+        </div>
+        <div class="row" style="gap:6px"><span style="color:var(--shield)">${svg('fingerprint',16)}</span>
+          <span class="muted" style="font-size:12px">Ключ безопасности подтверждён · 🦊 🌿 🔑 ⛵</span></div>
+      </div>
+      <div class="call-pip"></div>
+    </div>
+    <div class="call-controls">
+      <button class="call-btn liquid">${svg('micoff',22)}</button>
+      <button class="call-btn liquid">${svg('video',22)}</button>
+      <button class="call-btn liquid">${svg('speaker',22)}</button>
+      <button class="call-btn end liquid">${svg('phone',22)}</button>
+    </div>
+  </div>`;
+}
+
+function securityCenter(){
+  const items=[
+    {i:'lock',g:'var(--grad-shield)',t:'Сквозное шифрование',d:'Активно во всех личных чатах и звонках',on:true},
+    {i:'fingerprint',g:'var(--grad-aurora)',t:'Биометрический вход',d:'Face ID / отпечаток + код-пароль',on:true},
+    {i:'shield',g:'var(--grad-shield)',t:'Защита от скриншотов',d:'В секретных чатах',on:false},
+    {i:'bell',g:'var(--grad-violet)',t:'Оповещения о входах',d:'Новые устройства и сессии',on:true},
+  ];
+  return `<div class="content scroll section-pad reveal" style="gap:18px;display:flex;flex-direction:column">
+    <div><h1 class="h-title">Центр безопасности</h1><p class="h-sub">Ваша приватность под контролем — спокойно и прозрачно.</p></div>
+    <div class="glass-strong card">
+      <div class="gauge">
+        <div class="gauge-ring"><span class="gauge-num">92</span></div>
+        <div class="col" style="gap:6px">
+          <b style="font-size:18px">Высокий уровень защиты</b>
+          <span class="soft" style="font-size:13px">Включите защиту от скриншотов, чтобы достичь 100%.</span>
+          <button class="btn btn-shield liquid" style="align-self:flex-start;margin-top:6px">Усилить защиту</button>
+        </div>
+      </div>
+    </div>
+    <div class="col" style="gap:12px">
+      ${items.map(it=>`<div class="secrow">
+        <div class="secicon" style="background:${it.g}">${svg(it.i,20)}</div>
+        <div class="col" style="flex:1"><b style="font-size:14px">${it.t}</b><span class="muted" style="font-size:12px">${it.d}</span></div>
+        <div class="toggle" data-on="${it.on}" onclick="this.dataset.on=this.dataset.on==='true'?'false':'true'"></div>
+      </div>`).join('')}
+    </div>
+    <div class="glass card row" style="gap:14px">
+      <div class="secicon" style="background:var(--grad-violet)">${svg('profile',20)}</div>
+      <div class="col" style="flex:1"><b style="font-size:14px">Активные сессии · 3 устройства</b>
+        <span class="muted" style="font-size:12px">iPhone 15 · MacBook · Web — Москва</span></div>
+      <button class="btn btn-ghost" style="color:var(--danger)">Завершить все</button>
+    </div>
+  </div>`;
+}
+
+function feedCenter(){
+  const posts=[
+    {n:'Анна Соколова',h:'@anna · 2ч',c:'#8b5cf6',v:true,txt:'Новый дизайн mansoni — это про спокойствие и доверие. Щит безопасности прямо в интерфейсе 💜',likes:'1.2k',cmt:'84',grad:'var(--grad-aurora)'},
+    {n:'Команда Halo',h:'@halo · 5ч',c:'#06b6d4',v:true,txt:'Зашифрованные звонки теперь с проверкой ключей в один тап. Безопасность без сложности.',likes:'3.4k',cmt:'210',grad:'var(--grad-shield)'},
+  ];
+  return `<div class="content scroll section-pad reveal" style="gap:16px;display:flex;flex-direction:column;max-width:620px;margin:0 auto;width:100%">
+    <div class="row" style="gap:10px">
+      <div class="av-ring"><div class="avatar" style="width:42px;height:42px;font-size:15px;border:2px solid var(--bg-base)">А</div></div>
+      <div class="searchwrap" style="flex:1">${svg('spark',18)}<input class="field" style="padding-left:42px;border-radius:var(--pill)" placeholder="Поделитесь моментом…"></div>
+      <button class="btn btn-primary btn-icon liquid">${svg('plus',20)}</button>
+    </div>
+    <div class="pillrow">
+      <span class="badge badge-grad">Для вас</span>
+      <span class="badge badge-soft">Подписки</span>
+      <span class="badge badge-soft">Рядом</span>
+      <span class="badge badge-soft">${svg('globe',12)} Мир</span>
+    </div>
+    ${posts.map(p=>`<div class="glass card col reveal" style="gap:12px;padding:0;overflow:hidden">
+      <div class="row" style="gap:10px;padding:14px 16px 0">
+        <div class="avatar" style="width:42px;height:42px;font-size:15px;background:linear-gradient(135deg,${p.c},${p.c}aa)">${p.n[0]}</div>
+        <div class="col" style="flex:1"><div class="row" style="gap:5px"><b style="font-size:14px">${p.n}</b>${p.v?`<span class="badge badge-grad" style="padding:1px 6px">✓</span>`:''}</div>
+          <span class="muted" style="font-size:12px">${p.h}</span></div>
+        <button class="btn btn-icon btn-ghost">${svg('more',18)}</button>
+      </div>
+      <div style="padding:0 16px;font-size:14px;line-height:1.5">${p.txt}</div>
+      <div style="height:180px;background:${p.grad};margin:4px 16px 0;border-radius:var(--radius-sm)"></div>
+      <div class="row" style="gap:18px;padding:12px 18px;color:var(--ink-soft)">
+        <span class="row" style="gap:6px;cursor:pointer">${svg('heart',18)} ${p.likes}</span>
+        <span class="row" style="gap:6px;cursor:pointer">${svg('comment',18)} ${p.cmt}</span>
+        <span class="row" style="gap:6px;cursor:pointer">${svg('share',18)}</span>
+        <div class="spacer"></div>
+        <span style="cursor:pointer">${svg('bookmark',18)}</span>
+      </div>
+    </div>`).join('')}
+  </div>`;
+}
+
+function aiCenter(){
+  return `<div class="content reveal" style="height:100%;display:flex;flex-direction:column">
+    <div class="conv-head">
+      <div class="secicon" style="background:var(--grad-aurora);width:44px;height:44px">${svg('ai',22)}</div>
+      <div class="col"><b style="font-size:15px">Halo AI</b>
+        <div class="row" style="gap:6px"><span style="color:var(--shield);display:inline-flex">${svg('lock',12)}</span><span class="muted" style="font-size:12px">приватно · данные не покидают аккаунт</span></div></div>
+      <div class="spacer"></div><span class="badge badge-grad">Pro</span>
+    </div>
+    <div class="conv-body scroll">
+      <div class="e2ee-note">${svg('spark',15)} Halo AI работает с приватностью: запросы шифруются, история под вашим контролем.</div>
+      <div class="bubble out reveal">Помоги составить безопасный план запуска чата для команды<div class="stamp">15:02 ✓✓</div></div>
+      <div class="bubble in reveal" style="max-width:78%">Готово. Предлагаю: 1) секретный групповой чат с E2EE, 2) проверка ключей участников, 3) исчезающие сообщения на 7 дней. Включить сейчас?</div>
+      <div class="pillrow" style="align-self:flex-start;margin-left:2px">
+        <span class="badge badge-shield" style="cursor:pointer">Включить E2EE</span>
+        <span class="badge badge-soft" style="cursor:pointer">Изменить срок</span>
+        <span class="badge badge-soft" style="cursor:pointer">Подробнее</span>
+      </div>
+    </div>
+    <div class="composer">
+      <button class="btn btn-icon btn-ghost">${svg('spark',20)}</button>
+      <input class="field" placeholder="Спросите Halo AI…">
+      <button class="btn btn-icon btn-primary liquid">${svg('send',19)}</button>
+    </div>
+  </div>`;
+}
+
+function walletCenter(){
+  const tx=[
+    {t:'Подарок · Stars',d:'Анне Соколовой',a:'−250',c:'var(--care)'},
+    {t:'Пополнение',d:'Visa ••42',a:'+1000',c:'var(--success)'},
+    {t:'Подписка Halo Pro',d:'Ежемесячно',a:'−399',c:'var(--ink-soft)'},
+  ];
+  return `<div class="content scroll section-pad reveal" style="gap:18px;display:flex;flex-direction:column">
+    <div><h1 class="h-title">Кошелёк</h1><p class="h-sub">Stars, платежи и подписки — защищено и прозрачно.</p></div>
+    <div class="glass-strong card col" style="gap:6px;background:var(--grad-aurora);color:white;border:none">
+      <span style="opacity:.85;font-size:13px">Баланс Stars</span>
+      <div class="row" style="gap:10px;align-items:baseline"><b style="font-size:40px">2 480</b><span style="opacity:.85">★</span></div>
+      <div class="row" style="gap:10px;margin-top:10px">
+        <button class="btn liquid" style="background:rgba(255,255,255,.18);color:white;border:none">${svg('plus',16)} Пополнить</button>
+        <button class="btn liquid" style="background:rgba(255,255,255,.18);color:white;border:none">${svg('share',16)} Отправить</button>
+      </div>
+    </div>
+    <div class="grid" style="grid-template-columns:repeat(3,1fr)">
+      <div class="glass card col" style="align-items:center;gap:4px"><div class="secicon" style="background:var(--grad-care)">${svg('heart',18)}</div><span class="muted" style="font-size:12px">Подарки</span></div>
+      <div class="glass card col" style="align-items:center;gap:4px"><div class="secicon" style="background:var(--grad-shield)">${svg('shield',18)}</div><span class="muted" style="font-size:12px">Защита покупок</span></div>
+      <div class="glass card col" style="align-items:center;gap:4px"><div class="secicon" style="background:var(--grad-mint)">${svg('qr',18)}</div><span class="muted" style="font-size:12px">QR-оплата</span></div>
+    </div>
+    <div class="col" style="gap:2px">
+      <span class="soft" style="font-size:12px;font-weight:700;padding:0 4px 6px">История</span>
+      ${tx.map(t=>`<div class="secrow"><div class="secicon" style="background:var(--glass-soft);color:var(--ink)">${svg('wallet',18)}</div>
+        <div class="col" style="flex:1"><b style="font-size:14px">${t.t}</b><span class="muted" style="font-size:12px">${t.d}</span></div>
+        <b style="color:${t.c}">${t.a} ★</b></div>`).join('')}
+    </div>
+  </div>`;
+}
+
+function careCenter(){
+  return `<div class="content scroll section-pad reveal" style="gap:18px;display:flex;flex-direction:column">
+    <div><h1 class="h-title">Забота</h1><p class="h-sub">Цифровое благополучие и спокойствие — мессенджер на ваших условиях.</p></div>
+    <div class="grid" style="grid-template-columns:repeat(2,1fr)">
+      <div class="glass card col" style="gap:8px">
+        <div class="secicon" style="background:var(--grad-care)">${svg('bell',20)}</div>
+        <b>Тихие часы</b><span class="muted" style="font-size:13px">22:00 – 08:00 · без уведомлений</span>
+        <div class="toggle" data-on="true" style="margin-top:6px" onclick="this.dataset.on=this.dataset.on==='true'?'false':'true'"></div>
+      </div>
+      <div class="glass card col" style="gap:8px">
+        <div class="secicon" style="background:var(--grad-mint)">${svg('heart',20)}</div>
+        <b>Экранное время</b><span class="muted" style="font-size:13px">Сегодня 1ч 12м · цель 2ч</span>
+        <div style="height:8px;border-radius:8px;background:var(--input-bg);margin-top:8px;overflow:hidden"><div style="width:60%;height:100%;background:var(--grad-mint)"></div></div>
+      </div>
+      <div class="glass card col" style="gap:8px">
+        <div class="secicon" style="background:var(--grad-violet)">${svg('shield',20)}</div>
+        <b>Родительский контроль</b><span class="muted" style="font-size:13px">Безопасный режим для близких</span>
+        <button class="btn btn-care liquid" style="align-self:flex-start;margin-top:6px">Настроить</button>
+      </div>
+      <div class="glass card col" style="gap:8px">
+        <div class="secicon" style="background:var(--grad-aurora)">${svg('lock',20)}</div>
+        <b>Антифрод-щит</b><span class="muted" style="font-size:13px">Предупреждаем о подозрительных ссылках</span>
+        <div class="toggle" data-on="true" style="margin-top:6px" onclick="this.dataset.on=this.dataset.on==='true'?'false':'true'"></div>
+      </div>
+    </div>
+    <div class="glass-strong card row" style="gap:14px;align-items:center">
+      <div class="secicon" style="background:var(--grad-care);width:48px;height:48px">${svg('heart',22)}</div>
+      <div class="col" style="flex:1"><b>Нужна поддержка?</b>
+        <span class="soft" style="font-size:13px">Кризисная помощь и доверенные контакты — в один тап.</span></div>
+      <button class="btn btn-care liquid">Помощь рядом</button>
+    </div>
+  </div>`;
+}
+
+function profile(){
+  return `<div class="content scroll reveal">
+    <div style="height:160px;background:var(--grad-aurora);position:relative"></div>
+    <div class="section-pad" style="margin-top:-60px">
+      <div class="av-ring" style="width:fit-content"><div class="avatar" style="width:108px;height:108px;font-size:42px;border:4px solid var(--bg-base);background:var(--grad-violet)">А</div></div>
+      <div class="row" style="gap:8px;margin-top:14px"><h1 class="h-title">Александр Морозов</h1><span class="badge badge-grad">✓ Verified</span></div>
+      <p class="h-sub">@alex · был в сети только что · 🔒 онлайн скрыт</p>
+      <div class="pillrow" style="margin-top:14px">
+        <button class="btn btn-primary liquid">${svg('chats',18)} Написать</button>
+        <button class="btn liquid" style="background:rgba(255,255,255,0.08);backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);border-color:rgba(255,255,255,0.18);color:var(--ink)">${svg('phone',18)} Звонок</button>
+        <button class="btn btn-icon liquid" style="background:rgba(255,255,255,0.08);backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);border-color:rgba(255,255,255,0.18);color:var(--ink)">${svg('more',18)}</button>
+      </div>
+      <div class="grid" style="grid-template-columns:repeat(3,1fr);margin-top:20px">
+        <div class="glass card col" style="align-items:center"><b style="font-size:22px">248</b><span class="muted" style="font-size:12px">Контакты</span></div>
+        <div class="glass card col" style="align-items:center"><b style="font-size:22px">12</b><span class="muted" style="font-size:12px">Группы</span></div>
+        <div class="glass card col" style="align-items:center"><b style="font-size:22px">3 года</b><span class="muted" style="font-size:12px">В mansoni</span></div>
+      </div>
+    </div>
+  </div>`;
+}
+
+function settingsPanel(){
+  const groups=[
+    {i:'profile',t:'Аккаунт',g:'var(--grad-aurora)'},
+    {i:'shield',t:'Конфиденциальность',g:'var(--grad-shield)'},
+    {i:'bell',t:'Уведомления',g:'var(--grad-violet)'},
+    {i:'heart',t:'Забота и благополучие',g:'var(--grad-care)'},
+    {i:'lock',t:'Безопасность',g:'var(--grad-mint)'},
+    {i:'settings',t:'Оформление',g:'var(--grad-aurora)'},
+  ];
+  return `<div class="panel"><div class="panel-head"><div class="panel-title">Настройки</div>
+    <div class="searchwrap">${svg('search',18)}<input class="field" placeholder="Поиск настроек…"></div></div>
+    <div class="scroll" style="flex:1;padding:6px 8px">
+      ${groups.map((g,i)=>`<div class="chatitem" data-active="${i===1}">
+        <div class="secicon" style="background:${g.g};width:38px;height:38px">${svg(g.i,18)}</div>
+        <div class="meta" style="display:flex;align-items:center"><span class="name">${g.t}</span></div>
+        <span class="muted">${svg('more',16)}</span></div>`).join('')}
+    </div></div>`;
+}
+function settingsDetail(){
+  const opts=[
+    {t:'Кто видит мой номер',v:'Никто'},
+    {t:'Последняя активность',v:'Контакты'},
+    {t:'Фото профиля',v:'Все'},
+    {t:'Кто может звонить',v:'Контакты'},
+    {t:'Группы и каналы',v:'Контакты'},
+  ];
+  return `<div class="content scroll section-pad reveal" style="gap:16px;display:flex;flex-direction:column">
+    <div><h1 class="h-title">Конфиденциальность</h1><p class="h-sub">По умолчанию — максимальная приватность. Вы решаете, что открыть.</p></div>
+    <div class="glass-strong card col" style="gap:2px;padding:6px">
+      ${opts.map((o,i)=>`<div class="row" style="padding:14px 16px;${i?'border-top:1px solid var(--divider)':''}">
+        <span style="flex:1;font-size:14px">${o.t}</span>
+        <span class="badge badge-soft">${o.v}</span></div>`).join('')}
+    </div>
+    <div class="secrow"><div class="secicon" style="background:var(--grad-shield)">${svg('lock',20)}</div>
+      <div class="col" style="flex:1"><b style="font-size:14px">Сквозное шифрование по умолчанию</b>
+      <span class="muted" style="font-size:12px">Новые чаты создаются защищёнными</span></div>
+      <div class="toggle" data-on="true" onclick="this.dataset.on=this.dataset.on==='true'?'false':'true'"></div></div>
+  </div>`;
+}
+
+/* ── Mobile shell ───────────────────────────────────────── */
+function mobileShell(){
+  let body='';
+  if(state.section==='chats') body = mobileChats();
+  else if(state.section==='feed') body = `<div class="scroll" style="height:100%;padding-bottom:90px">${feedCenter()}</div>`;
+  else if(state.section==='calls') body = `<div class="scroll" style="height:100%">${callScreenMobile()}</div>`;
+  else if(state.section==='ai') body = `<div style="height:100%;padding-bottom:84px;display:flex;flex-direction:column">${aiCenter()}</div>`;
+  else if(state.section==='wallet') body = `<div class="scroll" style="height:100%;padding-bottom:90px">${walletCenter()}</div>`;
+  else if(state.section==='security') body = securityCenter();
+  else if(state.section==='care') body = careCenter();
+  else if(state.section==='profile') body = profile();
+  else body = settingsDetail();
+
+  const shell = `<div style="height:100%;display:flex;flex-direction:column;position:relative" class="reveal">
+    <div style="flex:1;overflow:hidden;display:flex;flex-direction:column">${body}</div>
+    ${mobileTabbar()}
+  </div>`;
+  setTimeout(bindTabs,0);
+  return shell;
+}
+function mobileChats(){
+  return `<div style="display:flex;flex-direction:column;height:100%">
+    <div class="panel-head"><div class="row"><div class="panel-title">Чаты</div><div class="spacer"></div>
+      <span class="badge badge-shield">${svg('lock',13)} E2EE</span></div>
+      <div class="searchwrap">${svg('search',18)}<input class="field" placeholder="Поиск…"></div></div>
+    <div class="scroll" style="flex:1;padding-bottom:90px">${CHATS.map(c=>chatItem(c,false)).join('')}</div>
+  </div>`;
+}
+function callScreenMobile(){
+  return `<div style="height:100%;padding-bottom:90px">${callScreen()}</div>`;
+}
+function mobileTabbar(){
+  const tabs = SECTIONS.filter(s=>['chats','feed','calls','wallet','profile'].includes(s.id));
+  const left = tabs.slice(0,2), right = tabs.slice(2,4);
+  return `<div class="tabbar glass-strong">
+    ${left.map(t=>tabBtn(t)).join('')}
+    <button class="fab">${svg('plus',24)}</button>
+    ${right.map(t=>tabBtn(t)).join('')}
+  </div>`;
+}
+function tabBtn(t){ return `<button class="tab" data-id="${t.id}" data-active="${state.section===t.id}">${svg(t.icon,22)}<span>${t.label}</span></button>`; }
+function bindTabs(){ document.querySelectorAll('#frameInner .tab').forEach(b=> b.onclick=()=>{ state.section=b.dataset.id; render(); }); }
+
+render();
+</script>
+</body>
+</html>

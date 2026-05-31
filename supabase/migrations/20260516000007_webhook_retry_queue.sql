@@ -13,6 +13,27 @@ CREATE TABLE IF NOT EXISTS bot_webhook_failed_events (
   processed_at TIMESTAMPTZ
 );
 
+-- Enable RLS — bot owners can manage their own webhook events
+ALTER TABLE bot_webhook_failed_events ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON bot_webhook_failed_events FROM anon, authenticated;
+
+-- RLS policies: only bot owners can access their webhook retry events
+CREATE POLICY IF NOT EXISTS "Bot owners can view their webhook events"
+  ON bot_webhook_failed_events FOR SELECT
+  USING (bot_id IN (SELECT id FROM public.bots WHERE owner_id = auth.uid()));
+
+CREATE POLICY IF NOT EXISTS "Bot owners can insert their webhook events"
+  ON bot_webhook_failed_events FOR INSERT
+  WITH CHECK (bot_id IN (SELECT id FROM public.bots WHERE owner_id = auth.uid()));
+
+CREATE POLICY IF NOT EXISTS "Bot owners can update their webhook events"
+  ON bot_webhook_failed_events FOR UPDATE
+  USING (bot_id IN (SELECT id FROM public.bots WHERE owner_id = auth.uid()));
+
+-- Service role can manage all events (for cron worker)
+CREATE POLICY IF NOT EXISTS "Service can manage all webhook events"
+  ON bot_webhook_failed_events FOR ALL TO service_role USING (true);
+
 -- Индекс для быстрого поиска событий, готовых к повторной попытке
 CREATE INDEX IF NOT EXISTS idx_webhook_failed_retry
   ON bot_webhook_failed_events (next_retry_at)

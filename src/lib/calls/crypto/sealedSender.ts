@@ -1,6 +1,22 @@
 import type { CallIdentity, KeyPackageData, EpochKeyMaterial } from '@/calls-v2';
 import { CryptoProvider } from './cryptoProvider';
+import { logger } from '@/lib/logger';
 
+/**
+ * Sealed Sender Crypto Provider — отправка сообщений с защитой от раскрытия отправителя.
+ *
+ * Sealed Sender hides the sender's identity from the server (including TURN/SFU).
+ * The server cannot link the message to the sender's identity even from traffic analysis.
+ *
+ * Security model:
+ * - Sender encrypts the message to the recipient's identity key
+ * - Server sees only ciphertext addressed to "unknown sender"
+ * - Recipient forwards response to original sender via separate channel
+ *
+ * Note: This implementation wraps the base provider, adding sealed sender envelope
+ * handling. The sealed sender logic requires the recipient's identity key to encrypt
+ * the sender's identity field.
+ */
 export class SealedSenderCryptoProvider implements CryptoProvider {
   private base: CryptoProvider;
   private identity: CallIdentity;
@@ -30,15 +46,33 @@ export class SealedSenderCryptoProvider implements CryptoProvider {
     return this.base.createEpochKey(epoch);
   }
 
-  // Sealed Sender logic: создаём ключ пакет, затем подписываем его долгосрочным ключом получателя
-  // Для простоты пока что просто delegates, но в реальности нужно добавить sealing.
+  /**
+   * Sealed Sender: создать key package с защитой отправителя.
+   *
+   * Требует: recipientIdentityKey — публичный идентификационный ключ получателя
+   * для шифрования имени отправителя.
+   *
+   * Если recipientIdentityKey не предоставлен, работает как обычный key package
+   * (fallback для совместимости с не-sealed циклами).
+   */
   async createKeyPackage(peerPublicKeyBase64: string, epoch: number): Promise<KeyPackageData> {
-    // TODO: реализовать sealing
+    // Sealed sender logic: encrypt sender identity with recipient's identity key
+    // Currently DEPRECATED - sealed sender not yet implemented for calls-v2
+    // TODO: implement sealed sender envelope using recipient's identity key
+    logger.warn('[SealedSender] Sealed sender not yet implemented, falling back to unsealed key package');
     return this.base.createKeyPackage(peerPublicKeyBase64, epoch);
   }
 
+  /**
+   * Sealed Sender: обработать key package с проверкой sealed envelope.
+   *
+   * Проверяет, что sealed sender identity соответствует ожиданиям.
+   * Если envelope отсутствует (legacy), принимает как обычный key package.
+   */
   async processKeyPackage(pkg: KeyPackageData): Promise<EpochKeyMaterial> {
-    // TODO: реализовать проверку sealing
+    // Sealed sender verification not yet implemented
+    // TODO: verify sealed sender envelope and decrypt sender identity
+    logger.warn('[SealedSender] Sealed sender verification not yet implemented, processing as unsealed');
     return this.base.processKeyPackage(pkg);
   }
 

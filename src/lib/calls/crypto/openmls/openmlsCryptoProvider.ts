@@ -1,4 +1,4 @@
-import type { CallIdentity, KeyPackageData, EpochKeyMaterial } from '../../../calls-v2';
+import type { CallIdentity, KeyPackageData, EpochKeyMaterial } from '@/calls-v2';
 import { CryptoProvider } from '../cryptoProvider';
 // В реальной реализации здесь будет использование библиотеки OpenMLS (например, mls-wasm) для группового ключевого обмена.
 

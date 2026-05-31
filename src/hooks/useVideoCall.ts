@@ -14,7 +14,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { getIceServers, getMediaConstraints, clearIceServerCache } from "@/lib/webrtc-config";
 import { logger } from "@/lib/logger";
-import { toast } from "sonner";
+import { callNotifications } from "@/contexts/video-call/notificationService";
 import type { RealtimeChannel } from "@supabase/supabase-js";
 import type { Json } from "@/integrations/supabase/types";
 
@@ -286,9 +286,9 @@ export function useVideoCall(options: UseVideoCallOptions = {}) {
       if (signalData && typeof signalData === "object") {
         return signalData.__signalId
           ? signalData
-          : { ...signalData, __signalId: globalThis.crypto?.randomUUID?.() ?? `${Date.now()}_${Math.random()}` };
+          : { ...signalData, __signalId: globalThis.crypto?.randomUUID?.() ?? `${Date.now()}_${crypto.getRandomValues(new Uint32Array(1))[0].toString(36)}` };
       }
-      return { value: signalData, __signalId: globalThis.crypto?.randomUUID?.() ?? `${Date.now()}_${Math.random()}` };
+      return { value: signalData, __signalId: globalThis.crypto?.randomUUID?.() ?? `${Date.now()}_${crypto.getRandomValues(new Uint32Array(1))[0].toString(36)}` };
     })();
 
     // 1. Send via Broadcast (primary, low latency)
@@ -553,7 +553,7 @@ export function useVideoCall(options: UseVideoCallOptions = {}) {
       warn("Error handling signal:", err);
       if (["offer", "answer", "ice-candidate"].includes(signalType)) {
         logger.error("video_call.critical_signal_failed", { signalType, err });
-        toast.error("Проблема со звонком. Попробуйте снова.");
+        callNotifications.networkError();
         await cleanup("signal_processing_error");
       }
     }

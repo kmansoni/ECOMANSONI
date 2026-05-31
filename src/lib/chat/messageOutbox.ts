@@ -10,6 +10,55 @@ export interface OutboxMessage {
   timestamp: number;
 }
 
+export interface OutboxEntry {
+  localId: string;
+  userId: string;
+  conversationId: string;
+  content: string;
+  encryptedPayload?: string;
+  drHeader?: string;
+  replyToId: string | null;
+  mediaUrls: string[];
+  messageType: string;
+  clientSeq: number;
+  status: "pending" | "sending" | "failed";
+}
+
+// Stub implementations for useOutbox hook compatibility
+// These are intentionally minimal for offline queue management
+const outboxState: Map<string, OutboxEntry[]> = new Map();
+const ackCallbacks = new Map<string, (entry: OutboxEntry) => void>();
+let sendFn: ((entry: OutboxEntry) => Promise<{ serverId: string }>) | null = null;
+
+export const enqueueMessage = async (_entry: OutboxEntry): Promise<void> => {
+  // Stub: would persist to IDB in production
+};
+
+export const getOutboxForConversation = async (_userId: string, _conversationId: string): Promise<OutboxEntry[]> => {
+  return outboxState.get(_conversationId) ?? [];
+};
+
+export const deleteOutboxEntry = async (_localId: string): Promise<void> => {
+  // Stub: would delete from IDB in production
+};
+
+export const retryOutboxEntry = async (_localId: string): Promise<void> => {
+  // Stub: would re-enqueue in production
+};
+
+export const onOutboxAck = (_localId: string, _callback: (entry: OutboxEntry) => void): void => {
+  ackCallbacks.set(_localId, _callback);
+};
+
+export const registerSendFn = (_fn: (entry: OutboxEntry) => Promise<{ serverId: string }>): void => {
+  sendFn = _fn;
+};
+
+export const subscribeOutbox = (_callback: () => void): (() => void) => {
+  // Stub: would subscribe to IDB changes in production
+  return () => {};
+};
+
 export class OutboxQueue {
   private queue: OutboxMessage[] = [];
   private maxSize: number;

@@ -95,7 +95,7 @@ export async function getOrCreateIdentityKeyPair(): Promise<CryptoKeyPair> {
 }
 
 /**
- * Signs the tuple (senderPublicKey, ciphertext, epoch, userId, deviceId, sessionId, salt) with the device identity private key.
+ * Signs the tuple (senderPublicKey, ciphertext, epoch, userId, deviceId, sessionId, salt, messageId) with the device identity private key.
  *
  * The signed data layout (deterministic, no hidden state):
  *   [ senderPublicKey as string ] || [ '|' ] ||
@@ -104,7 +104,8 @@ export async function getOrCreateIdentityKeyPair(): Promise<CryptoKeyPair> {
  *   [ userId as string ] || [ '|' ] ||
  *   [ deviceId as string ] || [ '|' ] ||
  *   [ sessionId as string ] || [ '|' ] ||
- *   [ salt as string ]
+ *   [ salt as string ] || [ '|' ] ||
+ *   [ messageId as string ]
  *
  * Returns raw IEEE P1363 r||s (64 bytes for P-256).
  */
@@ -117,16 +118,17 @@ export async function signIdentity(
    ciphertext: string,
    epoch: number,
    salt: string,
+   messageId: string,
 ): Promise<ArrayBuffer> {
    const encoder = new TextEncoder();
    const data = new TextEncoder().encode(
-      `${senderPublicKey}|${ciphertext}|${epoch}|${userId}|${deviceId}|${sessionId}|${salt}`
+      `${senderPublicKey}|${ciphertext}|${epoch}|${userId}|${deviceId}|${sessionId}|${salt}|${messageId}`
    );
    return crypto.subtle.sign(SIGN_PARAMS, privateKey, data);
 }
 
 /**
- * Verifies an ECDSA signature over (senderPublicKey, ciphertext, epoch, userId, deviceId, sessionId, salt).
+ * Verifies an ECDSA signature over (senderPublicKey, ciphertext, epoch, userId, deviceId, sessionId, salt, messageId).
  *
  * Returns false on any verification failure — never throws to the caller
  * to avoid timing-sensitive error propagation.
@@ -140,12 +142,13 @@ export async function verifyIdentity(
    ciphertext: string,
    epoch: number,
    salt: string,
+   messageId: string,
    signature: ArrayBuffer,
 ): Promise<boolean> {
    try {
       const encoder = new TextEncoder();
       const data = new TextEncoder().encode(
-         `${senderPublicKey}|${ciphertext}|${epoch}|${userId}|${deviceId}|${sessionId}|${salt}`
+         `${senderPublicKey}|${ciphertext}|${epoch}|${userId}|${deviceId}|${sessionId}|${salt}|${messageId}`
       );
       return await crypto.subtle.verify(SIGN_PARAMS, publicKey, signature, data);
    } catch {

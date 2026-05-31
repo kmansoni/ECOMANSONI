@@ -1,6 +1,8 @@
 import type { KeyPackageData, EpochKeyMaterial, CallIdentity } from '@/calls-v2';
+import type { CallMediaEncryptionConfig } from '@/calls-v2/callMediaEncryption';
+import type { CryptoProvider } from './cryptoProvider';
 import { CallKeyExchange } from '@/calls-v2';
-import { CallMediaEncryption, type CallMediaEncryptionConfig } from '@/calls-v2';
+import { CallMediaEncryption } from '@/calls-v2';
 
 export class DefaultCryptoProvider implements CryptoProvider {
   private keyExchange: CallKeyExchange;

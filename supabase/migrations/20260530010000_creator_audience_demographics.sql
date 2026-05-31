@@ -107,30 +107,35 @@ AS $$
 DECLARE
   v_result JSONB;
 BEGIN
+  WITH loc_data AS (
+    SELECT 
+      jsonb_agg(jsonb_build_object('name', p.country, 'pct', cnt) ORDER BY cnt DESC) FILTER (WHERE p.country IS NOT NULL) as countries,
+      jsonb_agg(jsonb_build_object('name', p.city, 'pct', cnt) ORDER BY cnt DESC) FILTER (WHERE p.city IS NOT NULL) as cities
+    FROM (
+      SELECT p.country, p.city, COUNT(*) as cnt
+      FROM public.profiles p
+      JOIN public.follows f ON f.followed_id = p.id
+      WHERE f.follower_id IN (
+        SELECT DISTINCT user_id
+        FROM public.playback_events pe
+        JOIN public.reels r ON r.id = pe.reel_id
+        WHERE r.author_id = p_creator_id
+        AND pe.created_at >= (now() - INTERVAL '1 day' * GREATEST(1, LEAST(p_days, 180)))
+        AND pe.user_id IS NOT NULL
+      )
+      OR EXISTS (
+        SELECT 1 FROM public.reels r
+        JOIN public.playback_events pe ON pe.reel_id = r.id
+        WHERE r.author_id = p_creator_id
+        AND pe.user_id = p.id
+      )
+      GROUP BY p.country, p.city
+    ) agg
+  )
   SELECT jsonb_build_object(
-    'countries', COALESCE(jsonb_object_agg(p.country, cnt ORDER BY cnt DESC) FILTER (WHERE p.country IS NOT NULL), '[]'::JSONB),
-    'cities', COALESCE(jsonb_object_agg(p.city, cnt ORDER BY cnt DESC) FILTER (WHERE p.city IS NOT NULL), '[]'::JSONB)
-  ) INTO v_result
-  FROM (
-    SELECT p.country, p.city, COUNT(*) as cnt
-    FROM public.profiles p
-    JOIN public.follows f ON f.followed_id = p.id
-    WHERE f.follower_id IN (
-      SELECT DISTINCT user_id
-      FROM public.playback_events pe
-      JOIN public.reels r ON r.id = pe.reel_id
-      WHERE r.author_id = p_creator_id
-      AND pe.created_at >= (now() - INTERVAL '1 day' * GREATEST(1, LEAST(p_days, 180)))
-      AND pe.user_id IS NOT NULL
-    )
-    OR EXISTS (
-      SELECT 1 FROM public.reels r
-      JOIN public.playback_events pe ON pe.reel_id = r.id
-      WHERE r.author_id = p_creator_id
-      AND pe.user_id = p.id
-    )
-    GROUP BY p.country, p.city
-  ) agg;
+    'countries', COALESCE((SELECT countries FROM loc_data), '[]'::JSONB),
+    'cities', COALESCE((SELECT cities FROM loc_data), '[]'::JSONB)
+  ) INTO v_result;
 
   RETURN v_result;
 END;
@@ -150,13 +155,9 @@ SECURITY DEFINER
 SET search_path = public
 AS $$
 DECLARE
-  v_result JSONB;
+  v_result JSONB := '{}';
 BEGIN
-  SELECT jsonb_object_agg(
-    EXTRACT(DOW FROM pe.created_at)::INTEGER::TEXT,
-    jsonb_object_agg(EXTRACT(HOUR FROM pe.created_at)::INTEGER, cnt ORDER BY EXTRACT(HOUR FROM pe.created_at))
-  ) INTO v_result
-  FROM (
+  WITH hour_counts AS (
     SELECT 
       EXTRACT(DOW FROM pe.created_at)::INTEGER as dow,
       EXTRACT(HOUR FROM pe.created_at)::INTEGER as hr,
@@ -167,8 +168,29 @@ BEGIN
     AND pe.created_at >= (now() - INTERVAL '1 day' * GREATEST(1, LEAST(p_days, 180)))
     AND pe.user_id IS NOT NULL
     GROUP BY dow, hr
-    ORDER BY dow, hr
-  ) x;
+  ),
+  all_hours AS (
+    SELECT dow, hr
+    FROM generate_series(0,6) as dow
+    CROSS JOIN generate_series(0,23) as hr
+  ),
+  filled_hours AS (
+    SELECT 
+      ah.dow,
+      ah.hr,
+      COALESCE(hc.cnt, 0)::INTEGER as cnt
+    FROM all_hours ah
+    LEFT JOIN hour_counts hc ON hc.dow = ah.dow AND hc.hr = ah.hr
+  ),
+  day_arrays AS (
+    SELECT 
+      dow,
+      jsonb_agg(cnt ORDER BY hr) as hours
+    FROM filled_hours
+    GROUP BY dow
+  )
+  SELECT jsonb_object_agg(dow::TEXT, hours) INTO v_result
+  FROM day_arrays;
 
   RETURN COALESCE(v_result, '{}'::JSONB);
 END;

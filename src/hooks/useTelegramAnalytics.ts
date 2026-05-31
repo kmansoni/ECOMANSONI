@@ -1,5 +1,5 @@
 import { useCallback } from "react";
-import { createClient } from "@/lib/supabase/client";
+import { createClient } from "@/integrations/supabase/client";
 
 interface AnalyticsEvent {
   event: string;

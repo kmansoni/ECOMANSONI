@@ -1,8 +1,8 @@
-# AGENTS.md — ECOMANSONI Navigator AI Agent Architecture
+# AGENTS.md вЂ” ECOMANSONI Navigator AI Agent Architecture
 
 > Defines agents, skills, and architect roles for maintaining and evolving the platform.
 
-## 🏛️ Architects
+## рџЏ›пёЏ Architects
 
 ### 1. Platform Architect
 - **Domain:** Cross-cutting concerns (auth, RLS, multi-account, settings sync, edge functions)
@@ -16,11 +16,11 @@
 - **Domain:** Routing, map rendering, offline navigation, transit, voice assistant, traffic
 - **Owns:** `src/lib/navigation/`, `src/components/navigation/`, `src/stores/navigatorSettingsStore.ts`
 - **Rules:**
-  - Speed limits MUST come from real data (OSM maxspeed tags, OSRM annotations) — NEVER random
+  - Speed limits MUST come from real data (OSM maxspeed tags, OSRM annotations) вЂ” NEVER random
   - Route preferences (avoidTolls/Unpaved/Highways) MUST be applied to ALL routing backends (offline + OSRM)
   - Voice `speed_warning` events MUST be audible in ALL non-mute sound modes (safety-critical)
-  - Map style changes MUST propagate from store → `MapLibre3D` `mapStyle` prop
-  - Camera heading comparison MUST use shortest angular distance (handle 350°↔10° wrap)
+  - Map style changes MUST propagate from store в†’ `MapLibre3D` `mapStyle` prop
+  - Camera heading comparison MUST use shortest angular distance (handle 350В°в†”10В° wrap)
 
 ### 3. Media Architect
 - **Domain:** Calls, livestream, video editor, media upload, SFU, SIP
@@ -38,9 +38,9 @@
 
 ---
 
-## 🧭 Execution Protocol
+## рџ§­ Execution Protocol
 
-- **Russian-first:** all discussion, промежуточные отчеты, questions, and final summaries MUST be in Russian unless the user explicitly requests another language.
+- **Russian-first:** all discussion, РїСЂРѕРјРµР¶СѓС‚РѕС‡РЅС‹Рµ РѕС‚С‡РµС‚С‹, questions, and final summaries MUST be in Russian.
 - **Single trajectory:** one task means one bounded subsystem. If the task is to fix calls, work only on calls. If the task is to fix SFU, work only on SFU. If the task is to fix avatars, work only on avatars. Do not broaden scope without explicit approval.
 - **One issue at a time:** if one specification contains multiple defects, resolve them strictly one by one. After each fix: verify, report the result, and only then move to the next defect.
 - **Surgical changes only:** avoid batch fixing across adjacent areas just because the code is nearby. Touch only the files and logic required for the current defect.
@@ -61,7 +61,7 @@ When such a gap is found, the agent MUST:
 
 ---
 
-## 🔄 Work Cycle
+## рџ”„ Work Cycle
 
 For every defect, the agent MUST follow this sequence:
 
@@ -76,15 +76,15 @@ If validation fails, continue working on the same defect until it is clean or ex
 
 ---
 
-## 🤖 Agents
+## рџ¤– Agents
 
-## 🧰 Agent Runtime Split
+## рџ§° Agent Runtime Split
 
-- **Активный runtime:** только файлы в `.github/agents/`.
-- **Активный toolset:** `execute`, `read`, `edit`, `search`, `agent`, `web`, `todo`, `claude-flow/*`.
-- **Жёсткое правило:** VS Code-specific, legacy-runtime и Kilo-incompatible инструменты не допускаются в agent definitions проекта.
+- **РђРєС‚РёРІРЅС‹Р№ runtime:** С‚РѕР»СЊРєРѕ С„Р°Р№Р»С‹ РІ `.github/agents/`.
+- **РђРєС‚РёРІРЅС‹Р№ toolset:** `execute`, `read`, `edit`, `search`, `agent`, `web`, `todo`, `claude-flow/*`.
+- **Р–С‘СЃС‚РєРѕРµ РїСЂР°РІРёР»Рѕ:** VS Code-specific, legacy-runtime Рё Kilo-incompatible РёРЅСЃС‚СЂСѓРјРµРЅС‚С‹ РЅРµ РґРѕРїСѓСЃРєР°СЋС‚СЃСЏ РІ agent definitions РїСЂРѕРµРєС‚Р°.
 
-Если contributor добавляет новый agent-файл, он должен соответствовать только активному runtime проекта и его текущему toolset.
+Р•СЃР»Рё contributor РґРѕР±Р°РІР»СЏРµС‚ РЅРѕРІС‹Р№ agent-С„Р°Р№Р», РѕРЅ РґРѕР»Р¶РµРЅ СЃРѕРѕС‚РІРµС‚СЃС‚РІРѕРІР°С‚СЊ С‚РѕР»СЊРєРѕ Р°РєС‚РёРІРЅРѕРјСѓ runtime РїСЂРѕРµРєС‚Р° Рё РµРіРѕ С‚РµРєСѓС‰РµРјСѓ toolset.
 
 ### Navigation Agent
 - **Trigger:** Changes to `src/lib/navigation/**`, `src/components/navigation/**`, `src/stores/navigatorSettings*`
@@ -92,7 +92,7 @@ If validation fails, continue working on the same defect until it is clean or ex
   1. `tsc --noEmit` passes
   2. All `SoundMode` cases in `shouldSpeak()` cover `speed_warning` (safety)
   3. Route preferences are forwarded to OSRM via `exclude` param
-  4. `mapViewMode` ↔ `MapLibre3D.mapStyle` binding exists
+  4. `mapViewMode` в†” `MapLibre3D.mapStyle` binding exists
   5. No `Math.random()` for speed limits
 - **Post-commit:**
   1. Run `vitest run --testPathPattern=navigation`
@@ -102,21 +102,21 @@ If validation fails, continue working on the same defect until it is clean or ex
 - **Trigger:** Changes to `src/stores/navigatorSettingsStore.ts`, `src/lib/user-settings.ts`
 - **Checks:**
   1. Navigator settings sync to `navigator_settings` table via debounced upsert
-  2. Supabase → localStorage hydration on login
+  2. Supabase в†’ localStorage hydration on login
   3. Premium feature flags are server-authoritative
 
-### Sequential Audit Agent (Новый)
-- **Trigger:** `mansoni` делегирует аудит по команде "сделай последовательный аудит"
-- **Scope:** Любой файл или директория
-- **Protocol:** Строго последовательный (один дефект → исправление → валидация → отчёт)
-- **Checks:** Все фронты через скиллы: code-review, stub-hunter, silent-failure-hunter, completion-checker, integration-checker, invariant-guardian, coherence-checker
+### Sequential Audit Agent (РќРѕРІС‹Р№)
+- **Trigger:** `mansoni` РґРµР»РµРіРёСЂСѓРµС‚ Р°СѓРґРёС‚ РїРѕ РєРѕРјР°РЅРґРµ "СЃРґРµР»Р°Р№ РїРѕСЃР»РµРґРѕРІР°С‚РµР»СЊРЅС‹Р№ Р°СѓРґРёС‚"
+- **Scope:** Р›СЋР±РѕР№ С„Р°Р№Р» РёР»Рё РґРёСЂРµРєС‚РѕСЂРёСЏ
+- **Protocol:** РЎС‚СЂРѕРіРѕ РїРѕСЃР»РµРґРѕРІР°С‚РµР»СЊРЅС‹Р№ (РѕРґРёРЅ РґРµС„РµРєС‚ в†’ РёСЃРїСЂР°РІР»РµРЅРёРµ в†’ РІР°Р»РёРґР°С†РёСЏ в†’ РѕС‚С‡С‘С‚)
+- **Checks:** Р’СЃРµ С„СЂРѕРЅС‚С‹ С‡РµСЂРµР· СЃРєРёР»Р»С‹: code-review, stub-hunter, silent-failure-hunter, completion-checker, integration-checker, invariant-guardian, coherence-checker
 - **Rules:**
-  1. Никаких батчей — только по одной проблеме за цикл
-  2. Немедленная валидация после каждого исправления (tsc + targeted tests)
-  3. Минимальная поверхность изменения (smallest change surface)
-  4. Очистка мусора после каждого коммита
+  1. РќРёРєР°РєРёС… Р±Р°С‚С‡РµР№ вЂ” С‚РѕР»СЊРєРѕ РїРѕ РѕРґРЅРѕР№ РїСЂРѕР±Р»РµРјРµ Р·Р° С†РёРєР»
+  2. РќРµРјРµРґР»РµРЅРЅР°СЏ РІР°Р»РёРґР°С†РёСЏ РїРѕСЃР»Рµ РєР°Р¶РґРѕРіРѕ РёСЃРїСЂР°РІР»РµРЅРёСЏ (tsc + targeted tests)
+  3. РњРёРЅРёРјР°Р»СЊРЅР°СЏ РїРѕРІРµСЂС…РЅРѕСЃС‚СЊ РёР·РјРµРЅРµРЅРёСЏ (smallest change surface)
+  4. РћС‡РёСЃС‚РєР° РјСѓСЃРѕСЂР° РїРѕСЃР»Рµ РєР°Р¶РґРѕРіРѕ РєРѕРјРјРёС‚Р°
   5. Continues until end of scope + consensus that code is clean
-- **Completion:** Все файлы scope пройдены, все скиллы вернули "clean", консенсус агентов достигнут
+- **Completion:** Р’СЃРµ С„Р°Р№Р»С‹ scope РїСЂРѕР№РґРµРЅС‹, РІСЃРµ СЃРєРёР»Р»С‹ РІРµСЂРЅСѓР»Рё "clean", РєРѕРЅСЃРµРЅСЃСѓСЃ Р°РіРµРЅС‚РѕРІ РґРѕСЃС‚РёРіРЅСѓС‚
 
 ### Routing Agent
 - **Trigger:** Changes to `routing.ts`, `dynamicRerouter.ts`, `pedestrianMode.ts`, `transitRouter.ts`
@@ -129,7 +129,7 @@ If validation fails, continue working on the same defect until it is clean or ex
 ### Map Display Agent
 - **Trigger:** Changes to `NavigatorMap.tsx`, `MapLibre3D.tsx`, `navigatorSettingsStore.ts`
 - **Checks:**
-  1. `mapViewMode` → `mapStyle` prop mapping in `NavigatorMap`
+  1. `mapViewMode` в†’ `mapStyle` prop mapping in `NavigatorMap`
   2. `show3DBuildings`, `showTrafficLights`, `showSpeedBumps`, `showRoadSigns`, `showLanes`, `showSpeedCameras`, `showPOI` toggles are consumed by rendering code
   3. `labelSizeMultiplier` applied to map text layers
   4. `highContrastLabels` adds text halo/stroke
@@ -141,9 +141,18 @@ If validation fails, continue working on the same defect until it is clean or ex
   2. Volume from store is applied to `utterance.volume`
   3. Voice selection matches `selectedVoice` from store
 
+
+### Design Agent (SuperDesign)
+- **Trigger:** mansoni делегирует создание дизайна по команде 'создать дизайн'
+- **Pre-commit checks:**
+  1. tsc --noEmit passes
+  2. Папка .superdesign существует в рабочей области (или расширение SuperDesign установлено)
+- **Post-commit:**
+  1. Проверка наличия сгенерированных файлов в .superdesign/design_iterations/
+  2. Валидация сгенерированного HTML через проверку наличия обязательных тегов (например, тег html)
 ---
 
-## 🎯 Skills
+## рџЋЇ Skills
 
 ### Skill: Offline Navigation
 - **Files:** `src/lib/navigation/offlineConfig.ts`, `offlineSearch.ts`, `osmGraph.ts`
@@ -177,7 +186,7 @@ If validation fails, continue working on the same defect until it is clean or ex
 
 ---
 
-## 📋 Quality Gates
+## рџ“‹ Quality Gates
 
 Every PR touching navigation code MUST pass:
 
@@ -186,12 +195,12 @@ Every PR touching navigation code MUST pass:
 3. **Settings Integration:** Every store field consumed by at least one component/lib
 4. **No Stubs:** No `Math.random()` for real data, no TODO/FIXME in critical paths
 5. **Route Preferences:** OSRM `exclude` param matches store toggles
-6. **Map Style Binding:** `mapViewMode` ↔ `MapLibre3D.mapStyle` connected
+6. **Map Style Binding:** `mapViewMode` в†” `MapLibre3D.mapStyle` connected
 7. **Camera Math:** Heading comparison uses `min(diff, 360-diff)` for angle wrapping
 
 ---
 
-## ✅ Change Control Gates
+## вњ… Change Control Gates
 
 Every commit or PR in this repo SHOULD follow these rules unless the user explicitly overrides them:
 
@@ -201,7 +210,7 @@ Every commit or PR in this repo SHOULD follow these rules unless the user explic
 4. **No stealth cleanup:** removing legacy code, fallback code, duplicate code paths, or obsolete config requires explicit user confirmation.
 5. **No dirty leftovers:** temporary debug code, commented blocks, dead branches, duplicated logic, and stale fallback URLs are not allowed to remain after the fix.
 6. **Syntax and text integrity gate:** before closing work, check for syntax errors, malformed Russian text, mojibake, and accidental mixed encodings in touched files.
-7. **Discussion language gate:** all agent-facing explanations, progress notes, and summaries default to Russian.
+7. **Discussion language gate:** all agent-facing explanations, progress notes, and summaries MUST be in Russian.
 
 Recommended commit shape:
 
@@ -209,3 +218,4 @@ Recommended commit shape:
 2. surgical fix
 3. targeted validation
 4. concise Russian summary
+

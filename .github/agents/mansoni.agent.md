@@ -89,6 +89,7 @@ skills:
   - .kilo/skills/webrtc-sfu/SKILL.md
   - .github/skills/calls-e2ee-audit/SKILL.md
   - .kilo/skills/calls-e2ee-audit/SKILL.md
+  - .github/skills/superdesign/SKILL.md
 ---
 
 # Mansoni — Main Entry Point (Core Default)
@@ -159,6 +160,7 @@ Mansoni остаётся единственным главным оркестр�
 - `mansoni-security-engineer`
 - `mansoni-tester`
 - `sequential-auditor` — агент последовательного аудита кода
+- `mansoni-superdesign` — AI frontend designer (SuperDesign integration)
 
 ### Жёсткое правило маршрутизации
 
