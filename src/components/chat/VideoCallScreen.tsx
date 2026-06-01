@@ -15,14 +15,20 @@ import {
   Sparkles,
   FlipHorizontal,
   SwitchCamera,
+  Lock,
+  LockOpen,
+  Wifi,
+  WifiOff,
 } from "lucide-react";
 import type { VideoCall, VideoCallStatus } from "@/contexts/VideoCallContext";
 import type { CalleeProfile } from "@/contexts/video-call/types";
 import type { CallState } from "@/calls-v2/callStateMachine";
 import { isCallConnected, isCallRinging } from "@/calls-v2/callStateMachine";
+import { getCallUiStatusText } from "@/calls-v2/callStateMachine";
 import { useAuth } from "@/hooks/useAuth";
 import { GlassControlButton } from "@/components/ui/glass/GlassControlButton";
 import { CallStatusIndicator } from "@/components/ui/glass/CallStatusIndicator";
+import { CallQualityBadge } from "@/components/chat/CallQualityBadge";
 import { CallBackground } from "@/components/ui/glass/CallBackground";
 import { GlassAvatarRing } from "@/components/ui/glass/GlassAvatarRing";
 import MaskOverlay, { MASKS, type MaskId } from "@/components/mask/MaskOverlay";
@@ -115,6 +121,8 @@ interface VideoCallScreenProps {
   onToggleNoiseSuppression?: () => void;
   backgroundBlurEnabled?: boolean;
   onToggleBackgroundBlur?: () => void;
+  isE2eeActive?: boolean;
+  callQuality?: { rtt: number; packetLoss: number } | null;
 }
 
 export function VideoCallScreen({
@@ -138,6 +146,8 @@ export function VideoCallScreen({
   onToggleNoiseSuppression,
   backgroundBlurEnabled = false,
   onToggleBackgroundBlur,
+  isE2eeActive = false,
+  callQuality = null,
 }: VideoCallScreenProps) {
   const { user } = useAuth();
   const localVideoRef = useRef<HTMLVideoElement>(null);
@@ -249,21 +259,7 @@ export function VideoCallScreen({
     return `${mins.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}`;
   };
 
-  const getStatusText = (): string => {
-    if (callState === "failed") return "Ошибка соединения";
-    if (isConnected) return formatDuration(callDuration);
-    switch (callState) {
-      case "outgoing_ringing": return "Вызов";
-      case "incoming_ringing": return "Звонок";
-      case "bootstrapping":
-      case "signaling_ready":
-      case "media_acquiring":
-      case "transport_connecting":
-      case "media_ready":
-        return "Настраиваем аудио и видео";
-      default: return "Соединение";
-    }
-  };
+  const getStatusText = (): string => getCallUiStatusText(callState);
 
   const showRetryButton = callState === "failed";
   const showWaitingUI = !showRetryButton && !isConnected;
@@ -483,6 +479,15 @@ export function VideoCallScreen({
           <div className="flex items-center gap-3 mb-3">
             <CallStatusIndicator callState={callState} />
             <span className="text-white/60 text-sm">{getStatusText()}{showWaitingUI && !showRetryButton && "..."}</span>
+            {isConnected && (
+              <span className="flex items-center gap-1 text-xs text-white/70">
+                {isE2eeActive ? <Lock className="w-3.5 h-3.5" /> : <LockOpen className="w-3.5 h-3.5" />}
+                <span>{isE2eeActive ? "Шифрование" : "Без шифрования"}</span>
+              </span>
+            )}
+            {isConnected && callQuality && (
+              <CallQualityBadge rtt={callQuality.rtt} packetLoss={callQuality.packetLoss} />
+            )}
           </div>
 
           <h2 className="text-4xl font-semibold text-white mb-10">{otherName}</h2>

@@ -17,6 +17,7 @@ import {
   REKEY_INTERVAL_MS,
   REQUIRE_SFRAME,
   FRAME_E2EE_ADVERTISE_SFRAME,
+  hasE2eeSupport,
   hasInsertableStreamsSupport,
   extractRouterCapsFromJoinPayload,
 } from "./videoCallProvider.helpers";
@@ -115,6 +116,7 @@ export function useCallsV2Bootstrap({
 }: UseCallsV2BootstrapParams) {
   const { initializeCallsV2E2ee } = useCallsV2E2eeBootstrap({
     user,
+    callsWsRef,
     callsWsRoomRef,
     lastSnapshotRoomVersionRef,
     e2eeEpochRef,
@@ -238,28 +240,29 @@ export function useCallsV2Bootstrap({
       logger.info("[VideoCallContext] calls-v2 hello:ok", { deviceId });
       await client.auth({ accessToken });
       logger.info("[VideoCallContext] calls-v2 auth:ok");
+      const hasE2ee = hasE2eeSupport();
       const hasInsertableStreams = hasInsertableStreamsSupport();
-      if (REQUIRE_SFRAME && !hasInsertableStreams) {
-        throw new Error("calls_v2_e2ee_media_unsupported: Insertable Streams required for SFrame");
+      if (REQUIRE_SFRAME && !hasE2ee) {
+        throw new Error("calls_v2_e2ee_media_unsupported: E2EE not supported — Web Crypto API required for SFrame");
       }
       // Some SFU deployments require E2EE_CAPS before ROOM_JOIN even in dev-mode.
       // Advertise runtime capabilities unconditionally to keep bootstrap protocol-compatible.
       await client.e2eeCaps({
         insertableStreams: hasInsertableStreams,
-        sframe: hasInsertableStreams,
+        sframe: hasE2ee,
         doubleRatchet: true,
         supportedCipherSuites: ["DOUBLE_RATCHET_P256_AES128GCM"],
       });
       logger.info("[VideoCallContext] calls-v2 e2ee_caps:ok", {
-        hasInsertableStreams,
+        hasE2ee,
         frameE2eeAdvertiseSframe: FRAME_E2EE_ADVERTISE_SFRAME,
         requireSframe: REQUIRE_SFRAME,
       });
 
-      if (hasInsertableStreams) {
+      if (hasE2ee) {
         await initializeCallsV2E2ee(client);
       } else {
-        logger.warn("[VideoCallContext] calls-v2 e2ee runtime unavailable: Insertable Streams not supported");
+        logger.warn("[VideoCallContext] calls-v2 e2ee runtime unavailable: E2EE not supported in this browser");
       }
 
       client.on("call.invite", (frame) => {
@@ -352,13 +355,15 @@ export function useCallsV2Bootstrap({
         return false;
       }
 
-      try {
-        let roomId: string;
+      let roomId: string;
         let joinToken: string | undefined;
-        const hintedRoomId = (call as VideoCall & { room_id?: string; calls_v2_room_id?: string }).calls_v2_room_id
-          ?? (call as VideoCall & { room_id?: string }).room_id;
-        const hintedJoinToken = (call as VideoCall & { join_token?: string; calls_v2_join_token?: string }).calls_v2_join_token
-          ?? (call as VideoCall & { join_token?: string }).join_token;
+        let hintedRoomId: string | undefined;
+        let hintedJoinToken: string | undefined;
+        try {
+          hintedRoomId = (call as VideoCall & { room_id?: string; calls_v2_room_id?: string }).calls_v2_room_id
+            ?? (call as VideoCall & { room_id?: string }).room_id;
+          hintedJoinToken = (call as VideoCall & { join_token?: string; calls_v2_join_token?: string }).calls_v2_join_token
+            ?? (call as VideoCall & { join_token?: string }).join_token;
 
         if (role === "caller") {
           if (hintedRoomId) {

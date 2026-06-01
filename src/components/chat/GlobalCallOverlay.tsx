@@ -35,6 +35,7 @@ export function GlobalCallOverlay() {
     toggleNoiseSuppression,
     toggleBackgroundBlur,
     retryConnection,
+    isE2eeActive,
   } = useVideoCallContext();
 
   logger.debug("[GlobalCallOverlay] Render", {
@@ -73,6 +74,7 @@ export function GlobalCallOverlay() {
         onToggleNoiseSuppression={toggleNoiseSuppression}
         backgroundBlurEnabled={backgroundBlurEnabled}
         onToggleBackgroundBlur={toggleBackgroundBlur}
+        isE2eeActive={isE2eeActive}
       />
     );
 

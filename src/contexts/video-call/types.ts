@@ -22,6 +22,7 @@ import type { CallState } from "@/calls-v2/callStateMachine";
 
 /** Minimal profile info shown on the call screen before the call record is loaded from DB. */
 export interface CalleeProfile {
+  userId: string;
   display_name: string;
   avatar_url?: string | null;
 }

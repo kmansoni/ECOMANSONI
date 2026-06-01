@@ -13,6 +13,7 @@ import { useCallsV2E2eeSignals } from "./useCallsV2E2eeSignals";
 
 interface UseCallsV2E2eeBootstrapParams {
   user: { id: string } | null;
+  callsWsRef: MutableRefObject<CallsWsClient | null>;
   callsWsRoomRef: MutableRefObject<string | null>;
   lastSnapshotRoomVersionRef: MutableRefObject<number>;
   e2eeEpochRef: MutableRefObject<number>;
@@ -36,6 +37,7 @@ interface UseCallsV2E2eeBootstrapParams {
 
 export function useCallsV2E2eeBootstrap({
   user,
+  callsWsRef,
   callsWsRoomRef,
   lastSnapshotRoomVersionRef,
   e2eeEpochRef,
@@ -58,6 +60,7 @@ export function useCallsV2E2eeBootstrap({
 }: UseCallsV2E2eeBootstrapParams) {
    const { attach } = useCallsV2E2eeSignals({
     user,
+    callsWsRef,
     callsWsRoomRef,
     lastSnapshotRoomVersionRef,
     e2eeEpochRef,

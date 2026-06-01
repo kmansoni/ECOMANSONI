@@ -180,6 +180,27 @@ export function getCallsConfigToastDescription(issue: string): string {
   return "Конфигурация сервиса звонков неполная. Проверьте env для Calls V2, TURN и SFU.";
 }
 
+/**
+ * Check if E2EE is supported in this browser.
+ * Requires Insertable Streams API (RTCRtpScriptTransform or createEncodedStreams).
+ * Fail-closed: returns false if Insertable Streams unavailable — call must not proceed.
+ */
+export function hasE2eeSupport(): boolean {
+  try {
+    if (typeof crypto === 'undefined' || typeof crypto.subtle === 'undefined') {
+      return false;
+    }
+    return hasInsertableStreamsSupport();
+  } catch (error) {
+    logger.warn("video_call_context.e2ee_support_check_failed", { error });
+    return false;
+  }
+}
+
+/**
+ * Check if the browser supports Insertable Streams API for hardware-accelerated E2EE.
+ * Returns false if only software fallback is available.
+ */
 export function hasInsertableStreamsSupport(): boolean {
   try {
     const hasEncodedStreams =

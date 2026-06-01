@@ -253,19 +253,21 @@ export function useCallsV2E2eeSignals({
                   });
                 });
              } else {
-                pendingProducersToConsumeRef.current.set(prod.producerId, {
-                  roomId: activeRoomId,
-                  peerDeviceId: prod.peerDeviceId,
-                  peerUserId: peerUserIdByDeviceIdRef.current.get(prod.peerDeviceId),
-                } as { roomId: string; peerDeviceId?: string; peerUserId?: string });
+               const peerDeviceId = prod.peerDeviceId ?? "";
+               const peerUserIdFromMap = peerUserIdByDeviceIdRef.current.get(peerDeviceId) ?? "";
+               pendingProducersToConsumeRef.current.set(prod.producerId ?? "", {
+                 roomId: activeRoomId,
+                 peerDeviceId: peerDeviceId,
+                 peerUserId: peerUserIdFromMap,
+               });
                logger.debug("[VideoCallContext] snapshot producer queued for pending consume", {
                  producerId: prod.producerId,
                  roomId: activeRoomId,
                  peerDeviceId: prod.peerDeviceId,
                  pendingSize: pendingProducersToConsumeRef.current.size,
                });
-               if (peerUserIdByDeviceIdRef.current.get(prod.peerDeviceId)) {
-                 producerPeerKeyRef.current.set(prod.producerId, `${peerUserIdByDeviceIdRef.current.get(prod.peerDeviceId)}:${prod.peerDeviceId}`);
+               if (peerUserIdFromMap) {
+                 producerPeerKeyRef.current.set(prod.producerId ?? "", `${peerUserIdFromMap}:${peerDeviceId}`);
                }
              }
            }
@@ -336,6 +338,7 @@ export function useCallsV2E2eeSignals({
              senderPublicKey,
              epoch,
              "",
+             crypto.randomUUID(),
            );
            const identityPubKeyJwk = await exportEcdsaPublicKey(identityKeyPair.publicKey);
            const sigB64 = btoa(String.fromCharCode(...new Uint8Array(sigBytes)));
@@ -549,6 +552,7 @@ const pkgData: KeyPackageData = {
                     const senderVerifyKey = await importPublicKey(senderJwk);
                     const sigBytes = Uint8Array.from(atob(sigB64), (c) => c.charCodeAt(0));
                     const senderSalt = (rawPayload?.salt as string | undefined) ?? "";
+                    const senderMessageId = (rawPayload?.messageId as string | undefined) ?? "";
                     const valid = await verifyIdentity(
                       senderVerifyKey,
                       senderUserId,
@@ -558,6 +562,7 @@ const pkgData: KeyPackageData = {
                       ciphertextB64,
                       epoch,
                       senderSalt,
+                      senderMessageId,
                       sigBytes.buffer as ArrayBuffer,
                     );
                     if (!valid) {
@@ -628,7 +633,6 @@ const identitySig = btoa(String.fromCharCode(...new Uint8Array(identitySigRaw)))
                      senderPublicKey: pkg.senderPublicKey,
                      senderSigningPublicKey: leaderSigningPublicKey,
                      salt: pkg.salt,
-                     messageId: pkg.messageId,
                      senderIdentity: {
                        userId: user?.id ?? "",
                        deviceId: getStableCallsDeviceId(),

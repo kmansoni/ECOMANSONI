@@ -15,6 +15,7 @@ import {
   MEDIA_BOOTSTRAP_RETRY_BACKOFF_MS,
   REQUIRE_SFRAME,
   extractRouterCapsFromJoinPayload,
+  hasE2eeSupport,
   isValidTransportCreatedPayload,
 } from "./videoCallProvider.helpers";
 
@@ -38,12 +39,6 @@ interface UseCallsV2MediaBootstrapParams {
   localProducerIdsRef: MutableRefObject<{ audio: string | null; video: string | null }>;
   consumerCreateParamsRef: MutableRefObject<Map<string, import("@/calls-v2/types").ConsumerReplayDescriptor>>;
   producerPeerKeyRef: MutableRefObject<Map<string, string>>;
-  pendingReceiverTransformsRef: MutableRefObject<Map<string, {
-    receiver: RTCRtpReceiver;
-    peerKey: string;
-    deferredAt: number;
-    recoveryRequested: boolean;
-  }>>;
   mediaBootstrapBlockedUntilRef: MutableRefObject<Map<string, number>>;
   mediaBootstrapErrorLogAtRef: MutableRefObject<Map<string, number>>;
   mediaBootstrapToastShownRef: MutableRefObject<Set<string>>;
@@ -85,7 +80,6 @@ export function useCallsV2MediaBootstrap({
   localProducerIdsRef,
   consumerCreateParamsRef,
   producerPeerKeyRef,
-  pendingReceiverTransformsRef,
   mediaBootstrapBlockedUntilRef,
   mediaBootstrapErrorLogAtRef,
   mediaBootstrapToastShownRef,
@@ -204,17 +198,10 @@ screenStream,
     const producerIds: string[] = [];
     for (const track of tracks) {
       const producer = await manager.produce(track, { trackId: track.id, source: "screen" });
-      if (REQUIRE_SFRAME && CallMediaEncryption.isSupported()) {
+      if (REQUIRE_SFRAME && hasE2eeSupport()) {
         const sender = manager.getProducerSender(producer.id);
         if (sender) {
-          try {
-            callMediaEncryptionRef.current?.setupSenderTransform(sender, producer.id);
-          } catch (e) {
-            logger.error("[VideoCallContext] E2EE setupSenderTransform failed for screen-share producer", {
-              producerId: producer.id,
-              error: e instanceof Error ? e.message : String(e),
-            });
-          }
+          callMediaEncryptionRef.current?.setupSenderTransform(sender, producer.id);
         }
       }
       producerIds.push(producer.id);
@@ -335,7 +322,7 @@ screenStream,
 
       if (!sfuManagerRef.current) {
         sfuManagerRef.current = new SfuMediaManager({
-          requireSenderReceiverAccessForE2ee: REQUIRE_SFRAME && CallMediaEncryption.isSupported(),
+          requireSenderReceiverAccessForE2ee: REQUIRE_SFRAME && hasE2eeSupport(),
           onTransportClosed: (transportId, direction) => {
             logger.error("[VideoCallContext] ICE restart exhausted — transport permanently closed", { transportId, direction });
             dispatchFsm("ERROR");
@@ -343,6 +330,41 @@ screenStream,
         });
       }
       const sfuManager = sfuManagerRef.current;
+
+      // P0 fix: Register ICE restart callback after SfuMediaManager is created.
+      // Without this, ICE restarts fail silently because onIceRestartNeeded is null.
+      if (sfuManager && callsWsRef.current) {
+        sfuManager.setIceRestartCallback(async (transportId, direction) => {
+          logger.info("[VideoCallContext] ICE restart needed", { transportId, direction });
+          const client = callsWsRef.current;
+          if (!client) return;
+          await client.transportConnect({
+            roomId,
+            transportId,
+            dtlsParameters: { fingerprints: [] },
+          });
+        });
+      }
+
+      // P0-3 fix: Register connection lost/restored callbacks to dispatch FSM events.
+      // CONNECTION_LOST moves FSM to reconnecting state; CONNECTION_RESTORED returns to in_call.
+      if (sfuManager) {
+        sfuManager.setConnectionLostCallback((transportId, direction, reason) => {
+          logger.warn("[VideoCallContext] connection lost reported by SFU transport", { transportId, direction, reason });
+          const state = callStateRef.current;
+          if (state === "in_call" || state === "media_ready" || state === "transport_connecting") {
+            dispatchFsm("CONNECTION_LOST");
+          }
+        });
+
+        sfuManager.setConnectionRestoredCallback((transportId, direction) => {
+          logger.info("[VideoCallContext] connection restored reported by SFU transport", { transportId, direction });
+          const state = callStateRef.current;
+          if (state === "reconnecting") {
+            dispatchFsm("CONNECTION_RESTORED");
+          }
+        });
+      }
 
       const iceServersSnapshot = turnIceServersRef.current ?? undefined;
       if (iceServersSnapshot && iceServersSnapshot.length > 0) {
@@ -477,7 +499,7 @@ await client.transportConnect({
       // FIX: reuse the epoch key already created during room bootstrap to avoid generating
       // a second key for the same epoch.  regenerate = epoch key reset in the encryptor and
       // media sent as plaintext until the new key propagates via REKEY_BEGIN/KEY_PACKAGE cycle.
-      if (REQUIRE_SFRAME && CallMediaEncryption.isSupported()) {
+      if (REQUIRE_SFRAME && hasE2eeSupport()) {
         const kx = callKeyExchangeRef.current;
         const enc = callMediaEncryptionRef.current;
         if (kx && enc) {
@@ -499,18 +521,10 @@ await client.transportConnect({
         if (track.kind === "audio" || track.kind === "video") {
           localProducerIdsRef.current[track.kind] = producer.id;
         }
-        if (REQUIRE_SFRAME && CallMediaEncryption.isSupported()) {
+        if (REQUIRE_SFRAME && hasE2eeSupport()) {
           const sender = sfuManagerRef.current?.getProducerSender(producer.id);
           if (sender) {
-            try {
-              callMediaEncryptionRef.current?.setupSenderTransform(sender, producer.id);
-            } catch (e) {
-              logger.error("[VideoCallContext] E2EE setupSenderTransform failed for producer", {
-                producerId: producer.id,
-                trackId: track.id,
-                error: e instanceof Error ? e.message : String(e),
-              });
-            }
+            callMediaEncryptionRef.current?.setupSenderTransform(sender, producer.id);
           }
         }
       }
@@ -555,7 +569,6 @@ dispatchFsm,
     mediaBootstrapBlockedUntilRef,
     mediaBootstrapErrorLogAtRef,
     mediaBootstrapToastShownRef,
-    pendingReceiverTransformsRef,
     pendingProducersToConsumeRef,
     producerPeerKeyRef,
     consumePendingProducersRef,

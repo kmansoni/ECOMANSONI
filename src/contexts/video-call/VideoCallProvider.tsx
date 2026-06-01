@@ -90,15 +90,13 @@ import {
   expandWsEndpoints,
   getCallsConfigIssue,
   getCallsConfigToastDescription,
-  hasInsertableStreamsSupport,
+  hasE2eeSupport,
   makeRandomB64,
   getMediaPermissionToastPayload,
   getCallsBootstrapToastPayload,
   isMediaErrorForCall,
 } from "./videoCallProvider.helpers";
 
-const DECRYPTION_KEY_WAIT_TIMEOUT_MS = 15_000;
-const DECRYPTION_KEY_WATCHDOG_INTERVAL_MS = 2_000;
 const TURN_ONLY_LEGACY_MODE = false;
 
 // ─── VideoCallProvider ─────────────────────────────────────────────────────────
@@ -170,14 +168,6 @@ const unansweredCallTimerRef = useRef<number | null>(null);
 
    const remoteTrackListenerCleanupsRef = useRef<Array<() => void>>([]);
 
-   /** trackId → deferred inbound receiver waiting for decryption key */
-   const pendingReceiverTransformsRef = useRef<Map<string, {
-     receiver: RTCRtpReceiver;
-     peerKey: string;
-     deferredAt: number;
-     recoveryRequested: boolean;
-   }>>(new Map());
-
    // UI-lock: keeps call UI visible even during transient status changes (permission prompts, etc.)
   const [isCallUiActive, setIsCallUiActive] = useState(false);
   const isCallUiActiveRef = useRef(false);
@@ -235,16 +225,12 @@ const unansweredCallTimerRef = useRef<number | null>(null);
       enabled: CALLS_V2_ENABLED,
       endpointCount: CALLS_V2_ENDPOINTS.length,
       frameE2eeAdvertiseSframe: FRAME_E2EE_ADVERTISE_SFRAME,
-      hasInsertableStreams: hasInsertableStreamsSupport(),
+      hasE2eeSupport: hasE2eeSupport(),
       usingProdSfuDefaults: SHOULD_USE_PROD_SFU_DEFAULTS,
       issue,
     });
-    if (!hasInsertableStreamsSupport()) {
-      logger.warn("[VideoCallContext] Insertable Streams not supported — E2EE media encryption unavailable in this browser");
-      toast.warning("Шифрование недоступно", {
-        description: "Ваш браузер не поддерживает Insertable Streams. Обновите браузер для E2EE-защиты звонков.",
-        duration: 8000,
-      });
+    if (!hasE2eeSupport()) {
+      logger.warn("[VideoCallContext] E2EE not supported — browser lacks Insertable Streams API; calls will be blocked");
     }
   }, []);
 
@@ -416,7 +402,6 @@ const unansweredCallTimerRef = useRef<number | null>(null);
     pendingProducersToConsumeRef.current.clear();
     consumePendingProducersRef.current = null;
     peerUserIdByDeviceIdRef.current.clear();
-    pendingReceiverTransformsRef.current.clear();
     pipeBreakRetryAtRef.current.clear();
     pipeBreakRecoveryInFlightRef.current.clear();
   }, [setRemoteMediaStream]);
@@ -576,6 +561,7 @@ const unansweredCallTimerRef = useRef<number | null>(null);
       senderPublicKey,
       epoch,
       "",
+      crypto.randomUUID(),
     );
     const identityPubKeyJwk = await exportEcdsaPublicKey(identityKeyPair.publicKey);
     const sigB64 = btoa(String.fromCharCode(...new Uint8Array(sigBytes)));
@@ -641,20 +627,9 @@ const unansweredCallTimerRef = useRef<number | null>(null);
     producerAddedUnsubRef,
     isCallStillActiveForBootstrap: (callId) => activeCallsV2BootstrapCallIdRef.current === callId,
     onE2eeActivated: () => setIsE2eeActive(true),
-    onDecryptionKeyReady: (peerKey) => {
-      const enc = callMediaEncryptionRef.current;
-      if (!enc) return;
-      for (const [trackId, pending] of pendingReceiverTransformsRef.current) {
-        if (enc.hasDecryptionKeyForPeer(pending.peerKey)) {
-          try {
-            enc.setupReceiverTransform(pending.receiver, pending.peerKey, trackId);
-            pendingReceiverTransformsRef.current.delete(trackId);
-            logger.info("[VideoCallContext] E2EE receiver transform re-applied after key arrival", { trackId, peerKey });
-          } catch (e) {
-            logger.error("[VideoCallContext] E2EE receiver transform re-apply failed", { trackId, error: e instanceof Error ? e.message : String(e) });
-          }
-        }
-      }
+    onDecryptionKeyReady: (_peerKey) => {
+      // Transforms are attached immediately on consumer creation (fail-closed).
+      // MediaEncryptor drops frames until the key arrives — no deferred retry needed.
     },
   });
 
@@ -678,7 +653,6 @@ const unansweredCallTimerRef = useRef<number | null>(null);
      localProducerIdsRef,
      consumerCreateParamsRef,
      producerPeerKeyRef,
-     pendingReceiverTransformsRef,
      mediaBootstrapBlockedUntilRef,
      mediaBootstrapErrorLogAtRef,
      mediaBootstrapToastShownRef,
@@ -828,37 +802,11 @@ dispatchFsm,
           });
         }
 
-        if (REQUIRE_SFRAME && CallMediaEncryption.isSupported()) {
+        if (REQUIRE_SFRAME && hasE2eeSupport()) {
           const enc = callMediaEncryptionRef.current;
           const receiver = sfuManagerRef.current?.getConsumerReceiver(consumer.id);
           if (receiver && enc) {
-            try {
-              if (enc.hasDecryptionKeyForPeer(peerKey)) {
-                enc.setupReceiverTransform(receiver, peerKey, consumer.id);
-              } else {
-                const pending = pendingReceiverTransformsRef.current;
-                if (pending) {
-                  const prev = pending.get(consumer.id);
-                  pending.set(consumer.id, {
-                    receiver,
-                    peerKey,
-                    deferredAt: prev?.deferredAt ?? Date.now(),
-                    recoveryRequested: prev?.recoveryRequested ?? false,
-                  });
-                }
-              }
-            } catch (e) {
-              const pending = pendingReceiverTransformsRef.current;
-              if (pending) {
-                const prev = pending.get(consumer.id);
-                pending.set(consumer.id, {
-                  receiver,
-                  peerKey,
-                  deferredAt: prev?.deferredAt ?? Date.now(),
-                  recoveryRequested: prev?.recoveryRequested ?? false,
-                });
-              }
-            }
+            enc.setupReceiverTransform(receiver, peerKey, consumer.id);
           }
         }
 
@@ -875,68 +823,6 @@ dispatchFsm,
 
     consumerListenerBoundClientRef.current = client;
   });
-
-  useEffect(() => {
-    if (!REQUIRE_SFRAME) return;
-
-    const timer = window.setInterval(() => {
-      const pending = pendingReceiverTransformsRef.current;
-      if (pending.size === 0) return;
-
-      const now = Date.now();
-      for (const [trackId, item] of pending) {
-        if (item.recoveryRequested) continue;
-        if (now - item.deferredAt < DECRYPTION_KEY_WAIT_TIMEOUT_MS) continue;
-
-        item.recoveryRequested = true;
-        pending.set(trackId, item);
-
-        logger.warn("video_call_context.e2ee_key_missing_timeout", {
-          trackId,
-          peerKey: item.peerKey,
-          waitedMs: now - item.deferredAt,
-          timeoutMs: DECRYPTION_KEY_WAIT_TIMEOUT_MS,
-        });
-
-        const ws = callsWsRef.current;
-        const roomId = callsWsRoomRef.current;
-        const epoch = e2eeEpochRef.current;
-        if (ws && roomId && ws.connectionState === "connected" && Number.isFinite(epoch) && epoch >= 0) {
-          void requestDeferredKeyDiscovery(ws, roomId, epoch).then(() => {
-            logger.info("[VideoCallContext] E2EE deferred key discovery requested", {
-              trackId,
-              peerKey: item.peerKey,
-              epoch,
-            });
-          }).catch((error) => {
-            logger.warn("[VideoCallContext] E2EE deferred key discovery failed", {
-              trackId,
-              peerKey: item.peerKey,
-              epoch,
-              error: error instanceof Error ? error.message : String(error),
-            });
-          });
-        }
-
-        pending.delete(trackId);
-        handleE2eePipeBreakRef.current?.({
-          trackId,
-          direction: "decrypt",
-          peerId: item.peerKey,
-        });
-      }
-    }, DECRYPTION_KEY_WATCHDOG_INTERVAL_MS);
-
-    return () => {
-      window.clearInterval(timer);
-    };
-  }, [
-    callsWsRef,
-    callsWsRoomRef,
-    e2eeEpochRef,
-    pendingReceiverTransformsRef,
-    requestDeferredKeyDiscovery,
-  ]);
 
   const { incomingCall: detectedIncomingCall, clearIncomingCall } = useIncomingCalls({
     onIncomingCall: (call) => {
@@ -1070,6 +956,15 @@ dispatchFsm,
         toast.error("Звонок недоступен", {
           description: getCallsConfigToastDescription(configIssue),
           duration: 6000,
+        });
+        answerCallInFlightRef.current = false;
+        return;
+      }
+      if (REQUIRE_SFRAME && !hasE2eeSupport()) {
+        logger.error("[VideoCallContext] answerCall blocked: browser lacks Insertable Streams API for E2EE");
+        toast.error("Браузер не поддерживает защищённые звонки", {
+          description: "Для зашифрованных звонков требуется Chrome 86+, Edge 86+ или Firefox 117+.",
+          duration: 8000,
         });
         answerCallInFlightRef.current = false;
         return;
@@ -1304,6 +1199,15 @@ dispatchFsm,
         toast.error("Не удалось начать звонок", {
           description: getCallsConfigToastDescription(configIssue),
           duration: 6000,
+        });
+        startCallInFlightRef.current = false;
+        return null;
+      }
+      if (REQUIRE_SFRAME && !hasE2eeSupport()) {
+        logger.error("[VideoCallContext] startCall blocked: browser lacks Insertable Streams API for E2EE");
+        toast.error("Браузер не поддерживает защищённые звонки", {
+          description: "Для зашифрованных звонков требуется Chrome 86+, Edge 86+ или Firefox 117+.",
+          duration: 8000,
         });
         startCallInFlightRef.current = false;
         return null;

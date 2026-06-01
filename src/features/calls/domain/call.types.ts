@@ -17,8 +17,9 @@ export type {
 
 // ─── Domain types ────────────────────────────────────────────────────────────
 
-/** Minimal profile info shown on call screen before DB record loads. */
+/** Minimal profile info shown on call screen before the call record loads from DB. */
 export interface CalleeProfile {
+  userId: string;
   display_name: string;
   avatar_url?: string | null;
 }

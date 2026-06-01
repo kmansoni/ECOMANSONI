@@ -89,8 +89,10 @@ export function useE2eePipeBreakRecovery(
         if (sender) {
           encryption.setupSenderTransform(sender, newProducer.id);
         }
-        if (localProducerIdsRef.current[track.kind] === trackId) {
-          localProducerIdsRef.current[track.kind] = newProducer.id;
+        if (track.kind === 'audio' || track.kind === 'video') {
+          if (localProducerIdsRef.current[track.kind] === trackId) {
+            localProducerIdsRef.current[track.kind] = newProducer.id;
+          }
         }
 
         logger.info('[VideoCallContext] E2EE sender pipe recovery: OK', {

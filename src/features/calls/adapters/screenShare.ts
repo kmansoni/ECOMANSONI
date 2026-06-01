@@ -25,13 +25,13 @@ export async function acquireScreenShare(
   }
 
   const stream = await navigator.mediaDevices.getDisplayMedia({
-    video: options.video !== false ? {
+    video: options.video === false ? false : {
       cursor: "always",
       displaySurface: "monitor",
       width: { ideal: 1920 },
       height: { ideal: 1080 },
       frameRate: { ideal: 30, max: 30 },
-    } : false,
+    } as MediaTrackConstraints,
     audio: options.audio ?? false,
   });
 

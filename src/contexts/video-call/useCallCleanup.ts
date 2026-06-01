@@ -8,7 +8,6 @@
  */
 
 import { useCallback } from "react";
-import type { RefObject } from "react";
 import type { SfuMediaManager } from "@/calls-v2/sfuMediaManager";
 import type { CallsWsClient } from "@/calls-v2/wsClient";
 import type { CallMediaEncryption } from "@/calls-v2/callMediaEncryption";
@@ -18,59 +17,58 @@ import type { EpochGuard } from "@/calls-v2/epochGuard";
 import type { ConsumerReplayDescriptor } from "@/calls-v2/types";
 
 interface CleanupRefs {
-  sfuManagerRef: RefObject<SfuMediaManager | null>;
-  callsWsRef: RefObject<CallsWsClient | null>;
-  callKeyExchangeRef: RefObject<CallKeyExchange | null>;
-  callMediaEncryptionRef: RefObject<CallMediaEncryption | null>;
-  rekeyMachineRef: RefObject<RekeyStateMachine | null>;
-  epochGuardRef: RefObject<EpochGuard | null>;
+  sfuManagerRef: { current: SfuMediaManager | null };
+  callsWsRef: { current: CallsWsClient | null };
+  callKeyExchangeRef: { current: CallKeyExchange | null };
+  callMediaEncryptionRef: { current: CallMediaEncryption | null };
+  rekeyMachineRef: { current: RekeyStateMachine | null };
+  epochGuardRef: { current: EpochGuard | null };
 
   // Timer refs
-  relayMetricsTimerRef: RefObject<number | null>;
-  rekeyTimerRef: RefObject<number | null>;
-  unansweredCallTimerRef: RefObject<number | null>;
+  relayMetricsTimerRef: { current: number | null };
+  rekeyTimerRef: { current: number | null };
+  unansweredCallTimerRef: { current: number | null };
 
   // Media refs
-  localProducerIdsRef: RefObject<{ audio: string | null; video: string | null }>;
-  remoteTrackListenerCleanupsRef: RefObject<Array<() => void>>;
+  localProducerIdsRef: { current: { audio: string | null; video: string | null } };
+  remoteTrackListenerCleanupsRef: { current: Array<() => void> };
 
   // WS state refs
-  callsWsCallIdRef: RefObject<string | null>;
-  callsWsRoomRef: RefObject<string | null>;
-  lastSnapshotRoomVersionRef: RefObject<number>;
-  callsWsMediaRoomRef: RefObject<string | null>;
-  callsWsMediaBootstrapInFlightRoomRef: RefObject<string | null>;
-  callsWsSendTransportRef: RefObject<string | null>;
-  callsWsRecvTransportRef: RefObject<string | null>;
+  callsWsCallIdRef: { current: string | null };
+  callsWsRoomRef: { current: string | null };
+  lastSnapshotRoomVersionRef: { current: number };
+  callsWsMediaRoomRef: { current: string | null };
+  callsWsMediaBootstrapInFlightRoomRef: { current: string | null };
+  callsWsSendTransportRef: { current: string | null };
+  callsWsRecvTransportRef: { current: string | null };
 
   // E2EE refs
-  e2eeLeaderDeviceRef: RefObject<string | null>;
-  keyPackageNonceRef: RefObject<Set<string>>;
-  keyPackageNonceTimestampsRef: RefObject<Map<string, number>>;
+  e2eeLeaderDeviceRef: { current: string | null };
+  keyPackageNonceRef: { current: Set<string> };
+  keyPackageNonceTimestampsRef: { current: Map<string, number> };
 
   // Bootstrap tracking refs
-  consumerAddedUnsubRef: RefObject<(() => void) | null>;
-  consumerListenerBoundClientRef: RefObject<CallsWsClient | null>;
-  producerAddedUnsubRef: RefObject<(() => void) | null>;
+  consumerAddedUnsubRef: { current: (() => void) | null };
+  consumerListenerBoundClientRef: { current: CallsWsClient | null };
+  producerAddedUnsubRef: { current: (() => void) | null };
 
   // Media bootstrap tracking
-  mediaBootstrapBlockedUntilRef: RefObject<Map<string, number>>;
-  mediaBootstrapErrorLogAtRef: RefObject<Map<string, number>>;
-  mediaBootstrapToastShownRef: RefObject<Set<string>>;
-  mediaBootstrapRetryAttemptsRef: RefObject<Map<string, number>>;
-  mediaBootstrapCompletedRef: RefObject<Map<string, boolean>>;
+  mediaBootstrapBlockedUntilRef: { current: Map<string, number> };
+  mediaBootstrapErrorLogAtRef: { current: Map<string, number> };
+  mediaBootstrapToastShownRef: { current: Set<string> };
+  mediaBootstrapRetryAttemptsRef: { current: Map<string, number> };
+  mediaBootstrapCompletedRef: { current: Map<string, boolean> };
 
   // Consumer/replay refs
-  processedConsumerIdsRef: RefObject<Set<string>>;
-  consumerCreateParamsRef: RefObject<Map<string, ConsumerReplayDescriptor>>;
-  producerPeerKeyRef: RefObject<Map<string, string>>;
-  peerUserIdByDeviceIdRef: RefObject<Map<string, string>>;
-  pendingProducersToConsumeRef: RefObject<Map<string, { roomId: string; peerDeviceId?: string; peerUserId?: string }>>;
-  consumePendingProducersRef: RefObject<(() => void) | null>;
-  pendingReceiverTransformsRef: RefObject<Map<string, { receiver: RTCRtpReceiver; peerKey: string; deferredAt: number; recoveryRequested: boolean }>>;
-  pipeBreakRetryAtRef: RefObject<Map<string, number>>;
-  pipeBreakRecoveryInFlightRef: RefObject<Set<string>>;
-  lastCallsBootstrapErrorRef: RefObject<Error | null>;
+  processedConsumerIdsRef: { current: Set<string> };
+  consumerCreateParamsRef: { current: Map<string, ConsumerReplayDescriptor> };
+  producerPeerKeyRef: { current: Map<string, string> };
+  peerUserIdByDeviceIdRef: { current: Map<string, string> };
+  pendingProducersToConsumeRef: { current: Map<string, { roomId: string; peerDeviceId?: string; peerUserId?: string }> };
+  consumePendingProducersRef: { current: (() => void) | null };
+  pipeBreakRetryAtRef: { current: Map<string, number> };
+  pipeBreakRecoveryInFlightRef: { current: Set<string> };
+  lastCallsBootstrapErrorRef: { current: Error | null };
 }
 
 interface CleanupCallbacks {
@@ -179,7 +177,6 @@ export function useCallCleanup(
     refs.pendingProducersToConsumeRef.current.clear();
     refs.consumePendingProducersRef.current = null;
     refs.peerUserIdByDeviceIdRef.current.clear();
-    refs.pendingReceiverTransformsRef.current.clear();
     refs.pipeBreakRetryAtRef.current.clear();
     refs.pipeBreakRecoveryInFlightRef.current.clear();
   }, [refs, callbacks]);

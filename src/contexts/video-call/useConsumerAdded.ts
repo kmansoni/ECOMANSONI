@@ -1,18 +1,10 @@
 import { useEffect, type MutableRefObject } from "react";
 import { logger } from "@/lib/logger";
 import { getStableCallsDeviceId } from "@/lib/platform/device";
-import { CallMediaEncryption } from "@/calls-v2/callMediaEncryption";
 import type { SfuMediaManager } from "@/calls-v2/sfuMediaManager";
 import type { CallsWsClient } from "@/calls-v2/wsClient";
 import type { ConsumerAddedPayload, ConsumerReplayDescriptor } from "@/calls-v2/types";
-import { REQUIRE_SFRAME } from "./videoCallProvider.helpers";
-
-interface PendingTransform {
-  receiver: RTCRtpReceiver;
-  peerKey: string;
-  deferredAt: number;
-  recoveryRequested: boolean;
-}
+import { REQUIRE_SFRAME, hasE2eeSupport } from "./videoCallProvider.helpers";
 
 interface Params {
   user: { id: string } | null;
@@ -29,7 +21,6 @@ interface Params {
   consumerAddedUnsubRef: MutableRefObject<(() => void) | null>;
   consumerListenerBoundClientRef: MutableRefObject<CallsWsClient | null>;
   remoteTrackListenerCleanupsRef: MutableRefObject<Array<() => void>>;
-  pendingReceiverTransformsRef: MutableRefObject<Map<string, PendingTransform>>;
   rebuildRemoteStream: () => void;
 }
 
@@ -48,7 +39,6 @@ export function useConsumerAdded({
   consumerAddedUnsubRef,
   consumerListenerBoundClientRef,
   remoteTrackListenerCleanupsRef,
-  pendingReceiverTransformsRef,
   rebuildRemoteStream,
 }: Params) {
   // Invariant: exactly one listener per CallsWsClient instance.
@@ -157,31 +147,11 @@ export function useConsumerAdded({
           });
         }
 
-        if (REQUIRE_SFRAME && CallMediaEncryption.isSupported()) {
+        if (REQUIRE_SFRAME && hasE2eeSupport()) {
           const enc = callMediaEncryptionRef.current;
           const receiver = sfuManagerRef.current?.getConsumerReceiver(consumer.id);
           if (receiver && enc) {
-            try {
-              if (enc.hasDecryptionKeyForPeer(peerKey)) {
-                enc.setupReceiverTransform(receiver, peerKey, consumer.id);
-              } else {
-                const prev = pendingReceiverTransformsRef.current.get(consumer.id);
-                pendingReceiverTransformsRef.current.set(consumer.id, {
-                  receiver,
-                  peerKey,
-                  deferredAt: prev?.deferredAt ?? Date.now(),
-                  recoveryRequested: prev?.recoveryRequested ?? false,
-                });
-              }
-            } catch {
-              const prev = pendingReceiverTransformsRef.current.get(consumer.id);
-              pendingReceiverTransformsRef.current.set(consumer.id, {
-                receiver,
-                peerKey,
-                deferredAt: prev?.deferredAt ?? Date.now(),
-                recoveryRequested: prev?.recoveryRequested ?? false,
-              });
-            }
+            enc.setupReceiverTransform(receiver, peerKey, consumer.id);
           }
         }
 

@@ -1,6 +1,7 @@
 import { useCallback, useRef } from "react";
 import { toast } from "sonner";
 import { logger } from "@/lib/logger";
+import { CalleeProfile } from "@/contexts/video-call/types";
 
 interface UseChatInteractionParams {
   conversationId: string;
@@ -14,7 +15,7 @@ interface UseChatInteractionParams {
   setShowVideoRecorder: (v: boolean) => void;
   setRecordMode: React.Dispatch<React.SetStateAction<"voice" | "video">>;
   sendTyping: (isTyping: boolean, activity?: "typing" | "recording_voice" | "recording_video") => void;
-  startCall: (userId: string, convId: string, type: "audio" | "video", meta: { display_name: string; avatar_url: string | null }) => Promise<unknown>;
+  startCall: (userId: string, convId: string, type: "audio" | "video", meta: CalleeProfile) => Promise<unknown>;
   setContextMenuMessage: React.Dispatch<React.SetStateAction<{
     id: string;
     content: string;
@@ -37,7 +38,7 @@ export function useChatInteraction({
 
   const handleStartAudioCall = async () => {
     try {
-      await startCall(otherUserId, conversationId, "audio", { display_name: chatName, avatar_url: chatAvatar });
+      await startCall(otherUserId, conversationId, "audio", { userId: otherUserId, display_name: chatName, avatar_url: chatAvatar });
     } catch (err) {
       logger.error("chat: audio call start failed", { conversationId, error: err });
       toast.error("Не удалось начать аудиозвонок");
@@ -46,7 +47,7 @@ export function useChatInteraction({
 
   const handleStartVideoCall = async () => {
     try {
-      await startCall(otherUserId, conversationId, "video", { display_name: chatName, avatar_url: chatAvatar });
+      await startCall(otherUserId, conversationId, "video", { userId: otherUserId, display_name: chatName, avatar_url: chatAvatar });
     } catch (err) {
       logger.error("chat: video call start failed", { conversationId, error: err });
       toast.error("Не удалось начать видеозвонок");

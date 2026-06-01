@@ -7,7 +7,8 @@
  * - Key management (epoch rotation)
  */
 
-import type { CryptoKey } from "crypto";
+// Use globalThis.crypto instead of 'crypto' module (browser-safe)
+const _crypto = globalThis.crypto;
 
 export interface E2EEConfig {
   key: CryptoKey;

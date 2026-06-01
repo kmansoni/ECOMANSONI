@@ -141,6 +141,9 @@ export class CallMediaEncryption {
    * H-6: THROWS если encryption key не установлен — fail-closed, не допускаем незашифрованный медиа.
    * M-6: assertMediaAllowed() через EpochGuard если установлен.
    *
+   * Fail-closed: throws if Insertable Streams unavailable — call must not proceed unencrypted.
+   * Caller must verify CallMediaEncryption.isSupported() before entering a call.
+   *
    * @param sender — RTCRtpSender от SfuMediaManager.getProducerSender()
    * @param trackId — producer.id (для идентификации transform в логах)
    */
@@ -156,7 +159,8 @@ export class CallMediaEncryption {
       );
     }
 
-    // MediaEncryptor.setupSenderTransform throws if browser doesn't support transforms (C-4)
+    // Fail-closed: throws if browser doesn't support Insertable Streams.
+    // Caller must check CallMediaEncryption.isSupported() before calling.
     this.encryptor.setupSenderTransform(sender, trackId);
     logger.debug(`[CallMediaEncryption] Sender transform attached, track=${trackId}`);
   }
@@ -168,6 +172,8 @@ export class CallMediaEncryption {
    * Receiver можно подключать до прихода decryption key — MediaEncryptor дропнет фреймы
    * пока ключ не придёт (fail-closed в SFrame transport).
    * M-6: assertMediaAllowed() через EpochGuard если установлен.
+   *
+   * Fail-closed: throws if Insertable Streams unavailable.
    *
    * @param receiver — RTCRtpReceiver от SfuMediaManager.getConsumerReceiver()
    * @param peerId — userId или producerId отправителя
@@ -186,8 +192,8 @@ export class CallMediaEncryption {
         `known peers: ${JSON.stringify(knownKeys)}`
       );
     }
-    // MediaEncryptor.setupReceiverTransform(receiver, trackId, peerId) — note arg order difference
-    // MediaEncryptor throws if browser doesn't support transforms (C-4)
+
+    // Fail-closed: throws if browser doesn't support Insertable Streams.
     this.encryptor.setupReceiverTransform(receiver, trackId, resolvedPeerId);
     logger.debug(`[CallMediaEncryption] Receiver transform attached, peer=${peerId} resolved=${resolvedPeerId} track=${trackId}`);
   }

@@ -24,7 +24,7 @@ export function useProducerCoverageProbe(
   useEffect(() => {
     if (!PROBE_ENABLED) return;
 
-    let interval: ReturnType<typeof window.setInterval> | null = null;
+    let interval: number | null = null;
 
     const startTimer = window.setTimeout(() => {
       stateRef.current.startedAt = Date.now();
