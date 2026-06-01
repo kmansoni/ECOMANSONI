@@ -282,7 +282,7 @@ export function VideoCallScreen({
   };
 
   const getCallStatusWithDetail = (): string => {
-    const statusText = getCallUiStatusText(callState);
+    const statusText = getCallUiStatusText(callState).replace(/\.+$/, "");
     if (showRetryButton) return statusText;
     if (!showWaitingUI) return statusText;
     switch (callState) {
@@ -291,6 +291,8 @@ export function VideoCallScreen({
       case "media_acquiring": return `${statusText} — Доступ к медиа`;
       case "transport_connecting": return `${statusText} — Транспорт`;
       case "media_ready": return `${statusText} — Шифрование`;
+      case "reconnecting": return statusText;
+      case "ending": return statusText;
       default: return statusText;
     }
   };

@@ -17,3 +17,7 @@ export function isDemoId(userId: string): boolean {
 export function getDemoBotsUsersWithStories(): DemoBotUser[] {
   return demoBots;
 }
+
+export function getDemoBotsReels(): DemoBotUser[] {
+  return demoBots;
+}

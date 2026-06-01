@@ -151,6 +151,18 @@ function LottieSticker({
           autoplay: false,
           animationData: animData,
         });
+
+        // Fix SVG path errors: replace undefined path data with empty string
+        const svgRenderer = anim.renderer;
+        if (svgRenderer && svgRenderer.svgElement) {
+          const fixPaths = () => {
+            const paths = svgRenderer.svgElement.querySelectorAll('[d="undefined"]');
+            paths.forEach((p: Element) => p.setAttribute('d', ''));
+          };
+          fixPaths();
+          setInterval(fixPaths, 100); // Watch for new paths
+        }
+
         animRef.current = anim;
       } catch (error) {
         logger.warn("animated-sticker: failed to load lottie", { url, error });
