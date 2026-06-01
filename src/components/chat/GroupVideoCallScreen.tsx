@@ -54,6 +54,8 @@ interface Props {
   activeSpeakerId: string | null;
   pinnedParticipantId: string | null;
   duration: number;
+  /** Call is being established; show loading overlay */
+  isLoading?: boolean;
   onToggleMute: () => void;
   onToggleCamera: () => void;
   onToggleScreenShare: () => void;
@@ -232,6 +234,7 @@ export function GroupVideoCallScreen({
   activeSpeakerId,
   pinnedParticipantId,
   duration,
+  isLoading = false,
   onToggleMute,
   onToggleCamera,
   onToggleScreenShare,
