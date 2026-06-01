@@ -17,13 +17,15 @@ import {
   SwitchCamera,
   Lock,
   LockOpen,
-  Wifi,
-  WifiOff,
 } from "lucide-react";
 import type { VideoCall, VideoCallStatus } from "@/contexts/VideoCallContext";
 import type { CalleeProfile } from "@/contexts/video-call/types";
 import type { CallState } from "@/calls-v2/callStateMachine";
-import { isCallConnected, isCallRinging } from "@/calls-v2/callStateMachine";
+import {
+  isCallConnected,
+  isCallRinging,
+  isCallConnecting,
+} from "@/calls-v2/callStateMachine";
 import { getCallUiStatusText } from "@/calls-v2/callStateMachine";
 import { useAuth } from "@/hooks/useAuth";
 import { GlassControlButton } from "@/components/ui/glass/GlassControlButton";
@@ -257,18 +259,74 @@ export function VideoCallScreen({
     return `${mins.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}`;
   };
 
-  const getStatusText = (): string => getCallUiStatusText(callState);
-
   const showRetryButton = callState === "failed";
   const showWaitingUI = !showRetryButton && !isConnected;
   const hasRemoteScreen = isConnected && remoteScreenStream && remoteScreenStream.getVideoTracks().length > 0;
+
+  // Определяем фазу ключевого обмена по состоянию FSM
+  const getKeyExchangePhase = (): "none" | "identity" | "handshake" | "key_derivation" | "media_setup" | "done" => {
+    if (!isCallConnecting(callState)) return "none";
+    switch (callState) {
+      case "bootstrapping": return "identity";
+      case "signaling_ready": return "handshake";
+      case "media_acquiring": return "key_derivation";
+      case "transport_connecting": return "media_setup";
+      case "media_ready": return "done";
+      default: return "none";
+    }
+  };
+  const keyExchangePhase = getKeyExchangePhase();
+
   const handleToggleAudioOutput = () => {
     setAudioOutputMode((prev) => (prev === "earpiece" ? "speaker" : "earpiece"));
   };
 
-  if (isVideoCall && localStream && !isVideoOff) {
+  const getCallStatusWithDetail = (): string => {
+    const statusText = getCallUiStatusText(callState);
+    if (showRetryButton) return statusText;
+    if (!showWaitingUI) return statusText;
+    switch (callState) {
+      case "bootstrapping": return `${statusText} — Идентификация`;
+      case "signaling_ready": return `${statusText} — Сигналинг`;
+      case "media_acquiring": return `${statusText} — Доступ к медиа`;
+      case "transport_connecting": return `${statusText} — Транспорт`;
+      case "media_ready": return `${statusText} — Шифрование`;
+      default: return statusText;
+    }
+  };
+
+  // Skeleton placeholder для video во время подключения
+  const VideoSkeleton = () => (
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      className="absolute inset-0 w-full h-full flex items-center justify-center bg-gradient-to-br from-zinc-900 via-zinc-800 to-zinc-900"
+    >
+      <div className="flex flex-col items-center gap-4">
+        <div className="w-32 h-32 rounded-full bg-zinc-700/50 animate-pulse" />
+        <div className="w-48 h-3 rounded-full bg-zinc-700/40 animate-pulse" />
+        <div className="flex gap-2 mt-4">
+          {[...Array(3)].map((_, i) => (
+            <div
+              key={i}
+              className="w-2 h-2 rounded-full bg-cyan-400/60 animate-bounce"
+              style={{ animationDelay: `${i * 200}ms` }}
+            />
+          ))}
+        </div>
+      </div>
+    </motion.div>
+  );
+
+  // ─── Video call screen ───────────────────────────────────────────────────
+  if (isVideoCall && !isVideoOff && localStream) {
     return (
-      <div
+      <motion.div
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0 }}
+        transition={{ duration: 0.25 }}
         className="fixed inset-0 bg-black z-[300] flex flex-col"
         data-call-state={callState}
         data-call-connected={isConnected ? "true" : "false"}
@@ -277,107 +335,97 @@ export function VideoCallScreen({
         <RingtonePlayer play={shouldPlayRingtone} />
         <audio ref={audioOutRef} autoPlay playsInline style={{ display: "none" }} />
 
-        {hasRemoteVideo ? (
-          <div className="absolute inset-0 w-full h-full">
-            {/* Main video — always rendered, visibility toggled */}
-            <video
-              ref={localVideoRef}
-              autoPlay playsInline muted
-              className="absolute inset-0 w-full h-full object-cover transition-all duration-300"
-              style={{
-                transform: isMirrored ? 'scaleX(-1)' : 'none',
-                opacity: isSelfMain ? (isVideoOff ? 0.15 : 1) : 0,
-                pointerEvents: isSelfMain ? 'auto' : 'none',
-                zIndex: isSelfMain ? 1 : 0,
-              }}
-              onClick={() => setIsMirrored(m => !m)}
-            />
-            <video
-              ref={remoteVideoRef}
-              autoPlay playsInline
-              className="absolute inset-0 w-full h-full object-cover transition-all duration-300"
-              style={{
-                opacity: isSelfMain ? 0 : 1,
-                pointerEvents: isSelfMain ? 'none' : 'auto',
-                zIndex: isSelfMain ? 0 : 1,
-              }}
-              onClick={() => setIsMirrored(m => !m)}
-            />
-            {isSelfMain && <MaskOverlay videoRef={localVideoRef} maskId={maskId} />}
-
-            {/* PiP — tap swaps main/pip */}
-            <div
-              className="absolute top-20 right-4 w-28 h-40 z-10 cursor-pointer overflow-hidden rounded-2xl border-2 border-white/30 shadow-lg"
-              onClick={() => setIsSelfMain(s => !s)}
+        <AnimatePresence mode="wait">
+          {!hasRemoteVideo && showWaitingUI ? (
+            <VideoSkeleton />
+          ) : hasRemoteVideo ? (
+            <motion.div
+              key="remote-video"
+              initial={{ opacity: 0, scale: 1.05 }}
+              animate={{ opacity: 1, scale: 1 }}
+              transition={{ duration: 0.4, ease: "easeOut" }}
+              className="absolute inset-0 w-full h-full"
             >
-              {/* PiP shows the opposite of main */}
-              <div
-                className="w-full h-full"
+              {/* Main video */}
+              <video
+                ref={localVideoRef}
+                autoPlay playsInline muted
+                className="absolute inset-0 w-full h-full object-cover transition-all duration-300"
                 style={{
-                  transform: isSelfMain ? 'none' : (isMirrored ? 'scaleX(-1)' : 'none'),
-                  opacity: isSelfMain ? 1 : (isVideoOff ? 0.15 : 1),
+                  transform: isMirrored ? 'scaleX(-1)' : 'none',
+                  opacity: isSelfMain ? (isVideoOff ? 0.15 : 1) : 0,
+                  pointerEvents: isSelfMain ? 'auto' : 'none',
+                  zIndex: isSelfMain ? 1 : 0,
                 }}
+                onClick={() => setIsMirrored(m => !m)}
+              />
+              <video
+                ref={remoteVideoRef}
+                autoPlay playsInline
+                className="absolute inset-0 w-full h-full object-cover transition-all duration-300"
+                style={{
+                  opacity: isSelfMain ? 0 : 1,
+                  pointerEvents: isSelfMain ? 'none' : 'auto',
+                  zIndex: isSelfMain ? 0 : 1,
+                }}
+                onClick={() => setIsMirrored(m => !m)}
+              />
+              {isSelfMain && <MaskOverlay videoRef={localVideoRef} maskId={maskId} />}
+
+              {/* PiP */}
+              <div
+                className="absolute top-20 right-4 w-28 h-40 z-10 cursor-pointer overflow-hidden rounded-2xl border-2 border-white/30 shadow-lg transition-transform hover:scale-105 active:scale-95"
+                onClick={() => setIsSelfMain(s => !s)}
               >
-                {/* Clone streams into PiP via canvas */}
-                <PipVideo
-                  srcRef={isSelfMain ? remoteVideoRef : localVideoRef}
-                  mirrored={!isSelfMain && isMirrored}
-                  dimmed={!isSelfMain && isVideoOff}
-                />
+                <div
+                  className="w-full h-full"
+                  style={{
+                    transform: isSelfMain ? 'none' : (isMirrored ? 'scaleX(-1)' : 'none'),
+                    opacity: isSelfMain ? 1 : (isVideoOff ? 0.15 : 1),
+                  }}
+                >
+                  <PipVideo
+                    srcRef={isSelfMain ? remoteVideoRef : localVideoRef}
+                    mirrored={!isSelfMain && isMirrored}
+                    dimmed={!isSelfMain && isVideoOff}
+                  />
+                </div>
+                <div className="absolute bottom-1 left-1/2 -translate-x-1/2 bg-black/50 rounded-full px-2 py-0.5 text-[9px] text-white/70 flex items-center gap-1">
+                  <SwitchCamera className="w-2.5 h-2.5" />
+                  Сменить
+                </div>
               </div>
-              <div className="absolute bottom-1 left-1/2 -translate-x-1/2 bg-black/50 rounded-full px-2 py-0.5 text-[9px] text-white/70 flex items-center gap-1">
-                <SwitchCamera className="w-2.5 h-2.5" />
-                Сменить
-              </div>
-            </div>
 
-            {/* Mask picker overlay */}
-            {showMaskPicker && (
-              <div className="absolute top-20 left-4 z-20 flex flex-col gap-2 bg-black/60 backdrop-blur-md rounded-2xl p-3">
-                {MASKS.map(m => (
-                  <button
-                    key={m.id}
-                    onClick={() => { setMaskId(m.id); setShowMaskPicker(false); }}
-                    className={`px-3 py-1.5 rounded-xl text-sm text-white transition-all ${maskId === m.id ? 'bg-cyan-500/60' : 'bg-white/10 hover:bg-white/20'}`}
-                  >
-                    {m.label}
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-        ) : (
-          <div className="absolute inset-0 w-full h-full">
-            <video
-              ref={localVideoRef}
-              autoPlay playsInline muted
-              className="w-full h-full object-cover transition-opacity duration-400"
-              style={{
-                transform: isMirrored ? 'scaleX(-1)' : 'none',
-                opacity: isVideoOff ? 0.15 : 1,
-                filter: isVideoOff ? "blur(2px) grayscale(0.7)" : "none",
-                transition: "opacity 0.4s, filter 0.4s, transform 0.3s",
-              }}
-              onClick={() => setIsMirrored(m => !m)}
-            />
-            <MaskOverlay videoRef={localVideoRef} maskId={maskId} />
-            {isVideoOff && (
-              <div className="absolute inset-0 flex items-center justify-center bg-black/60 transition-all duration-400">
-                <VideoOff className="w-16 h-16 text-white/80 animate-fade-in" />
-              </div>
-            )}
-          </div>
-        )}
+              {/* Mask picker overlay */}
+              {showMaskPicker && (
+                <div className="absolute top-20 left-4 z-20 flex flex-col gap-2 bg-black/60 backdrop-blur-md rounded-2xl p-3">
+                  {MASKS.map(m => (
+                    <button
+                      key={m.id}
+                      onClick={() => { setMaskId(m.id); setShowMaskPicker(false); }}
+                      className={`px-3 py-1.5 rounded-xl text-sm text-white transition-all ${maskId === m.id ? 'bg-cyan-500/60' : 'bg-white/10 hover:bg-white/20'}`}
+                    >
+                      {m.label}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </motion.div>
+          ) : null}
+        </AnimatePresence>
 
+        {/* Waiting overlay — всегда поверх видео при подключении */}
         <AnimatePresence>
           {showWaitingUI && (
             <motion.div
-              initial={{ opacity: 1 }}
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
               exit={{ opacity: 0, scale: 0.95 }}
-              transition={{ duration: 0.4, ease: "easeIn" }}
+              transition={{ duration: 0.3, ease: "easeInOut" }}
               className="absolute inset-0 z-10 flex flex-col items-center justify-center pointer-events-none"
             >
-              <div className="absolute inset-0 bg-black/40" />
+              {/* Градиентный фон только над avatar — не перекрываем всё видео */}
+              <div className="absolute inset-0 bg-gradient-to-b from-black/30 via-transparent to-black/60 pointer-events-none" />
               <div className="relative z-10 flex flex-col items-center">
                 <GlassAvatarRing
                   name={otherName}
@@ -388,20 +436,35 @@ export function VideoCallScreen({
                   callState={callState}
                 />
                 <h3 className="text-2xl font-semibold text-white mt-6 mb-2 drop-shadow-lg">{otherName}</h3>
-                <div className="flex items-center gap-3">
-                  <CallStatusIndicator callState={callState} />
+                <div className="flex flex-col items-center gap-1">
+                  <div className="flex items-center gap-2">
+                    <CallStatusIndicator
+                      callState={callState}
+                      keyExchangePhase={keyExchangePhase}
+                      showDetail
+                    />
+                    <span className="text-white/90 font-medium text-base">{getCallUiStatusText(callState)}</span>
+                  </div>
+                  {/* Animated ellipsis */}
                   {!showRetryButton && (
-                    <span className="flex ml-0.5">
-                      <span className="animate-bounce text-white/80" style={{ animationDelay: "0ms", animationDuration: "1s" }}>.</span>
-                      <span className="animate-bounce text-white/80" style={{ animationDelay: "200ms", animationDuration: "1s" }}>.</span>
-                      <span className="animate-bounce text-white/80" style={{ animationDelay: "400ms", animationDuration: "1s" }}>.</span>
+                    <span className="flex gap-0.5 ml-1">
+                      {[0, 1, 2].map(i => (
+                        <motion.span
+                          key={i}
+                          className="w-1.5 h-1.5 rounded-full bg-white/80"
+                          animate={{ opacity: [0.4, 1, 0.4] }}
+                          transition={{ duration: 1.2, repeat: Infinity, delay: i * 0.3 }}
+                        />
+                      ))}
                     </span>
                   )}
                 </div>
                 {showRetryButton && (
-                  <button
+                  <motion.button
+                    initial={{ opacity: 0, y: 8 }}
+                    animate={{ opacity: 1, y: 0 }}
                     onClick={onRetry}
-                    className="mt-4 flex items-center gap-2 px-5 py-2.5 rounded-full backdrop-blur-xl text-white pointer-events-auto"
+                    className="mt-5 flex items-center gap-2 px-5 py-2.5 rounded-full backdrop-blur-xl text-white pointer-events-auto"
                     style={{
                       background: "linear-gradient(145deg, rgba(255,255,255,0.15) 0%, rgba(255,255,255,0.05) 100%)",
                       border: "1px solid rgba(255,255,255,0.2)",
@@ -409,21 +472,25 @@ export function VideoCallScreen({
                   >
                     <RefreshCw className="w-4 h-4" />
                     <span>Повторить</span>
-                  </button>
+                  </motion.button>
                 )}
               </div>
             </motion.div>
           )}
         </AnimatePresence>
 
-        <div className="absolute top-0 left-0 right-0 p-4 pt-12 safe-area-top z-20 bg-gradient-to-b from-black/50 to-transparent">
+        {/* Top bar — всегда виден */}
+        <div className="absolute top-0 left-0 right-0 p-4 pt-12 safe-area-top z-20">
           <div className="flex items-center justify-between">
-            <button onClick={onEnd} className="flex items-center text-white">
+            <button
+              onClick={onEnd}
+              className="flex items-center gap-1.5 text-white/90 hover:text-white transition-colors"
+            >
               <ChevronLeft className="w-6 h-6" />
-              <span className="text-lg">Назад</span>
+              <span className="text-lg font-medium">Назад</span>
             </button>
             {isConnected && (
-              <span className="text-white/90 text-base font-medium">{formatDuration(callDuration)}</span>
+              <span className="text-white/90 text-base font-medium tabular-nums">{formatDuration(callDuration)}</span>
             )}
           </div>
         </div>
@@ -451,10 +518,11 @@ export function VideoCallScreen({
           maskActive={maskId !== 'none'}
           onToggleMask={() => setShowMaskPicker(p => !p)}
         />
-      </div>
+      </motion.div>
     );
   }
 
+  // ─── Audio call screen (or video with camera off) ──────────────────────
   return (
     <div
       className="fixed inset-0 z-[300] flex flex-col"
@@ -475,8 +543,12 @@ export function VideoCallScreen({
 
         <div className="flex-1 flex flex-col items-center justify-center -mt-16">
           <div className="flex items-center gap-3 mb-3">
-            <CallStatusIndicator callState={callState} />
-            <span className="text-white/60 text-sm">{getStatusText()}{showWaitingUI && !showRetryButton && "..."}</span>
+            <CallStatusIndicator
+              callState={callState}
+              keyExchangePhase={keyExchangePhase}
+              showDetail
+            />
+            <span className="text-white/60 text-sm">{getCallStatusWithDetail()}{showWaitingUI && !showRetryButton && "..."}</span>
             {isConnected && (
               <span className="flex items-center gap-1 text-xs text-white/70">
                 {isE2eeActive ? <Lock className="w-3.5 h-3.5" /> : <LockOpen className="w-3.5 h-3.5" />}
