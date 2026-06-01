@@ -27,6 +27,10 @@ interface RTCConfigE2EE extends RTCConfiguration {
 export type IceRestartCallback = (transportId: string, direction: 'send' | 'recv') => Promise<void>;
 /** Callback invoked when a transport is permanently closed after exhausting ICE restarts. */
 export type TransportClosedCallback = (transportId: string, direction: 'send' | 'recv') => void;
+/** P0-3 fix: callback invoked when connection is lost (disconnected/failed for too long). */
+export type ConnectionLostCallback = (transportId: string, direction: 'send' | 'recv', reason: 'disconnected' | 'failed') => void;
+/** P0-3 fix: callback invoked when connection is restored (transport back to connected). */
+export type ConnectionRestoredCallback = (transportId: string, direction: 'send' | 'recv') => void;
 
 export class SfuMediaManager {
    private device: Device;
@@ -41,6 +45,14 @@ export class SfuMediaManager {
    private onIceRestartNeeded: IceRestartCallback | null = null;
    /** P0-3 fix: callback when transport is permanently closed after exhausting ICE restarts */
    private onTransportClosed: TransportClosedCallback | null = null;
+   /** P0-3 fix: callback when connection is lost */
+   private onConnectionLost: ConnectionLostCallback | null = null;
+   /** P0-3 fix: callback when connection is restored */
+   private onConnectionRestored: ConnectionRestoredCallback | null = null;
+   /** P0-3 fix: tracks whether we've notified of connection loss for each transport */
+   private connectionLostNotified: Set<string> = new Set();
+   /** P0-3 fix: tracks whether connection was previously disconnected for restore detection */
+   private wasDisconnected: Set<string> = new Set();
    /** C-1 fix: pending ICE restart timers keyed by transportId */
    private iceRestartTimers: Map<string, number> = new Map();
    /**
@@ -85,12 +97,14 @@ export class SfuMediaManager {
       ?? null;
   }
 
-  constructor(options?: { requireSenderReceiverAccessForE2ee?: boolean; onIceRestartNeeded?: IceRestartCallback; onTransportClosed?: TransportClosedCallback }) {
+  constructor(options?: { requireSenderReceiverAccessForE2ee?: boolean; onIceRestartNeeded?: IceRestartCallback; onTransportClosed?: TransportClosedCallback; onConnectionLost?: ConnectionLostCallback; onConnectionRestored?: ConnectionRestoredCallback }) {
     this.device = new Device();
     // C-2 fix: default changed to TRUE — plaintext media is never acceptable
     this.requireSenderReceiverAccessForE2ee = options?.requireSenderReceiverAccessForE2ee ?? true;
     this.onIceRestartNeeded = options?.onIceRestartNeeded ?? null;
     this.onTransportClosed = options?.onTransportClosed ?? null;
+    this.onConnectionLost = options?.onConnectionLost ?? null;
+    this.onConnectionRestored = options?.onConnectionRestored ?? null;
   }
 
   get closed(): boolean {
@@ -103,6 +117,16 @@ export class SfuMediaManager {
    */
   setIceRestartCallback(cb: IceRestartCallback): void {
     this.onIceRestartNeeded = cb;
+  }
+
+  /** P0-3 fix: Register connection lost callback after construction. */
+  setConnectionLostCallback(cb: ConnectionLostCallback): void {
+    this.onConnectionLost = cb;
+  }
+
+  /** P0-3 fix: Register connection restored callback after construction. */
+  setConnectionRestoredCallback(cb: ConnectionRestoredCallback): void {
+    this.onConnectionRestored = cb;
   }
 
   private clearIceRestartTimer(transportId: string): void {
@@ -281,24 +305,48 @@ export class SfuMediaManager {
 
     this.sendTransport.on('connectionstatechange', (state: string) => {
       logger.debug(`[SfuMediaManager] sendTransport connectionstatechange: ${state}`);
+      const transportId = options.id;
+
+      // P0-3 fix: handle CONNECTION_LOST/RESTORED callbacks
       if (state === 'failed') {
+        logger.warn('[SfuMediaManager] send transport connection failed');
+        if (!this.connectionLostNotified.has(transportId)) {
+          this.connectionLostNotified.add(transportId);
+          this.onConnectionLost?.(transportId, 'send', 'failed');
+        }
+        this.wasDisconnected.delete(transportId);
         const t = this.sendTransport;
-        if (t) this.scheduleIceRestart(t, options.id, 'send');
+        if (t) this.scheduleIceRestart(t, transportId, 'send');
       } else if (state === 'disconnected') {
         // ICE может восстановиться сам за ~5s, если нет — рестартим
+        this.wasDisconnected.add(transportId);
         const t = this.sendTransport;
         if (t) {
           const timer = window.setTimeout(() => {
-            this.clearIceRestartTimer(options.id);
+            this.clearIceRestartTimer(transportId);
             if (!t.closed && t.connectionState === 'disconnected') {
-              this.scheduleIceRestart(t, options.id, 'send');
+              if (!this.connectionLostNotified.has(transportId)) {
+                this.connectionLostNotified.add(transportId);
+                logger.warn('[SfuMediaManager] send transport still disconnected after 5s — reporting connection lost');
+                this.onConnectionLost?.(transportId, 'send', 'disconnected');
+              }
+              this.scheduleIceRestart(t, transportId, 'send');
             }
           }, 5_000);
-          this.replaceIceRestartTimer(options.id, timer);
-          t.once('connectionstatechange', () => this.clearIceRestartTimer(options.id));
+          this.replaceIceRestartTimer(transportId, timer);
+          t.once('connectionstatechange', () => this.clearIceRestartTimer(transportId));
         }
-      } else if (state === 'connected' || state === 'closed') {
-        this.clearIceRestartTimer(options.id);
+      } else if (state === 'connected') {
+        this.clearIceRestartTimer(transportId);
+        // P0-3 fix: if we previously reported connection lost, notify of restoration
+        if (this.connectionLostNotified.has(transportId) || this.wasDisconnected.has(transportId)) {
+          logger.info('[SfuMediaManager] send transport connection restored');
+          this.connectionLostNotified.delete(transportId);
+          this.wasDisconnected.delete(transportId);
+          this.onConnectionRestored?.(transportId, 'send');
+        }
+      } else if (state === 'closed') {
+        this.clearIceRestartTimer(transportId);
       }
     });
 
@@ -338,23 +386,47 @@ export class SfuMediaManager {
 
     this.recvTransport.on('connectionstatechange', (state: string) => {
       logger.debug(`[SfuMediaManager] recvTransport connectionstatechange: ${state}`);
+      const transportId = options.id;
+
+      // P0-3 fix: handle CONNECTION_LOST/RESTORED callbacks
       if (state === 'failed') {
+        logger.warn('[SfuMediaManager] recv transport connection failed');
+        if (!this.connectionLostNotified.has(transportId)) {
+          this.connectionLostNotified.add(transportId);
+          this.onConnectionLost?.(transportId, 'recv', 'failed');
+        }
+        this.wasDisconnected.delete(transportId);
         const t = this.recvTransport;
-        if (t) this.scheduleIceRestart(t, options.id, 'recv');
+        if (t) this.scheduleIceRestart(t, transportId, 'recv');
       } else if (state === 'disconnected') {
+        this.wasDisconnected.add(transportId);
         const t = this.recvTransport;
         if (t) {
           const timer = window.setTimeout(() => {
-            this.clearIceRestartTimer(options.id);
+            this.clearIceRestartTimer(transportId);
             if (!t.closed && t.connectionState === 'disconnected') {
-              this.scheduleIceRestart(t, options.id, 'recv');
+              if (!this.connectionLostNotified.has(transportId)) {
+                this.connectionLostNotified.add(transportId);
+                logger.warn('[SfuMediaManager] recv transport still disconnected after 5s — reporting connection lost');
+                this.onConnectionLost?.(transportId, 'recv', 'disconnected');
+              }
+              this.scheduleIceRestart(t, transportId, 'recv');
             }
           }, 5_000);
-          this.replaceIceRestartTimer(options.id, timer);
-          t.once('connectionstatechange', () => this.clearIceRestartTimer(options.id));
+          this.replaceIceRestartTimer(transportId, timer);
+          t.once('connectionstatechange', () => this.clearIceRestartTimer(transportId));
         }
-      } else if (state === 'connected' || state === 'closed') {
-        this.clearIceRestartTimer(options.id);
+      } else if (state === 'connected') {
+        this.clearIceRestartTimer(transportId);
+        // P0-3 fix: if we previously reported connection lost, notify of restoration
+        if (this.connectionLostNotified.has(transportId) || this.wasDisconnected.has(transportId)) {
+          logger.info('[SfuMediaManager] recv transport connection restored');
+          this.connectionLostNotified.delete(transportId);
+          this.wasDisconnected.delete(transportId);
+          this.onConnectionRestored?.(transportId, 'recv');
+        }
+      } else if (state === 'closed') {
+        this.clearIceRestartTimer(transportId);
       }
     });
 
@@ -735,5 +807,8 @@ export class SfuMediaManager {
 
     this.relayStatsCollector.reset();
     this.lastRelayRoute = "none";
+    // P0-3 fix: reset connection state tracking
+    this.connectionLostNotified.clear();
+    this.wasDisconnected.clear();
   }
 }

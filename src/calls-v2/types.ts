@@ -559,3 +559,46 @@ export type ErrorHandler = (error: Error) => void;
 
 // Legacy alias
 export type CallsWsEventHandler = (frame: WsEnvelopeV1) => void;
+
+// ----------- VideoCall types (legacy, for backward compatibility) -----------
+export type VideoCallStatus = "idle" | "calling" | "ringing" | "connected" | "ended";
+
+export interface VideoCall {
+  id: string;
+  caller_id: string;
+  callee_id: string;
+  conversation_id: string | null;
+  call_type: "video" | "audio";
+  status: string;
+  created_at: string;
+  started_at: string | null;
+  ended_at: string | null;
+  caller_profile?: { display_name: string | null; avatar_url: string | null };
+  callee_profile?: { display_name: string | null; avatar_url: string | null };
+}
+
+// ----------- CallIdentity (for E2EE) -----------
+export interface CallIdentity {
+  userId: string;
+  deviceId: string;
+  sessionId: string;
+  identityPubKeyJwk?: JsonWebKey;
+}
+
+// ----------- EpochKeyMaterial (for E2EE) -----------
+export interface EpochKeyMaterial {
+  epoch: number;
+  key: CryptoKey;
+  _rawBytes?: Uint8Array;
+}
+
+// ----------- KeyPackageData (for E2EE) -----------
+export interface KeyPackageData {
+  epoch: number;
+  senderPublicKey: string;
+  ciphertext: string;
+  sig: string;
+  salt: string;
+  senderIdentity: CallIdentity;
+  messageId: string;
+}

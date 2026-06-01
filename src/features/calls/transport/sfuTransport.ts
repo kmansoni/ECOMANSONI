@@ -8,13 +8,14 @@
  * - Transport cleanup
  */
 
-import type { RtpCapabilities } from "@/calls-v2/types";
-import type { Device } from "mediasoup-client";
-import type { Transport as MediasoupTransport } from "mediasoup-client";
+import type { RtpCapabilities, DtlsParameters } from "@/calls-v2/types";
+import { Device } from "mediasoup-client";
+
+// Re-export types that callers might need
+export { Device } from "mediasoup-client";
 
 export interface TransportOptions {
   iceServers?: RTCIceServer[];
-  direction: "send" | "recv";
 }
 
 export interface ProduceResult {
@@ -29,20 +30,33 @@ export interface ConsumeResult {
   kind: "audio" | "video";
 }
 
+export type SfuTransport = {
+  readonly id: string;
+  readonly closed: boolean;
+  readonly connected: boolean;
+  produce(options: { track: MediaStreamTrack; appData?: Record<string, unknown> }): Promise<{ id: string }>;
+  consume(options: { producerId: string; rtpCapabilities: unknown; appData?: Record<string, unknown> }): Promise<{
+    id: string;
+    track: MediaStreamTrack;
+    kind: 'audio' | 'video';
+  }>;
+  close(): void;
+};
+
 /**
  * Manages SFU send and receive transports.
  */
 export class SfuTransportManager {
-  private _sendTransport: MediasoupTransport | null = null;
-  private _recvTransport: MediasoupTransport | null = null;
+  private _sendTransport: SfuTransport | null = null;
+  private _recvTransport: SfuTransport | null = null;
   private _device: Device | null = null;
   private _roomId: string | null = null;
 
-  get sendTransport(): MediasoupTransport | null {
+  get sendTransport(): SfuTransport | null {
     return this._sendTransport;
   }
 
-  get recvTransport(): MediasoupTransport | null {
+  get recvTransport(): SfuTransport | null {
     return this._recvTransport;
   }
 
@@ -54,11 +68,30 @@ export class SfuTransportManager {
    * Load SFU device with router capabilities.
    */
   async loadDevice(routerRtpCapabilities: RtpCapabilities): Promise<void> {
-    const { Device } = await import("mediasoup-client");
     this._device = new Device();
 
-    if (routerRtpCapabilities) {
-      await this._device.load({ routerRtpCapabilities });
+    if (routerRtpCapabilities && this._device) {
+      const msCapabilities = {
+        codecs: routerRtpCapabilities.codecs?.map(codec => ({
+          mimeType: codec.mimeType,
+          kind: codec.kind as 'audio' | 'video',
+          preferredPayloadType: codec.preferredPayloadType ?? 0,
+          clockRate: codec.clockRate,
+          channels: codec.channels,
+          parameters: codec.parameters ?? {},
+          rtcpFeedback: codec.rtcpFeedback ?? [],
+        })),
+        headerExtensions: routerRtpCapabilities.headerExtensions?.map(ext => ({
+          uri: ext.uri,
+          kind: (ext.kind || '') as 'audio' | 'video' | '',
+          preferredId: ext.preferredId,
+          preferredEncrypt: ext.preferredEncrypt,
+          direction: (ext.direction || 'sendrecv') as 'sendrecv' | 'sendonly' | 'recvonly' | 'inactive',
+        })),
+      };
+
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (this._device.load as any)({ routerRtpCapabilities: msCapabilities });
     }
   }
 
@@ -68,21 +101,39 @@ export class SfuTransportManager {
   createSendTransport(
     transportOptions: {
       id: string;
-      iceParameters: RTCIceParameters;
-      iceCandidates: RTCIceCandidate[];
-      dtlsParameters: RTCDtlsParameters;
+      iceParameters: {
+        usernameFragment: string;
+        password: string;
+        iceLite?: boolean;
+      };
+      iceCandidates: Array<{
+        foundation: string;
+        priority: number;
+        address: string;
+        protocol: 'udp' | 'tcp';
+        port: number;
+        type: 'host' | 'srflx' | 'prflx' | 'relay';
+        tcpType?: 'active' | 'passive' | 'so';
+      }>;
+      dtlsParameters: {
+        role?: 'auto' | 'client' | 'server';
+        fingerprints: Array<{
+          algorithm: string;
+          value: string;
+        }>;
+      };
     },
     iceServers?: RTCIceServer[]
-  ): MediasoupTransport | null {
+  ): SfuTransport | null {
     if (!this._device) return null;
 
     const transport = this._device.createSendTransport({
       id: transportOptions.id,
       iceParameters: transportOptions.iceParameters,
-      iceCandidates: transportOptions.iceCandidates,
-      dtlsParameters: transportOptions.dtlsParameters,
+      iceCandidates: transportOptions.iceCandidates as unknown as Array<Record<string, unknown>>,
+      dtlsParameters: transportOptions.dtlsParameters as unknown,
       ...(iceServers ? { iceServers } : {}),
-    });
+    } as Parameters<Device['createSendTransport']>[0]) as unknown as SfuTransport;
 
     this._sendTransport = transport;
     return transport;
@@ -94,21 +145,39 @@ export class SfuTransportManager {
   createRecvTransport(
     transportOptions: {
       id: string;
-      iceParameters: RTCIceParameters;
-      iceCandidates: RTCIceCandidate[];
-      dtlsParameters: RTCDtlsParameters;
+      iceParameters: {
+        usernameFragment: string;
+        password: string;
+        iceLite?: boolean;
+      };
+      iceCandidates: Array<{
+        foundation: string;
+        priority: number;
+        address: string;
+        protocol: 'udp' | 'tcp';
+        port: number;
+        type: 'host' | 'srflx' | 'prflx' | 'relay';
+        tcpType?: 'active' | 'passive' | 'so';
+      }>;
+      dtlsParameters: {
+        role?: 'auto' | 'client' | 'server';
+        fingerprints: Array<{
+          algorithm: string;
+          value: string;
+        }>;
+      };
     },
     iceServers?: RTCIceServer[]
-  ): MediasoupTransport | null {
+  ): SfuTransport | null {
     if (!this._device) return null;
 
     const transport = this._device.createRecvTransport({
       id: transportOptions.id,
       iceParameters: transportOptions.iceParameters,
-      iceCandidates: transportOptions.iceCandidates,
-      dtlsParameters: transportOptions.dtlsParameters,
+      iceCandidates: transportOptions.iceCandidates as unknown as Array<Record<string, unknown>>,
+      dtlsParameters: transportOptions.dtlsParameters as unknown,
       ...(iceServers ? { iceServers } : {}),
-    });
+    } as Parameters<Device['createRecvTransport']>[0]) as unknown as SfuTransport;
 
     this._recvTransport = transport;
     return transport;
@@ -118,7 +187,7 @@ export class SfuTransportManager {
    * Produce local track to SFU.
    */
   async produce(
-    transport: MediasoupTransport,
+    transport: SfuTransport,
     track: MediaStreamTrack,
     kind: "audio" | "video"
   ): Promise<string> {
@@ -134,34 +203,51 @@ export class SfuTransportManager {
    * Consume remote producer.
    */
   async consume(
-    transport: MediasoupTransport,
+    transport: SfuTransport,
     producerId: string,
     rtpCapabilities: RtpCapabilities
-  ): Promise<ConsumeResult | null> {
-    if (!this._device) return null;
+  ): Promise<{ consumerId: string; producerId: string; track: MediaStreamTrack; kind: "audio" | "video" } | null> {
+    try {
+      const msRtpCapabilities = {
+        codecs: rtpCapabilities.codecs?.map(codec => ({
+          mimeType: codec.mimeType,
+          kind: codec.kind as 'audio' | 'video',
+          preferredPayloadType: codec.preferredPayloadType ?? 0,
+          clockRate: codec.clockRate,
+          channels: codec.channels,
+          parameters: codec.parameters ?? {},
+          rtcpFeedback: codec.rtcpFeedback ?? [],
+        })),
+        headerExtensions: rtpCapabilities.headerExtensions?.map(ext => ({
+          uri: ext.uri,
+          kind: (ext.kind || '') as 'audio' | 'video' | '',
+          preferredId: ext.preferredId,
+          preferredEncrypt: ext.preferredEncrypt,
+          direction: (ext.direction || 'sendrecv') as 'sendrecv' | 'sendonly' | 'recvonly' | 'inactive',
+        })),
+      };
 
-    if (!this._device.canConsume({ producerId, rtpCapabilities })) {
+      const consumer = await transport.consume({
+        producerId,
+        rtpCapabilities: msRtpCapabilities,
+        appData: {},
+      });
+
+      return {
+        consumerId: consumer.id,
+        producerId,
+        track: consumer.track,
+        kind: consumer.kind,
+      };
+    } catch {
       return null;
     }
-
-    const consumer = await transport.consume({
-      producerId,
-      rtpCapabilities,
-      appData: {},
-    });
-
-    return {
-      consumerId: consumer.id,
-      producerId,
-      track: consumer.track,
-      kind: consumer.kind,
-    };
   }
 
   /**
    * Resume consumer (start receiving).
    */
-  async resume(transport: MediasoupTransport, consumerId: string): Promise<void> {
+  async resume(transport: SfuTransport, consumerId: string): Promise<void> {
     // Consumer resume is handled via signaling
   }
 
@@ -185,6 +271,7 @@ export class SfuTransportManager {
 
     this._sendTransport = null;
     this._recvTransport = null;
+    this._device = null;
     this._roomId = null;
   }
 }

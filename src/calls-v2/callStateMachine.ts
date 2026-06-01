@@ -53,7 +53,8 @@ export type CallEvent =
   | "CALL_END"               // any active → ending
   | "CLEANUP_DONE"           // ending → ended
   | "ERROR"                  // any → failed
-  | "RESET";                 // ended | failed → idle
+  | "RESET"                  // ended | failed → idle
+  | "SOFT_RECONNECT_TIMEOUT"; // reconnecting soft timeout (no double failure)
 
 // ─── Transition map ───────────────────────────────────────────────────────────
 const TRANSITIONS: Record<CallState, Partial<Record<CallEvent, CallState>>> = {
@@ -111,8 +112,9 @@ const TRANSITIONS: Record<CallState, Partial<Record<CallEvent, CallState>>> = {
   },
   reconnecting: {
     CONNECTION_RESTORED: "in_call",
+    CONNECTION_LOST: "reconnecting",
+    SOFT_RECONNECT_TIMEOUT: "reconnecting",
     CALL_END: "ending",
-    ERROR: "failed",
   },
   ending: {
     CLEANUP_DONE: "ended",
@@ -190,6 +192,77 @@ export function isCallRinging(state: CallState): boolean {
 
 export function isCallTerminal(state: CallState): boolean {
   return state === "ended" || state === "failed";
+}
+
+// ─── UI status bridge (Telegram 2026) ─────────────────────────────────────────
+
+export type CallUiStatus =
+  | "idle"
+  | "calling"
+  | "ringing"
+  | "connecting"
+  | "connected"
+  | "reconnecting"
+  | "ending"
+  | "ended"
+  | "declined"
+  | "missed";
+
+export function toCallUiStatus(state: CallState, extra?: { calleeAnswered?: boolean; endedBy?: string }): CallUiStatus {
+  switch (state) {
+    case "outgoing_ringing":
+      return "calling";
+    case "incoming_ringing":
+      return "ringing";
+    case "bootstrapping":
+    case "signaling_ready":
+    case "media_acquiring":
+    case "transport_connecting":
+    case "media_ready":
+      return "connecting";
+    case "in_call":
+      return "connected";
+    case "reconnecting":
+      return "reconnecting";
+    case "ending":
+      if (extra?.endedBy === "callee" && !extra?.calleeAnswered) return "declined";
+      return "ending";
+    case "ended":
+      if (extra?.endedBy === "callee" && !extra?.calleeAnswered) return "missed";
+      return "ended";
+    case "failed":
+      return "ended";
+    default:
+      return "idle";
+  }
+}
+
+export function getCallUiStatusText(state: CallState, extra?: { calleeAnswered?: boolean; endedBy?: string }): string {
+  const status = toCallUiStatus(state, extra);
+  switch (status) {
+    case "idle":
+      return "Ожидание";
+    case "calling":
+      return "Вызов...";
+    case "ringing":
+      return "Входящий звонок";
+    case "connecting":
+      return "Подключение";
+    case "connected":
+      return "Соединение";
+    case "reconnecting":
+      return "Переподключение...";
+    case "ending":
+      return "Завершение...";
+    case "ended":
+      return "Завершено";
+    case "declined":
+      return "Занято";
+    case "missed":
+      return "Нет ответа";
+    default:
+      return "Ожидание";
+  }
 }
 
 // ─── Legacy status bridge (temporary) ─────────────────────────────────────────

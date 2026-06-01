@@ -108,7 +108,7 @@ export class CallsWsClient {
   private endpointIndex = 0;
   private connectPromise: Promise<void> | null = null;
   private reconnectTimer: number | null = null;
-  private reconnectAttempts = 0;
+  private reconnectAttempts = -1;
   private manualClose = false;
   private _connectionState: ConnectionState = 'disconnected';
   private readonly connectionStateHandlers = new Set<ConnectionStateHandler>();
@@ -289,7 +289,7 @@ export class CallsWsClient {
     if (this.reconnectTimer !== null) return;
 
     const base = this.config.reconnect?.baseDelayMs ?? this.config.reconnectBaseMs ?? 500;
-    const max = this.config.reconnect?.maxDelayMs ?? this.config.reconnectMaxMs ?? 10_000;
+    const max = this.config.reconnect?.maxDelayMs ?? this.config.reconnectMaxMs ?? 300_000;
     const delay = Math.min(max, base * Math.pow(2, this.reconnectAttempts));
     this.reconnectAttempts += 1;
 

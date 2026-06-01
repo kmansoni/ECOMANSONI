@@ -61,6 +61,7 @@ export class PQXDHCryptoProvider implements CryptoProvider {
       sig: '',
       salt: '',
       senderIdentity: { ...this.identity },
+      messageId: crypto.randomUUID(),
     };
     return dummyKeyPackage;
   }

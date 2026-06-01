@@ -1,13 +1,17 @@
 /**
  * Crypto Agility Module — Post-Quantum Hybrid Support
- * 
+ *
  * Реализует гибридную схему: классический ECDH + PQ (Kyber)
  * для защиты от квантовых компьютеров.
- * 
+ *
  * NIST PQC Standard: Kyber-768 (Module-LWE)
  */
 
 import type { RatchetState } from './doubleRatchet';
+
+// ─── Feature Flag ───────────────────────────────────────────────────────────────
+
+const PQ_ENABLED = String(import.meta.env.VITE_E2EE_PQ_ENABLED ?? "false").trim() === "true";
 
 // ─── Kyber-768 Constants (NIST PQC Standard) ─────────────────────────────────
 
@@ -16,91 +20,120 @@ const KYBER_SECRET_KEY_BYTES = 2400;   // kyber768 secret key
 const KYBER_CIPHERTEXT_BYTES = 1088;   // kyber768 ciphertext
 const KYBER_SHARED_SECRET_BYTES = 32;  // SHA-256 output
 
+// ─── liboqs WASM Loader (Optional Post-Quantum) ────────────────────────────────
+
+interface LiboqsKeypair {
+  public_key: Uint8Array;
+  secret_key: Uint8Array;
+}
+
+interface LiboqsEncaps {
+  ciphertext: Uint8Array;
+  shared_secret: Uint8Array;
+}
+
+interface LiboqsWasm {
+  keypair_kyber_768: () => LiboqsKeypair;
+  encaps_kyber_768: (public_key: Uint8Array) => LiboqsEncaps;
+  decaps_kyber_768: (secret_key: Uint8Array, ciphertext: Uint8Array) => Uint8Array;
+  free?: () => void;
+}
+
+let liboqs: LiboqsWasm | null = null;
+
+async function loadLiboqs(): Promise<LiboqsWasm | null> {
+  if (!PQ_ENABLED) return null;
+
+  try {
+    const mod = await import('liboqs-wasm');
+    liboqs = mod as unknown as LiboqsWasm;
+    return liboqs;
+  } catch (e) {
+    console.warn('[CryptoAgility] liboqs-wasm unavailable, using ECDH-only:', e);
+    return null;
+  }
+}
+
+// ─── Kyber-768 Implementation ───────────────────────────────────────────────────
+
 /**
  * Реализация Kyber-768 на основе reference implementation
  * Использует Module-LWE (Learning With Errors) проблему
- * 
+ *
  * SECURITY: Resistant to both classical and quantum attacks (256-bit security)
  */
 class Kyber768 {
-  private static readonly Q = 3329;  // Modulus
-  private static readonly N = 256;   // Polynomial degree
-  private static readonly K = 3;     // Module rank
-  private static readonly ETA1 = 2;  // CBD parameter
-  private static readonly ETA2 = 2;
+  private static liboqs: LiboqsWasm | null = null;
+  private static initPromise: Promise<LiboqsWasm | null> | null = null;
 
-  /**
-   * Generate Kyber key pair using SHAKE-128 for randomness
-   */
+  private static async ensureInitialized(): Promise<LiboqsWasm | null> {
+    if (this.liboqs !== null) return this.liboqs;
+
+    if (!PQ_ENABLED) return null;
+
+    if (this.initPromise) return this.initPromise;
+
+    this.initPromise = loadLiboqs().then((mod) => {
+      this.liboqs = mod;
+      return mod;
+    });
+
+    return this.initPromise;
+  }
+
   static async generateKeyPair(): Promise<{
     publicKey: Uint8Array;
     privateKey: Uint8Array;
   }> {
-    // В реальной реализации используется:
-    // 1. Генерация случайного seed
-    // 2. Расширение seed через SHAKE-128
-    // 3. Генерация матрицы A (NTT domain)
-    // 4. Генерация векторов s, e с распределением центра
-    // 5. Вычисление t = A*s + e
-    // 6. Кодирование pk = (seed | t), sk = s
-    
-    const seed = crypto.getRandomValues(new Uint8Array(32));
-    
-    // Симуляция: в production нужно использовать
-    // liboqs (Open Quantum Safe) или PQClean
+    const libs = await this.ensureInitialized();
+    if (libs) {
+      const kp = libs.keypair_kyber_768();
+      return { publicKey: kp.public_key, privateKey: kp.secret_key };
+    }
+
+    // Fallback: ECDH-only mode (no PQ)
     const publicKey = crypto.getRandomValues(new Uint8Array(KYBER_PUBLIC_KEY_BYTES));
     const privateKey = crypto.getRandomValues(new Uint8Array(KYBER_SECRET_KEY_BYTES));
-    
-    // Set marker for validation
-    publicKey[0] = 0x99; // Kyber public key marker
-    privateKey[0] = 0x88; // Kyber secret key marker
-    
+    publicKey[0] = 0x99;
+    privateKey[0] = 0x88;
+
     return { publicKey, privateKey };
   }
 
-  /**
-   * Kyber encapsulation: generates ciphertext and shared secret
-   * 
-   * Algorithm:
-   * 1. Parse public key (seed | t)
-   * 2. Generate random vector r using SHAKE-128(seed)
-   * 3. Generate u = Compress(A^T * r + e1)
-   * 4. Generate v = Decompress(Decompress(t^T * r + e2) + message)
-   * 5. Output ct = (u, v), ss = KDF(v)
-   */
   static async encapsulate(publicKey: Uint8Array): Promise<{
     ciphertext: Uint8Array;
     sharedSecret: Uint8Array;
   }> {
+    const libs = await this.ensureInitialized();
+    if (libs) {
+      const result = libs.encaps_kyber_768(publicKey);
+      return { ciphertext: result.ciphertext, sharedSecret: result.shared_secret };
+    }
+
     if (publicKey.length !== KYBER_PUBLIC_KEY_BYTES || publicKey[0] !== 0x99) {
       throw new Error('Kyber: Invalid public key');
     }
 
-    // Симуляция encapsulation
+    // Fallback: симуляция
     const ciphertext = crypto.getRandomValues(new Uint8Array(KYBER_CIPHERTEXT_BYTES));
     const sharedSecret = crypto.getRandomValues(new Uint8Array(KYBER_SHARED_SECRET_BYTES));
-    
-    // В production: использовать HKDF для derivation
     const derivedSecret = await crypto.subtle.digest('SHA-256', sharedSecret);
-    
+
     return {
       ciphertext,
       sharedSecret: new Uint8Array(derivedSecret),
     };
   }
 
-  /**
-   * Kyber decapsulation: recovers shared secret from ciphertext
-   * 
-   * Algorithm:
-   * 1. Parse secret key
-   * 2. Recover message using u and sk
-   * 3. Compute same shared secret as encapsulation
-   */
   static async decapsulate(
     privateKey: Uint8Array,
     ciphertext: Uint8Array
   ): Promise<Uint8Array> {
+    const libs = await this.ensureInitialized();
+    if (libs) {
+      return libs.decaps_kyber_768(privateKey, ciphertext);
+    }
+
     if (privateKey.length !== KYBER_SECRET_KEY_BYTES || privateKey[0] !== 0x88) {
       throw new Error('Kyber: Invalid private key');
     }
@@ -108,45 +141,58 @@ class Kyber768 {
       throw new Error('Kyber: Invalid ciphertext length');
     }
 
-    // Симуляция decapsulation
+    // Fallback: симуляция
     const sharedSecret = crypto.getRandomValues(new Uint8Array(KYBER_SHARED_SECRET_BYTES));
-    
-    // В production: использовать HKDF
     const derivedSecret = await crypto.subtle.digest('SHA-256', sharedSecret);
     return new Uint8Array(derivedSecret);
   }
 
-  /**
-   * Hybrid key exchange: X25519 || Kyber
-   * 
-   * Combines classical ECDH with post-quantum KEM
-   * Provides defense-in-depth against both classical and quantum attacks
-   * 
-   * Security: min(ECDH_security, PQ_security) = 256-bit
-   */
   static async hybridKeyExchange(
     x25519PrivateKey: CryptoKey,
     x25519PublicKey: CryptoKey
   ): Promise<ArrayBuffer> {
-    // 1. Classical ECDH
+    // 1. Classical ECDH — always works, secure against classical attacks
     const ecdhSecret = await crypto.subtle.deriveBits(
       { name: 'ECDH', public: x25519PublicKey },
       x25519PrivateKey,
       256
     );
 
-    // 2. Generate Kyber keys
-    const { publicKey: kyberPK, privateKey: kyberSK } = await this.generateKeyPair();
+    const libs = await this.ensureInitialized();
 
-    // 3. Kyber encapsulation (simulated with remote public key)
-    const { ciphertext, sharedSecret: kyberSS } = await this.encapsulate(kyberPK);
+    // 2. Kyber PQ component (только если liboqs загружен успешно)
+    let ss: Uint8Array | null = null;
 
-    // 4. Combine secrets using HKDF
-    const combined = new Uint8Array(ecdhSecret.byteLength + kyberSS.length);
-    combined.set(new Uint8Array(ecdhSecret), 0);
-    combined.set(kyberSS, ecdhSecret.byteLength);
+    if (libs) {
+      try {
+        const { publicKey } = await this.generateKeyPair();
+        const { sharedSecret } = await this.encapsulate(publicKey);
+        ss = sharedSecret;
+      } catch {
+        // Kyber failed — используем только ECDH
+      }
+    }
 
-    // 5. KDF for final shared secret
+    // 3. Комбинация секретов через HKDF
+    // Если PQ доступен: ECDH || Kyber
+    // Если PQ недоступен: только ECDH (padding до 64 байт)
+    const ecdhBytes = new Uint8Array(ecdhSecret);
+    let combined: Uint8Array;
+
+    if (ss) {
+      combined = new Uint8Array(ecdhBytes.length + ss.length);
+      combined.set(ecdhBytes, 0);
+      combined.set(ss, ecdhBytes.length);
+    } else {
+      // ECDH-only: extend to 64 bytes for consistent KDF output
+      combined = new Uint8Array(64);
+      combined.set(ecdhBytes, 0);
+      if (ecdhBytes.length < 64) {
+        const extra = crypto.getRandomValues(new Uint8Array(64 - ecdhBytes.length));
+        combined.set(extra, ecdhBytes.length);
+      }
+    }
+
     const hkdfKey = await crypto.subtle.importKey(
       'raw',
       combined,
@@ -168,12 +214,25 @@ class Kyber768 {
 
     return finalSecret;
   }
+
+  static getActiveMode(): 'hybrid' | 'classical' {
+    return PQ_ENABLED && this.liboqs !== null ? 'hybrid' : 'classical';
+  }
 }
 
 // ─── Crypto Agility Interface ──────────────────────────────────────────────────
 
 export const CryptoAgility = {
-  getActiveAlgorithm: () => 'X25519-Kyber768-AES256-GCM',
+  getActiveAlgorithm: () => {
+    const mode = Kyber768.getActiveMode();
+    return mode === 'hybrid'
+      ? 'X25519-Kyber768-AES256-GCM'
+      : 'X25519-AES256-GCM';
+  },
+
+  getActiveMode: () => Kyber768.getActiveMode(),
+
+  isPQEnabled: () => PQ_ENABLED,
 
   supportedAlgorithms: [
     'X25519-AES256-GCM',                    // Classical only
@@ -307,17 +366,15 @@ export const CryptoAgility = {
    * Select best available algorithm based on platform capabilities
    */
   async selectBestAvailable(): Promise<string> {
-    try {
-      // Check for PQ support
-      const subtle = crypto.subtle;
-      
-      // Test if we can use advanced algorithms
-      if (subtle && typeof subtle.deriveKey === 'function') {
-        // Prefer hybrid for maximum security
-        return 'X25519-Kyber768-AES256-GCM';
+    if (PQ_ENABLED) {
+      try {
+        const libs = await loadLiboqs();
+        if (libs) {
+          return 'X25519-Kyber768-AES256-GCM';
+        }
+      } catch {
+        // Fall through
       }
-    } catch {
-      // Fallback to classical
     }
     return 'X25519-AES256-GCM';
   },

@@ -58,6 +58,7 @@ export class OpenMlsCryptoProvider implements CryptoProvider {
       sig: '',             // base64 ECDSA-P256-SHA256 signature
       salt: '',            // base64 random 32-byte HKDF salt
       senderIdentity: { ...this.identity },
+      messageId: crypto.randomUUID(),
     });
   }
 

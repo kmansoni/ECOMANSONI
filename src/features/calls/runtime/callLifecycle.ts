@@ -82,16 +82,6 @@ export function canTransition(current: CallState, event: CallEvent): string | nu
     return null;
   }
 
-  // In-call end
-  if (current === "in_call" && event === "CALL_END") {
-    return null;
-  }
-
-  // Ringing end
-  if ((current === "outgoing_ringing" || current === "incoming_ringing") && event === "CALL_END") {
-    return null;
-  }
-
   return `Invalid transition: ${current} + ${event}`;
 }
 
@@ -147,7 +137,7 @@ export function processLifecycleEvent(event: LifecycleEvent): LifecycleResult {
   const { event: evt, context } = event;
 
   // Check guard
-  const guardError = canTransition(context.call?.call_state as CallState ?? "idle", evt);
+  const guardError = canTransition(context.call?.status as CallState ?? "idle", evt);
   if (guardError) {
     return { allowed: false, error: guardError };
   }
@@ -207,4 +197,5 @@ export const EVENT_LABELS: Record<CallEvent, string> = {
   CLEANUP_DONE: "Очистка завершена",
   ERROR: "Ошибка",
   RESET: "Сброс",
+  SOFT_RECONNECT_TIMEOUT: "Мягкий таймаут переподключения",
 };

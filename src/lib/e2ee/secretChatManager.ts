@@ -167,9 +167,21 @@ export class SecretChatManager {
         throw new KeyNotFoundError('Identity signing key not found');
       }
 
+      // Fetch Bob's bundle for identity signing public key
+      const { data: bobBundleData } = await supabase
+        .from('prekey_bundles')
+        .select('identity_signing_public')
+        .eq('user_id', recipientId)
+        .single();
+
+      if (!bobBundleData?.identity_signing_public) {
+        throw new KeyNotFoundError('Bob bundle not found');
+      }
+
       const result = await X3DH.initiatorKeyAgreement(
         identityEcdhKey,
-        bundle
+        bundle,
+        bobBundleData.identity_signing_public
       );
 
       const bobPublicKey = await crypto.subtle.importKey(

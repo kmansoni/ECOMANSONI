@@ -1,7 +1,6 @@
 {
    "compilerOptions": {
-     "ignoreDeprecations": "6.0",
-     "types": ["vitest/globals", "vite/client"],
+    "types": ["vitest/globals", "vite/client"],
     "target": "es2020",
     "useDefineForClassFields": true,
     "lib": ["ES2020", "DOM", "DOM.Iterable"],

@@ -44,7 +44,7 @@ describe('E2EE Crypto Agility', () => {
       );
 
       // Alice отправляет 10 сообщений на старом алгоритме
-      const oldMessages: Array<{ ciphertext: ArrayBuffer; header: any }> = [];
+      const oldMessages: Array<{ ciphertext: string; header: any }> = [];
       for (let i = 0; i < 10; i++) {
         const encrypted = await DoubleRatchetE2E.encrypt(aliceState, `msg-${i}`);
         oldMessages.push(encrypted);
@@ -138,7 +138,7 @@ describe('E2EE Crypto Agility', () => {
       );
 
       // Alice отправляет 50 сообщений
-      const messages: Array<{ ciphertext: ArrayBuffer; header: any }> = [];
+      const messages: Array<{ ciphertext: string; header: any }> = [];
       for (let i = 0; i < 50; i++) {
         const enc = await DoubleRatchetE2E.encrypt(aliceState, `msg-${i}`);
         messages.push(enc);

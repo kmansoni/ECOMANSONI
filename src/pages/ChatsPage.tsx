@@ -1461,6 +1461,7 @@ export function ChatsPage() {
                         onClick={async () => {
                           if (!otherId) return;
                           await startCall(otherId, call.conversation_id, callType, {
+                            userId: otherId,
                             display_name: name,
                             avatar_url: profile?.avatar_url,
                           });

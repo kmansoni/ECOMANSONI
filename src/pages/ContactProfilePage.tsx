@@ -160,6 +160,7 @@ export function ContactProfilePage() {
   const handleCall = async () => {
     if (userId && state?.conversationId) {
       await startCall(userId, state.conversationId, 'audio', {
+        userId,
         display_name: profile?.display_name || 'Собеседник',
         avatar_url: profile?.avatar_url,
       });
@@ -169,6 +170,7 @@ export function ContactProfilePage() {
   const handleVideoCall = async () => {
     if (userId && state?.conversationId) {
       await startCall(userId, state.conversationId, 'video', {
+        userId,
         display_name: profile?.display_name || 'Собеседник',
         avatar_url: profile?.avatar_url,
       });
