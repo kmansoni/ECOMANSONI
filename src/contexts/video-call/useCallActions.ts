@@ -358,8 +358,11 @@ export function useCallActions(deps: CallActionsDeps) {
         }
       }, 60_000);
 
-      dispatchFsm("BOOTSTRAP_START");
-      const ok = await bootstrapCallsV2RoomWithRetry(result, "caller");
+       // Dispatch BOOTSTRAP_START asynchronously to allow UI to show outgoing_ringing state
+       setTimeout(() => {
+         dispatchFsm("BOOTSTRAP_START");
+       }, 0);
+       const ok = await bootstrapCallsV2RoomWithRetry(result, "caller");
       if (ok && callStateRef.current === "bootstrapping") dispatchFsm("BOOTSTRAP_OK");
 
       if (!ok) {
@@ -378,14 +381,15 @@ export function useCallActions(deps: CallActionsDeps) {
 
       // Send invite
       const ws = callsWsRef.current ?? await ensureCallsV2Connected();
+      const callResult = result as VideoCall & { calls_v2_room_id?: string | null; calls_v2_join_token?: string | null };
       if (ws) {
         void ws.callInvite({
           to: calleeId,
           callId: result.id,
           callType,
           conversationId: conversationId ?? undefined,
-          callsV2RoomId: ("calls_v2_room_id" in result ? result.calls_v2_room_id : null) ?? null,
-          callsV2JoinToken: ("calls_v2_join_token" in result ? result.calls_v2_join_token : null) ?? null,
+          callsV2RoomId: callResult.calls_v2_room_id ?? null,
+          callsV2JoinToken: callResult.calls_v2_join_token ?? null,
         }).catch((e) => logger.warn("[CallActions] callInvite failed", e));
       }
 
