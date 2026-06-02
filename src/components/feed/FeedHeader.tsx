@@ -1,5 +1,6 @@
 import { useState, useMemo } from "react";
 import { User, Search, Settings2 } from "lucide-react";
+import { useNavigate } from "react-router-dom";
 import { cn } from "@/lib/utils";
 import { useScrollCollapse } from "@/hooks/useScrollCollapse";
 import { useScrollContainer } from "@/contexts/ScrollContainerContext";
@@ -24,21 +25,24 @@ const COLLAPSED_Y = 0;
 const Y_DIFF = COLLAPSED_Y - HEADER_HEIGHT;
 
 export function FeedHeader() {
+  const navigate = useNavigate();
   const { collapseProgress } = useScrollCollapse(100);
   const scrollContainerRef = useScrollContainer();
   const { usersWithStories, loading } = useStories();
   const [storyViewerOpen, setStoryViewerOpen] = useState(false);
   const [selectedStoryIndex, setSelectedStoryIndex] = useState(0);
 
-  // ИСПРАВЛЕНИЕ дефекта #11: истории открываются всегда при нажатии на аватар.
-  // Ранее при collapseProgress > 0.1 история не открывалась — только скролл вверх.
-  // Теперь: история открывается всегда, скролл — отдельное действие (не связано с нажатием).
+  // ИСПРАВЛЕНИЕ: кнопка "+ Вы" открывает /create для создания публикации
   const handleStoryClick = (index: number, user: UserWithStories) => {
+    if (user.isOwn && user.stories.length === 0) {
+      navigate("/create");
+      return;
+    }
+
     if (user.stories.length > 0) {
       setSelectedStoryIndex(index);
       setStoryViewerOpen(true);
-    } else if (user.isOwn && collapseProgress > 0.1 && scrollContainerRef?.current) {
-      // Для собственного аватара без историй — скролл вверх (чтобы показать кнопку +)
+    } else if (collapseProgress > 0.1 && scrollContainerRef?.current) {
       scrollContainerRef.current.scrollTo({ top: 0, behavior: 'smooth' });
     }
   };

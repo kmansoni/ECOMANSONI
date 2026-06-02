@@ -15,7 +15,6 @@ import { motion, AnimatePresence } from "framer-motion";
 import { FeedBrandPanel } from "@/components/feed/FeedBrandPanel";
 import { PremiumFeedToggle } from "@/components/feed/PremiumFeedToggle";
 import { FeedLayout, FeedTransition } from "@/components/feed/FeedLayout";
-import { CreatePostFAB } from "@/components/feed/CreatePostFAB";
 import { formatRelativeTime } from "@/lib/reels/format";
 import { useTheme, useThemeTokens } from "@/pages/auth/theme";
 import { SidebarWidgetContainer } from "@/components/sidebar/SidebarWidgetContainer";
@@ -221,8 +220,6 @@ export function HomePage() {
           </div>
         </div>
       </FeedLayout>
-
-      {mode === "following" && <CreatePostFAB tokens={tokens} />}
 
       <AnimatePresence>
         {showScrollTop && (
