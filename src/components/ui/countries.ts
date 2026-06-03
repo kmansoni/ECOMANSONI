@@ -10,76 +10,78 @@ export interface CountryData {
 }
 
 // Inline SVG флаги стран (оптимизированные, компактные)
-const f = (rects: Array<{ fill: string; w: number }>): string => {
-  let svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 240">';
+// Используем viewBox с правильными пропорциями 3:2
+const f = (rects: Array<{ fill: string; w: number }>, aspectRatio: number = 1.5): string => {
+  const height = 240 / aspectRatio;
+  let svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 ${height}">`;
   let x = 0;
   for (const { fill, w } of rects) {
-    svg += `<rect x="${x}" width="${w}" height="240" fill="${fill}"/>`;
+    svg += `<rect x="${x}" width="${w}" height="${height}" fill="${fill}"/>`;
     x += w;
   }
   return svg + "</svg>";
 };
 
 // Конвертация в data URI
-const fd = (rects: Array<{ fill: string; w: number }>): string =>
-  "data:image/svg+xml;utf8," + encodeURIComponent(f(rects));
+const fd = (rects: Array<{ fill: string; w: number }>, aspectRatio: number = 1.5): string =>
+  "data:image/svg+xml;utf8," + encodeURIComponent(f(rects, aspectRatio));
 
 export const countries: CountryData[] = [
-  // СНГ и соседи
-  { code: "RU", name: "Россия", nameEn: "Russia", dialCode: "7", flag: fd([{ fill: "#FFF", w: 106 }, { fill: "#0000FF", w: 106 }, { fill: "#FF0000", w: 108 }]) },
-  { code: "KZ", name: "Казахстан", nameEn: "Kazakhstan", dialCode: "7", flag: fd([{ fill: "#00B5B2", w: 106 }, { fill: "#FFD100", w: 106 }, { fill: "#00B5B2", w: 108 }]) },
-  { code: "BY", name: "Беларусь", nameEn: "Belarus", dialCode: "375", flag: fd([{ fill: "#DD0000", w: 106 }, { fill: "#009900", w: 106 }, { fill: "#FFF", w: 108 }]) },
-  { code: "UA", name: "Украина", nameEn: "Ukraine", dialCode: "380", flag: fd([{ fill: "#005BBB", w: 160 }, { fill: "#FFD500", w: 160 }]) },
-  { code: "UZ", name: "Узбекистан", nameEn: "Uzbekistan", dialCode: "998", flag: fd([{ fill: "#0099B5", w: 106 }, { fill: "#FFF", w: 106 }, { fill: "#009933", w: 108 }]) },
-  { code: "KG", name: "Кыргызстан", nameEn: "Kyrgyzstan", dialCode: "996", flag: fd([{ fill: "#FF0000", w: 160 }, { fill: "#FFF", w: 160 }]) },
-  { code: "TJ", name: "Таджикистан", nameEn: "Tajikistan", dialCode: "992", flag: fd([{ fill: "#006600", w: 106 }, { fill: "#FFF", w: 106 }, { fill: "#FF0000", w: 108 }]) },
-  { code: "TM", name: "Туркменистан", nameEn: "Turkmenistan", dialCode: "993", flag: fd([{ fill: "#008000", w: 160 }, { fill: "#FFF", w: 160 }]) },
-  { code: "AZ", name: "Азербайджан", nameEn: "Azerbaijan", dialCode: "994", flag: fd([{ fill: "#00AAFF", w: 106 }, { fill: "#FF0000", w: 106 }, { fill: "#00CC66", w: 108 }]) },
-  { code: "AM", name: "Армения", nameEn: "Armenia", dialCode: "374", flag: fd([{ fill: "#FF0000", w: 106 }, { fill: "#0000FF", w: 106 }, { fill: "#FFAA00", w: 108 }]) },
-  { code: "GE", name: "Грузия", nameEn: "Georgia", dialCode: "995", flag: fd([{ fill: "#FFF", w: 106 }, { fill: "#FF0000", w: 106 }, { fill: "#FF6600", w: 108 }]) },
-  { code: "MD", name: "Молдова", nameEn: "Moldova", dialCode: "373", flag: fd([{ fill: "#004080", w: 106 }, { fill: "#FFCC00", w: 106 }, { fill: "#CC0000", w: 108 }]) },
+  // СНГ и соседи (стандартные 3:2)
+  { code: "RU", name: "Россия", nameEn: "Russia", dialCode: "7", flag: fd([{ fill: "#FFF", w: 106 }, { fill: "#0000FF", w: 106 }, { fill: "#FF0000", w: 108 }], 1.5) },
+  { code: "KZ", name: "Казахстан", nameEn: "Kazakhstan", dialCode: "7", flag: fd([{ fill: "#00B5B2", w: 106 }, { fill: "#FFD100", w: 106 }, { fill: "#00B5B2", w: 108 }], 1.5) },
+  { code: "BY", name: "Беларусь", nameEn: "Belarus", dialCode: "375", flag: fd([{ fill: "#DD0000", w: 106 }, { fill: "#009900", w: 106 }, { fill: "#FFF", w: 108 }], 1.5) },
+  { code: "UA", name: "Украина", nameEn: "Ukraine", dialCode: "380", flag: fd([{ fill: "#005BBB", w: 160 }, { fill: "#FFD500", w: 160 }], 2) },
+  { code: "UZ", name: "Узбекистан", nameEn: "Uzbekistan", dialCode: "998", flag: fd([{ fill: "#0099B5", w: 106 }, { fill: "#FFF", w: 106 }, { fill: "#009933", w: 108 }], 1.5) },
+  { code: "KG", name: "Кыргызстан", nameEn: "Kyrgyzstan", dialCode: "996", flag: fd([{ fill: "#FF0000", w: 160 }, { fill: "#FFF", w: 160 }], 2) },
+  { code: "TJ", name: "Таджикистан", nameEn: "Tajikistan", dialCode: "992", flag: fd([{ fill: "#006600", w: 106 }, { fill: "#FFF", w: 106 }, { fill: "#FF0000", w: 108 }], 1.5) },
+  { code: "TM", name: "Туркменистан", nameEn: "Turkmenistan", dialCode: "993", flag: fd([{ fill: "#008000", w: 160 }, { fill: "#FFF", w: 160 }], 2) },
+  { code: "AZ", name: "Азербайджан", nameEn: "Azerbaijan", dialCode: "994", flag: fd([{ fill: "#00AAFF", w: 106 }, { fill: "#FF0000", w: 106 }, { fill: "#00CC66", w: 108 }], 1.5) },
+  { code: "AM", name: "Армения", nameEn: "Armenia", dialCode: "374", flag: fd([{ fill: "#FF0000", w: 106 }, { fill: "#0000FF", w: 106 }, { fill: "#FFAA00", w: 108 }], 1.5) },
+  { code: "GE", name: "Грузия", nameEn: "Georgia", dialCode: "995", flag: fd([{ fill: "#FFF", w: 106 }, { fill: "#FF0000", w: 106 }, { fill: "#FF6600", w: 108 }], 1.5) },
+  { code: "MD", name: "Молдова", nameEn: "Moldova", dialCode: "373", flag: fd([{ fill: "#004080", w: 106 }, { fill: "#FFCC00", w: 106 }, { fill: "#CC0000", w: 108 }], 1.5) },
 
-  // Европа
-  { code: "US", name: "США", nameEn: "United States", dialCode: "1", flag: fd([{ fill: "#B22234", w: 228 }, { fill: "#FFF", w: 6 }, { fill: "#B22234", w: 6 }]) },
-  { code: "GB", name: "Великобритания", nameEn: "United Kingdom", dialCode: "44", flag: fd([{ fill: "#012169", w: 160 }, { fill: "#FFF", w: 80 }]) },
-  { code: "DE", name: "Германия", nameEn: "Germany", dialCode: "49", flag: fd([{ fill: "#000", w: 80 }, { fill: "#DD0000", w: 80 }, { fill: "#FFCC00", w: 80 }]) },
-  { code: "FR", name: "Франция", nameEn: "France", dialCode: "33", flag: fd([{ fill: "#002395", w: 106 }, { fill: "#FFF", w: 106 }, { fill: "#ED2939", w: 108 }]) },
-  { code: "IT", name: "Италия", nameEn: "Italy", dialCode: "39", flag: fd([{ fill: "#009246", w: 106 }, { fill: "#FFF", w: 106 }, { fill: "#CE2B37", w: 108 }]) },
-  { code: "ES", name: "Испания", nameEn: "Spain", dialCode: "34", flag: fd([{ fill: "#AA151B", w: 106 }, { fill: "#F1BF00", w: 106 }, { fill: "#AA151B", w: 108 }]) },
-  { code: "PT", name: "Португалия", nameEn: "Portugal", dialCode: "351", flag: fd([{ fill: "#006600", w: 120 }, { fill: "#FF0000", w: 120 }]) },
-  { code: "NL", name: "Нидерланды", nameEn: "Netherlands", dialCode: "31", flag: fd([{ fill: "#AE1C28", w: 80 }, { fill: "#FFF", w: 80 }, { fill: "#21468B", w: 80 }]) },
-  { code: "BE", name: "Бельгия", nameEn: "Belgium", dialCode: "32", flag: fd([{ fill: "#000", w: 106 }, { fill: "#FAE042", w: 106 }, { fill: "#ED2939", w: 108 }]) },
-  { code: "CH", name: "Швейцария", nameEn: "Switzerland", dialCode: "41", flag: fd([{ fill: "#FF0000", w: 106 }, { fill: "#FFF", w: 106 }, { fill: "#FF0000", w: 108 }]) },
-  { code: "AT", name: "Австрия", nameEn: "Austria", dialCode: "43", flag: fd([{ fill: "#ED2939", w: 80 }, { fill: "#FFF", w: 80 }, { fill: "#ED2939", w: 80 }]) },
-  { code: "PL", name: "Польша", nameEn: "Poland", dialCode: "48", flag: fd([{ fill: "#FFF", w: 120 }, { fill: "#DC143C", w: 120 }]) },
-  { code: "CZ", name: "Чехия", nameEn: "Czech Republic", dialCode: "420", flag: fd([{ fill: "#FFF", w: 106 }, { fill: "#D7141A", w: 106 }, { fill: "#11457E", w: 108 }]) },
-  { code: "SE", name: "Швеция", nameEn: "Sweden", dialCode: "46", flag: fd([{ fill: "#006AA7", w: 106 }, { fill: "#FECC00", w: 106 }, { fill: "#006AA7", w: 108 }]) },
-  { code: "NO", name: "Норвегия", nameEn: "Norway", dialCode: "47", flag: fd([{ fill: "#EF2B2D", w: 80 }, { fill: "#FFF", w: 80 }, { fill: "#002868", w: 80 }]) },
-  { code: "FI", name: "Финляндия", nameEn: "Finland", dialCode: "358", flag: fd([{ fill: "#FFF", w: 106 }, { fill: "#003580", w: 106 }, { fill: "#FFF", w: 108 }]) },
-  { code: "DK", name: "Дания", nameEn: "Denmark", dialCode: "45", flag: fd([{ fill: "#C8102E", w: 106 }, { fill: "#FFF", w: 106 }, { fill: "#C8102E", w: 108 }]) },
-  { code: "IE", name: "Ирландия", nameEn: "Ireland", dialCode: "353", flag: fd([{ fill: "#169B62", w: 106 }, { fill: "#FFF", w: 106 }, { fill: "#FF883E", w: 108 }]) },
-  { code: "IS", name: "Исландия", nameEn: "Iceland", dialCode: "354", flag: fd([{ fill: "#003897", w: 106 }, { fill: "#FFF", w: 106 }, { fill: "#D72828", w: 108 }]) },
-  { code: "GR", name: "Греция", nameEn: "Greece", dialCode: "30", flag: fd([{ fill: "#0D5EAF", w: 80 }, { fill: "#FFF", w: 80 }, { fill: "#0D5EAF", w: 80 }]) },
-  { code: "HU", name: "Венгрия", nameEn: "Hungary", dialCode: "36", flag: fd([{ fill: "#CC0000", w: 80 }, { fill: "#FFF", w: 80 }, { fill: "#008C45", w: 80 }]) },
-  { code: "RO", name: "Румыния", nameEn: "Romania", dialCode: "40", flag: fd([{ fill: "#002B7F", w: 106 }, { fill: "#FCD116", w: 106 }, { fill: "#CE1126", w: 108 }]) },
-  { code: "BG", name: "Болгария", nameEn: "Bulgaria", dialCode: "359", flag: fd([{ fill: "#FFF", w: 106 }, { fill: "#00966E", w: 106 }, { fill: "#D62612", w: 108 }]) },
-  { code: "RS", name: "Сербия", nameEn: "Serbia", dialCode: "381", flag: fd([{ fill: "#0C4076", w: 106 }, { fill: "#C6363C", w: 106 }, { fill: "#FFF", w: 108 }]) },
-  { code: "HR", name: "Хорватия", nameEn: "Croatia", dialCode: "385", flag: fd([{ fill: "#FF0000", w: 106 }, { fill: "#FFF", w: 106 }, { fill: "#0C4076", w: 108 }]) },
-  { code: "SK", name: "Словакия", nameEn: "Slovakia", dialCode: "421", flag: fd([{ fill: "#FFF", w: 106 }, { fill: "#0C4076", w: 106 }, { fill: "#D62828", w: 108 }]) },
-  { code: "SI", name: "Словения", nameEn: "Slovenia", dialCode: "386", flag: fd([{ fill: "#FFF", w: 106 }, { fill: "#0C4076", w: 106 }, { fill: "#FF0000", w: 108 }]) },
-  { code: "AL", name: "Албания", nameEn: "Albania", dialCode: "355", flag: fd([{ fill: "#E41E20", w: 106 }, { fill: "#000", w: 106 }, { fill: "#E41E20", w: 108 }]) },
-  { code: "MK", name: "Северная Македония", nameEn: "North Macedonia", dialCode: "389", flag: fd([{ fill: "#D20000", w: 106 }, { fill: "#FFEE00", w: 106 }, { fill: "#D20000", w: 108 }]) },
-  { code: "BA", name: "Босния и Герцеговина", nameEn: "Bosnia", dialCode: "387", flag: fd([{ fill: "#012169", w: 53 }, { fill: "#FCD116", w: 53 }, { fill: "#012169", w: 54 }]) },
-  { code: "ME", name: "Черногория", nameEn: "Montenegro", dialCode: "382", flag: fd([{ fill: "#C6363C", w: 106 }, { fill: "#003087", w: 106 }, { fill: "#D3BC47", w: 108 }]) },
-  { code: "EE", name: "Эстония", nameEn: "Estonia", dialCode: "372", flag: fd([{ fill: "#0072CE", w: 106 }, { fill: "#000", w: 106 }, { fill: "#FFF", w: 108 }]) },
-  { code: "LV", name: "Латвия", nameEn: "Latvia", dialCode: "371", flag: fd([{ fill: "#9E3039", w: 106 }, { fill: "#FFF", w: 106 }, { fill: "#9E3039", w: 108 }]) },
-  { code: "LT", name: "Литва", nameEn: "Lithuania", dialCode: "370", flag: fd([{ fill: "#D12830", w: 106 }, { fill: "#006B3F", w: 106 }, { fill: "#D12830", w: 108 }]) },
+  // Европа (особые пропорции)
+  { code: "US", name: "США", nameEn: "United States", dialCode: "1", flag: fd([{ fill: "#B22234", w: 228 }, { fill: "#FFF", w: 6 }, { fill: "#B22234", w: 6 }], 1.9) },
+  { code: "GB", name: "Великобритания", nameEn: "United Kingdom", dialCode: "44", flag: fd([{ fill: "#012169", w: 160 }, { fill: "#FFF", w: 80 }], 2) },
+  { code: "DE", name: "Германия", nameEn: "Germany", dialCode: "49", flag: fd([{ fill: "#000", w: 80 }, { fill: "#DD0000", w: 80 }, { fill: "#FFCC00", w: 80 }], 1) },
+  { code: "FR", name: "Франция", nameEn: "France", dialCode: "33", flag: fd([{ fill: "#002395", w: 106 }, { fill: "#FFF", w: 106 }, { fill: "#ED2939", w: 108 }], 1.5) },
+  { code: "IT", name: "Италия", nameEn: "Italy", dialCode: "39", flag: fd([{ fill: "#009246", w: 106 }, { fill: "#FFF", w: 106 }, { fill: "#CE2B37", w: 108 }], 1.5) },
+  { code: "ES", name: "Испания", nameEn: "Spain", dialCode: "34", flag: fd([{ fill: "#AA151B", w: 106 }, { fill: "#F1BF00", w: 106 }, { fill: "#AA151B", w: 108 }], 1.5) },
+  { code: "PT", name: "Португалия", nameEn: "Portugal", dialCode: "351", flag: fd([{ fill: "#006600", w: 120 }, { fill: "#FF0000", w: 120 }], 1.33) },
+  { code: "NL", name: "Нидерланды", nameEn: "Netherlands", dialCode: "31", flag: fd([{ fill: "#AE1C28", w: 80 }, { fill: "#FFF", w: 80 }, { fill: "#21468B", w: 80 }], 1) },
+  { code: "BE", name: "Бельгия", nameEn: "Belgium", dialCode: "32", flag: fd([{ fill: "#000", w: 106 }, { fill: "#FAE042", w: 106 }, { fill: "#ED2939", w: 108 }], 1.5) },
+  { code: "CH", name: "Швейцария", nameEn: "Switzerland", dialCode: "41", flag: fd([{ fill: "#FF0000", w: 106 }, { fill: "#FFF", w: 106 }, { fill: "#FF0000", w: 108 }], 1) },
+  { code: "AT", name: "Австрия", nameEn: "Austria", dialCode: "43", flag: fd([{ fill: "#ED2939", w: 80 }, { fill: "#FFF", w: 80 }, { fill: "#ED2939", w: 80 }], 1) },
+  { code: "PL", name: "Польша", nameEn: "Poland", dialCode: "48", flag: fd([{ fill: "#FFF", w: 120 }, { fill: "#DC143C", w: 120 }], 1.5) },
+  { code: "CZ", name: "Чехия", nameEn: "Czech Republic", dialCode: "420", flag: fd([{ fill: "#FFF", w: 106 }, { fill: "#D7141A", w: 106 }, { fill: "#11457E", w: 108 }], 1.5) },
+  { code: "SE", name: "Швеция", nameEn: "Sweden", dialCode: "46", flag: fd([{ fill: "#006AA7", w: 106 }, { fill: "#FECC00", w: 106 }, { fill: "#006AA7", w: 108 }], 1) },
+  { code: "NO", name: "Норвегия", nameEn: "Norway", dialCode: "47", flag: fd([{ fill: "#EF2B2D", w: 80 }, { fill: "#FFF", w: 80 }, { fill: "#002868", w: 80 }], 1) },
+  { code: "FI", name: "Финляндия", nameEn: "Finland", dialCode: "358", flag: fd([{ fill: "#FFF", w: 106 }, { fill: "#003580", w: 106 }, { fill: "#FFF", w: 108 }], 1.5) },
+  { code: "DK", name: "Дания", nameEn: "Denmark", dialCode: "45", flag: fd([{ fill: "#C8102E", w: 106 }, { fill: "#FFF", w: 106 }, { fill: "#C8102E", w: 108 }], 1.5) },
+  { code: "IE", name: "Ирландия", nameEn: "Ireland", dialCode: "353", flag: fd([{ fill: "#169B62", w: 106 }, { fill: "#FFF", w: 106 }, { fill: "#FF883E", w: 108 }], 1.5) },
+  { code: "IS", name: "Исландия", nameEn: "Iceland", dialCode: "354", flag: fd([{ fill: "#003897", w: 106 }, { fill: "#FFF", w: 106 }, { fill: "#D72828", w: 108 }], 1) },
+  { code: "GR", name: "Греция", nameEn: "Greece", dialCode: "30", flag: fd([{ fill: "#0D5EAF", w: 80 }, { fill: "#FFF", w: 80 }, { fill: "#0D5EAF", w: 80 }], 1) },
+  { code: "HU", name: "Венгрия", nameEn: "Hungary", dialCode: "36", flag: fd([{ fill: "#CC0000", w: 80 }, { fill: "#FFF", w: 80 }, { fill: "#008C45", w: 80 }], 1) },
+  { code: "RO", name: "Румыния", nameEn: "Romania", dialCode: "40", flag: fd([{ fill: "#002B7F", w: 106 }, { fill: "#FCD116", w: 106 }, { fill: "#CE1126", w: 108 }], 1.5) },
+  { code: "BG", name: "Болгария", nameEn: "Bulgaria", dialCode: "359", flag: fd([{ fill: "#FFF", w: 106 }, { fill: "#00966E", w: 106 }, { fill: "#D62612", w: 108 }], 1.5) },
+  { code: "RS", name: "Сербия", nameEn: "Serbia", dialCode: "381", flag: fd([{ fill: "#0C4076", w: 106 }, { fill: "#C6363C", w: 106 }, { fill: "#FFF", w: 108 }], 1.5) },
+  { code: "HR", name: "Хорватия", nameEn: "Croatia", dialCode: "385", flag: fd([{ fill: "#FF0000", w: 106 }, { fill: "#FFF", w: 106 }, { fill: "#0C4076", w: 108 }], 1.5) },
+  { code: "SK", name: "Словакия", nameEn: "Slovakia", dialCode: "421", flag: fd([{ fill: "#FFF", w: 106 }, { fill: "#0C4076", w: 106 }, { fill: "#D62828", w: 108 }], 1.5) },
+  { code: "SI", name: "Словения", nameEn: "Slovenia", dialCode: "386", flag: fd([{ fill: "#FFF", w: 106 }, { fill: "#0C4076", w: 106 }, { fill: "#FF0000", w: 108 }], 1.5) },
+  { code: "AL", name: "Албания", nameEn: "Albania", dialCode: "355", flag: fd([{ fill: "#E41E20", w: 106 }, { fill: "#000", w: 106 }, { fill: "#E41E20", w: 108 }], 1) },
+  { code: "MK", name: "Северная Македония", nameEn: "North Macedonia", dialCode: "389", flag: fd([{ fill: "#D20000", w: 106 }, { fill: "#FFEE00", w: 106 }, { fill: "#D20000", w: 108 }], 1) },
+  { code: "BA", name: "Босния и Герцеговина", nameEn: "Bosnia", dialCode: "387", flag: fd([{ fill: "#012169", w: 53 }, { fill: "#FCD116", w: 53 }, { fill: "#012169", w: 54 }], 1.5) },
+  { code: "ME", name: "Черногория", nameEn: "Montenegro", dialCode: "382", flag: fd([{ fill: "#C6363C", w: 106 }, { fill: "#003087", w: 106 }, { fill: "#D3BC47", w: 108 }], 1.5) },
+  { code: "EE", name: "Эстония", nameEn: "Estonia", dialCode: "372", flag: fd([{ fill: "#0072CE", w: 106 }, { fill: "#000", w: 106 }, { fill: "#FFF", w: 108 }], 1.5) },
+  { code: "LV", name: "Латвия", nameEn: "Latvia", dialCode: "371", flag: fd([{ fill: "#9E3039", w: 106 }, { fill: "#FFF", w: 106 }, { fill: "#9E3039", w: 108 }], 1.5) },
+  { code: "LT", name: "Литва", nameEn: "Lithuania", dialCode: "370", flag: fd([{ fill: "#D12830", w: 106 }, { fill: "#006B3F", w: 106 }, { fill: "#D12830", w: 108 }], 1.5) },
 
   // Азия
-  { code: "TR", name: "Турция", nameEn: "Turkey", dialCode: "90", flag: fd([{ fill: "#E30A17", w: 160 }, { fill: "#FFF", w: 160 }]) },
-  { code: "AE", name: "ОАЭ", nameEn: "UAE", dialCode: "971", flag: fd([{ fill: "#00732F", w: 53 }, { fill: "#FFF", w: 53 }, { fill: "#FF0000", w: 54 }]) },
-  { code: "IL", name: "Израиль", nameEn: "Israel", dialCode: "972", flag: fd([{ fill: "#FFF", w: 80 }, { fill: "#0038B8", w: 80 }, { fill: "#FFF", w: 80 }]) },
-  { code: "SA", name: "Саудовская Аравия", nameEn: "Saudi Arabia", dialCode: "966", flag: fd([{ fill: "#006C35", w: 160 }, { fill: "#FFF", w: 160 }]) },
+  { code: "TR", name: "Турция", nameEn: "Turkey", dialCode: "90", flag: fd([{ fill: "#E30A17", w: 160 }, { fill: "#FFF", w: 160 }], 2) },
+  { code: "AE", name: "ОАЭ", nameEn: "UAE", dialCode: "971", flag: fd([{ fill: "#00732F", w: 53 }, { fill: "#FFF", w: 53 }, { fill: "#FF0000", w: 54 }], 1) },
+  { code: "IL", name: "Израиль", nameEn: "Israel", dialCode: "972", flag: fd([{ fill: "#FFF", w: 80 }, { fill: "#0038B8", w: 80 }, { fill: "#FFF", w: 80 }], 1) },
+  { code: "SA", name: "Саудовская Аравия", nameEn: "Saudi Arabia", dialCode: "966", flag: fd([{ fill: "#006C35", w: 160 }, { fill: "#FFF", w: 160 }], 2) },
   { code: "IR", name: "Иран", nameEn: "Iran", dialCode: "98", flag: fd([{ fill: "#DA0000", w: 106 }, { fill: "#239F40", w: 106 }, { fill: "#FFF", w: 108 }]) },
   { code: "IQ", name: "Ирак", nameEn: "Iraq", dialCode: "964", flag: fd([{ fill: "#CC0000", w: 106 }, { fill: "#FFF", w: 106 }, { fill: "#000", w: 108 }]) },
   { code: "SY", name: "Сирия", nameEn: "Syria", dialCode: "963", flag: fd([{ fill: "#E70013", w: 53 }, { fill: "#FFF", w: 53 }, { fill: "#000", w: 54 }]) },

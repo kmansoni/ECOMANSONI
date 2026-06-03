@@ -63,14 +63,14 @@ export function SocialLoginButtons({ tokens }: { tokens: ThemeTokens }) {
         <span className={`h-px flex-1 ${tokens.isDark ? "bg-white/[0.08]" : "bg-slate-300/70"}`} />
       </div>
 
-      <div className="flex gap-3">
+      <div className="grid grid-cols-3 gap-2 sm:gap-3">
         {buttons.map((btn) => (
           <motion.button
             key={btn.label}
             type="button"
             onClick={btn.onClick}
             whileTap={{ scale: 0.96 }}
-            className={`flex-1 flex items-center justify-center gap-2 h-12 rounded-xl backdrop-blur-xl transition-all duration-200 text-sm font-medium border ${
+            className={`flex flex-col sm:flex-row items-center justify-center gap-1.5 sm:gap-2 h-14 sm:h-12 rounded-xl backdrop-blur-xl transition-all duration-200 text-xs sm:text-sm font-medium border ${
               tokens.isDark
                 ? "text-white/70 hover:text-white border-white/[0.06] hover:border-white/[0.12] hover:bg-white/[0.05]"
                 : "text-slate-700 hover:text-slate-900 bg-white/70 border-slate-300 hover:border-slate-400 hover:bg-white"

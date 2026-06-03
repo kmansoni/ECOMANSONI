@@ -30,7 +30,7 @@ export function WaveBackground({ tokens }: { tokens: ThemeTokens }) {
         <svg viewBox="0 0 1440 400" className="w-full h-full" preserveAspectRatio="xMidYMax slice">
           {/* Wave 1 - back, cyan - tallest */}
           <motion.path
-            d="M0,250 C360,150 720,300 1080,200 C1260,150 1380,220 1440,200 L1440,400 L0,400 Z"
+            initial={{ d: "M0,250 C360,150 720,300 1080,200 C1260,150 1380,220 1440,200 L1440,400 L0,400 Z" }}
             fill={tokens.isDark ? "rgba(0,180,216,0.12)" : "rgba(0,180,216,0.08)"}
             animate={{
               d: [
@@ -44,7 +44,7 @@ export function WaveBackground({ tokens }: { tokens: ThemeTokens }) {
 
           {/* Wave 2 - middle, teal */}
           <motion.path
-            d="M0,320 C400,250 800,350 1200,300 C1320,280 1380,330 1440,320 L1440,400 L0,400 Z"
+            initial={{ d: "M0,320 C400,250 800,350 1200,300 C1320,280 1380,330 1440,320 L1440,400 L0,400 Z" }}
             fill={tokens.isDark ? "rgba(0,200,150,0.10)" : "rgba(0,200,150,0.07)"}
             animate={{
               d: [
@@ -58,7 +58,7 @@ export function WaveBackground({ tokens }: { tokens: ThemeTokens }) {
 
           {/* Wave 3 - front, emerald - brightest */}
           <motion.path
-            d="M0,380 C500,340 1000,390 1440,360 L1440,400 L0,400 Z"
+            initial={{ d: "M0,380 C500,340 1000,390 1440,360 L1440,400 L0,400 Z" }}
             fill={tokens.isDark ? "rgba(79,208,128,0.08)" : "rgba(79,208,128,0.05)"}
             animate={{
               d: [

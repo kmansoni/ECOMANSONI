@@ -192,7 +192,7 @@ export function PhoneInput({
             if (!showDropdown) inputRef.current?.focus();
           }}
           className={cn(
-            "absolute left-1 z-20 flex items-center gap-1 h-12 px-3 rounded-2xl backdrop-blur-xl transition-all cursor-pointer",
+            "absolute left-1 z-20 flex items-center gap-1.5 h-12 px-2.5 sm:px-3 rounded-2xl backdrop-blur-xl transition-all cursor-pointer",
             "hover:brightness-110 active:scale-95",
             isLight
               ? "bg-white/60 border border-slate-300"
@@ -200,19 +200,22 @@ export function PhoneInput({
           )}
           aria-label="Выбрать страну"
         >
-          <img
-            src={selectedCountry.flag}
-            alt={selectedCountry.name}
-            className="w-7 h-5 rounded-[3px] object-cover"
-          />
+          <div className="w-6 h-4 sm:w-7 sm:h-5 rounded-[2px] overflow-hidden flex-shrink-0 flex items-center justify-center">
+            <img
+              src={selectedCountry.flag}
+              alt={selectedCountry.name}
+              className="w-full h-full object-contain"
+              style={{ imageRendering: 'crisp-edges' }}
+            />
+          </div>
           <span className={cn(
-            "text-[15px] font-medium",
+            "text-[13px] sm:text-[15px] font-medium",
             isLight ? "text-slate-700" : "text-white/90"
           )}>
             +{selectedCountry.dialCode}
           </span>
           <ChevronDown className={cn(
-            "w-4 h-4 transition-transform",
+            "w-3.5 h-3.5 sm:w-4 sm:h-4 transition-transform flex-shrink-0",
             isLight ? "text-slate-500" : "text-white/60",
             showDropdown && "rotate-180"
           )} />
@@ -233,7 +236,7 @@ export function PhoneInput({
           required={required}
           aria-label="Номер телефона"
           className={cn(
-            "w-full pl-[138px] pr-4 h-14 rounded-2xl border backdrop-blur-xl transition-all text-[15px] outline-none",
+            "w-full pl-[100px] sm:pl-[138px] pr-4 h-14 rounded-2xl border backdrop-blur-xl transition-all text-[15px] outline-none",
             isLight
               ? "bg-white/85 border-slate-300 placeholder:text-slate-400 hover:border-slate-400 focus:border-teal-500 text-slate-900"
               : "bg-white/[0.05] border-white/[0.08] placeholder:text-white/40 hover:border-white/15 focus:border-white/20 text-white"
