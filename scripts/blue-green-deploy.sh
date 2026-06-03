@@ -14,6 +14,10 @@ log() { echo "[$(date '+%H:%M:%S')] $*"; }
 log "Pointing current → dist"
 ln -sfn "$APP_DIR/dist" "$CURRENT_LINK"
 
+# Ensure nginx (www-data) can traverse the directory and read files
+chmod a+x "$APP_DIR"
+chmod -R a+rX "$APP_DIR/dist"
+
 # Reload nginx if config references APP_DIR
 NGINX_CONF=""
 for dir in /etc/nginx/sites-enabled /etc/nginx/sites-available /etc/nginx/conf.d; do
