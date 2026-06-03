@@ -200,14 +200,9 @@ export function PhoneInput({
           )}
           aria-label="Выбрать страну"
         >
-          <div className="w-6 h-4 sm:w-7 sm:h-5 rounded-[2px] overflow-hidden flex-shrink-0 flex items-center justify-center">
-            <img
-              src={selectedCountry.flag}
-              alt={selectedCountry.name}
-              className="w-full h-full object-contain"
-              style={{ imageRendering: 'crisp-edges' }}
-            />
-          </div>
+          <span className="text-xl leading-none flex-shrink-0" aria-hidden="true">
+            {selectedCountry.flag}
+          </span>
           <span className={cn(
             "text-[13px] sm:text-[15px] font-medium",
             isLight ? "text-slate-700" : "text-white/90"
@@ -305,11 +300,9 @@ export function PhoneInput({
                     selectedCountry.code === country.code && (isLight ? "bg-teal-50" : "bg-white/10")
                   )}
                 >
-                  <img
-                    src={country.flag}
-                    alt={country.name}
-                    className="w-7 h-5 rounded-[3px] object-cover flex-shrink-0"
-                  />
+                  <span className="text-xl leading-none flex-shrink-0 w-7 text-center" aria-hidden="true">
+                    {country.flag}
+                  </span>
                   <span className={cn(
                     "flex-1 text-[14px]",
                     isLight ? "text-slate-700" : "text-white"
