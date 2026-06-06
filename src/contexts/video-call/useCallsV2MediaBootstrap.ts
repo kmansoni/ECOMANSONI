@@ -308,13 +308,23 @@ screenStream,
 
       const epochGuard = epochGuardRef.current;
       if (epochGuard && !epochGuard.isMediaAllowed()) {
-        logger.info("[VideoCallContext] calls-v2 media-bootstrap deferred by epoch guard", {
+        const blockReason = epochGuard.getMediaBlockReason();
+        if (blockReason !== "E2EE not ready — no valid epoch key") {
+          logger.info("[VideoCallContext] calls-v2 media-bootstrap deferred by epoch guard", {
+            callId,
+            roomId,
+            reason: blockReason,
+            epoch: epochGuard.getEpoch(),
+          });
+          return;
+        }
+
+        logger.info("[VideoCallContext] calls-v2 media-bootstrap continuing to establish initial E2EE key", {
           callId,
           roomId,
-          reason: epochGuard.getMediaBlockReason(),
+          reason: blockReason,
           epoch: epochGuard.getEpoch(),
         });
-        return;
       }
 
       const routerRtpCapabilities = sfuRouterRtpCapabilitiesRef.current;
