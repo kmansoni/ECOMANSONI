@@ -95,11 +95,15 @@ export class SFrameContext {
    /**
     * Установка ключа шифрования. Resets replay protection state.
     */
-   async setEncryptionKey(key: CryptoKey, keyId: number): Promise<void> {
+   async setEncryptionKey(key: CryptoKey, keyId: number, epoch?: number): Promise<void> {
      this.key = key;
      this.keyId = keyId & 0x7fffffff; // max 31 бит
-     // Increment epoch to ensure IV uniqueness after key rotation
-     this.epoch = (this.epoch + 1) >>> 0;
+     // Use the negotiated call epoch when provided; otherwise keep legacy monotonic local epoch.
+     this.epoch = typeof epoch === 'number' && Number.isFinite(epoch)
+       ? epoch >>> 0
+       : (this.epoch + 1) >>> 0;
+     // Counter must reset with a new key/epoch; IV uniqueness comes from epoch || counter.
+     this.counter = 0;
      // Reset replay state on key change
      this.highestSeenCounter = -1;
      this.seenCounters.clear();

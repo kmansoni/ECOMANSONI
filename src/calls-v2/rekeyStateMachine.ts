@@ -68,6 +68,12 @@ export type RekeyEventHandler = (event: RekeyEvent) => void;
 
 import { logger } from '@/lib/logger';
 
+const UUID_V4_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+function isUuidV4(value: string): boolean {
+  return UUID_V4_RE.test(value);
+}
+
 /**
  * Anti-replay entry: messageId + expiry timestamp.
  */
@@ -204,7 +210,7 @@ export class RekeyStateMachine {
    * @returns new epoch number, or null if blocked (wrong state / cooldown).
    * Only call if you are the room leader.
    */
-  initiateRekey(): number | null {
+  initiateRekey(options: { force?: boolean } = {}): number | null {
     if (this.state !== 'IDLE') {
       logger.warn(
         `[RekeyStateMachine] Cannot rekey: state=${this.state}`
@@ -213,7 +219,7 @@ export class RekeyStateMachine {
     }
 
     const now = Date.now();
-    if (now - this.lastRekeyTime < this.config.minRekeyIntervalMs) {
+    if (!options.force && now - this.lastRekeyTime < this.config.minRekeyIntervalMs) {
       logger.warn(
         `[RekeyStateMachine] Cannot rekey: min interval not elapsed`
       );
@@ -460,6 +466,10 @@ export class RekeyStateMachine {
     // An absent messageId is a security concern: replay attacks are undetectable.
     if (!messageId) {
       logger.warn(`[RekeyStateMachine] REJECTED: missing messageId for ${kind} (required for anti-replay)`);
+      return false;
+    }
+    if (!isUuidV4(messageId)) {
+      logger.warn(`[RekeyStateMachine] REJECTED: invalid ${kind} messageId=${messageId} (UUID v4 required)`);
       return false;
     }
 

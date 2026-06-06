@@ -243,6 +243,93 @@ class WsSession {
   }
 }
 
+function buildDiscoveryKeyPackage(params: {
+  roomId: string;
+  fromDeviceId: string;
+  toDeviceId: string;
+  userId: string;
+  epoch?: number;
+  messageId?: string;
+  senderKeyId?: string;
+}) {
+  const b64 = Buffer.from("a".repeat(32)).toString("base64");
+  const sig = Buffer.from("s".repeat(64)).toString("base64");
+  const jwkCoord = Buffer.from("x".repeat(32)).toString("base64url");
+  return {
+    keyPackageType: "DISCOVERY",
+    roomId: params.roomId,
+    fromDeviceId: params.fromDeviceId,
+    toDeviceId: params.toDeviceId,
+    targetDeviceId: params.toDeviceId,
+    senderKeyId: params.senderKeyId ?? randomUUID(),
+    epoch: params.epoch ?? 0,
+    ciphertext: b64,
+    senderPublicKey: b64,
+    senderSigningPublicKey: b64,
+    salt: b64,
+    sig,
+    messageId: params.messageId ?? randomUUID(),
+    discoveryNonce: "discovery-nonce-123456",
+    senderIdentity: {
+      userId: params.userId,
+      deviceId: params.fromDeviceId,
+      sessionId: `session-${params.fromDeviceId}`,
+      identityPubKeyJwk: { kty: "EC", crv: "P-256", x: jwkCoord, y: jwkCoord },
+    },
+  };
+}
+
+async function createJoinedTwoPeerRoom(port: number, suffix: string, extraAllowedUserIds: string[] = []) {
+  const aliceToken = `alice-${suffix}-token-123456789012`;
+  const bobToken = `bob-${suffix}-token---123456789012`;
+  const aliceUserId = devUserId(aliceToken);
+  const bobUserId = devUserId(bobToken);
+  const aliceDeviceId = `alice-${suffix}-dev`;
+  const bobDeviceId = `bob-${suffix}-dev`;
+
+  const alice = new WsSession(await connectWs(port));
+  const bob = new WsSession(await connectWs(port));
+  await alice.helloAndAuth(aliceDeviceId, aliceToken);
+  await bob.helloAndAuth(bobDeviceId, bobToken);
+  await alice.e2eeCaps();
+  await bob.e2eeCaps();
+
+  const createId = alice.send("ROOM_CREATE", {
+    preferredRegion: "tr",
+    allowedUserIds: [aliceUserId, bobUserId, ...extraAllowedUserIds],
+  });
+  const created = await alice.waitForType("ROOM_CREATED");
+  const roomId = created.payload.roomId as string;
+  const callId = created.payload.callId as string;
+  const joinToken = (await alice.waitForType("ROOM_JOIN_SECRET")).payload.joinToken as string;
+  await alice.waitForAck(createId);
+
+  const aliceJoinId = alice.send("ROOM_JOIN", { roomId, joinToken, deviceId: aliceDeviceId });
+  await alice.waitForType("ROOM_JOIN_OK");
+  await alice.waitForType("ROOM_SNAPSHOT");
+  expect((await alice.waitForAck(aliceJoinId)).ack?.ok).toBe(true);
+
+  const bobJoinId = bob.send("ROOM_JOIN", { roomId, joinToken, deviceId: bobDeviceId });
+  await bob.waitForType("ROOM_JOIN_OK");
+  await bob.waitForType("ROOM_SNAPSHOT");
+  expect((await bob.waitForAck(bobJoinId)).ack?.ok).toBe(true);
+  await alice.waitForType("PEER_JOINED");
+  await alice.waitForType("REKEY_REQUIRED");
+
+  return { alice, bob, roomId, callId, joinToken, aliceUserId, bobUserId, aliceDeviceId, bobDeviceId };
+}
+
+async function joinAdditionalPeer(port: number, params: { roomId: string; joinToken: string; deviceId: string; token: string }) {
+  const peer = new WsSession(await connectWs(port));
+  await peer.helloAndAuth(params.deviceId, params.token);
+  await peer.e2eeCaps();
+  const joinId = peer.send("ROOM_JOIN", { roomId: params.roomId, joinToken: params.joinToken, deviceId: params.deviceId });
+  await peer.waitForType("ROOM_JOIN_OK");
+  await peer.waitForType("ROOM_SNAPSHOT");
+  expect((await peer.waitForAck(joinId)).ack?.ok).toBe(true);
+  return peer;
+}
+
 // ─── Управление серверами ────────────────────────────────────────────────────
 
 const runningServers: ChildProcess[] = [];
@@ -736,6 +823,299 @@ describe("calls-ws: полный жизненный цикл звонка (ре�
       }
     }
   }, 15000);
+
+  it("behavioral E2EE: mailbox replay, late join, duplicate package ignored, missingSenderKeys обновляется после KEY_ACK", async () => {
+    const { proc, port } = await startCallsWs();
+    runningServers.push(proc);
+
+    const { alice, bob, roomId, aliceUserId, aliceDeviceId, bobDeviceId } = await createJoinedTwoPeerRoom(port, "behav1");
+
+    try {
+      const bobStateId = bob.send("ROOM_STATE_GET", { roomId });
+      const bobState = await bob.waitForType("ROOM_STATE");
+      expect(((bobState.payload.e2ee as Record<string, unknown>).missingSenderKeys as string[])).toContain(aliceDeviceId);
+      expect((await bob.waitForAck(bobStateId)).ack?.ok).toBe(true);
+
+      const packageMessageId = randomUUID();
+      const keyPackagePayload = buildDiscoveryKeyPackage({
+        roomId,
+        fromDeviceId: aliceDeviceId,
+        toDeviceId: bobDeviceId,
+        userId: aliceUserId,
+        messageId: packageMessageId,
+      });
+      const keyPackageId = alice.send("KEY_PACKAGE", keyPackagePayload);
+      const pushedPackage = await bob.waitForType("KEY_PACKAGE");
+      expect((pushedPackage.payload as Record<string, unknown>).messageId).toBe(packageMessageId);
+      expect((await alice.waitForAck(keyPackageId)).ack?.ok).toBe(true);
+
+      const duplicatePackageId = alice.send("KEY_PACKAGE", keyPackagePayload);
+      const duplicateAck = await alice.waitForAck(duplicatePackageId);
+      expect(duplicateAck.ack?.ok).toBe(false);
+      expect(duplicateAck.ack?.error?.code).toBe("REPLAY_DETECTED");
+      await expect(bob.waitForType("KEY_PACKAGE", 300)).rejects.toThrow("waitFor timed out");
+
+      const syncId = bob.send("SYNC_MAILBOX", { deviceId: bobDeviceId, lastStreamId: "0-0", limit: 20 });
+      const mailbox = await bob.waitForType("MAILBOX_BATCH");
+      const messages = mailbox.payload.messages as Array<{ frame: { type: string; payload?: string | Record<string, unknown> } }>;
+      expect(messages.some((m) => m.frame.type === "KEY_PACKAGE" && String(m.frame.payload).includes(packageMessageId))).toBe(true);
+      expect((await bob.waitForAck(syncId)).ack?.ok).toBe(true);
+
+      const keyAckId = bob.send("KEY_ACK", {
+        roomId,
+        epoch: 0,
+        fromDeviceId: bobDeviceId,
+        senderKeyId: keyPackagePayload.senderKeyId,
+        messageId: randomUUID(),
+        refId: keyPackageId,
+      });
+      const keyAcked = await bob.waitForType("KEY_ACKED");
+      expect((keyAcked.payload.missingSenderKeys as string[])).not.toContain(aliceDeviceId);
+      expect((await bob.waitForAck(keyAckId)).ack?.ok).toBe(true);
+    } finally {
+      alice.close();
+      bob.close();
+    }
+  }, 20000);
+
+  it("behavioral E2EE: malformed/fuzzed KEY_PACKAGE fails closed", async () => {
+    const { proc, port } = await startCallsWs();
+    runningServers.push(proc);
+
+    const { alice, bob, roomId, aliceUserId, aliceDeviceId, bobDeviceId } = await createJoinedTwoPeerRoom(port, "fuzz1");
+
+    try {
+      const valid = buildDiscoveryKeyPackage({
+        roomId,
+        fromDeviceId: aliceDeviceId,
+        toDeviceId: bobDeviceId,
+        userId: aliceUserId,
+      });
+
+      const cases: Array<{ name: string; mutate: (payload: Record<string, unknown>) => void; code: string }> = [
+        { name: "missing keyPackageType", mutate: (p) => { delete p.keyPackageType; }, code: "INVALID_KEY_PACKAGE_TYPE" },
+        { name: "invalid keyPackageType", mutate: (p) => { p.keyPackageType = "BAD"; }, code: "INVALID_KEY_PACKAGE_TYPE" },
+        { name: "missing roomId", mutate: (p) => { delete p.roomId; }, code: "INVALID_KEY_PACKAGE_SCHEMA" },
+        { name: "fromDevice mismatch", mutate: (p) => { p.fromDeviceId = "mallory-fuzz-dev"; (p.senderIdentity as Record<string, unknown>).deviceId = "mallory-fuzz-dev"; }, code: "UNAUTHORIZED" },
+        { name: "target mismatch", mutate: (p) => { p.targetDeviceId = "different-target-dev"; }, code: "INVALID_KEY_PACKAGE_TARGET" },
+        { name: "bad base64 ciphertext", mutate: (p) => { p.ciphertext = "not base64"; }, code: "INVALID_KEY_PACKAGE_SCHEMA" },
+        { name: "bad senderPublicKey", mutate: (p) => { p.senderPublicKey = "not base64"; p.ciphertext = "not base64"; }, code: "INVALID_KEY_PACKAGE_SCHEMA" },
+        { name: "bad salt length", mutate: (p) => { p.salt = Buffer.from("short").toString("base64"); }, code: "INVALID_KEY_PACKAGE_SCHEMA" },
+        { name: "bad sig", mutate: (p) => { p.sig = "not base64"; }, code: "INVALID_KEY_PACKAGE_SCHEMA" },
+        { name: "bad messageId", mutate: (p) => { p.messageId = "not-a-uuid"; }, code: "INVALID_KEY_PACKAGE_SCHEMA" },
+        { name: "unknown target", mutate: (p) => { p.toDeviceId = "unknown-fuzz-dev"; p.targetDeviceId = "unknown-fuzz-dev"; }, code: "UNAUTHORIZED" },
+      ];
+
+      for (const item of cases) {
+        const payload = structuredClone(valid) as Record<string, unknown>;
+        payload.messageId = randomUUID();
+        item.mutate(payload);
+        const msgId = alice.send("KEY_PACKAGE", payload);
+        const ack = await alice.waitForAck(msgId);
+        expect(ack.ack?.ok, item.name).toBe(false);
+        expect(ack.ack?.error?.code, item.name).toBe(item.code);
+      }
+
+      await expect(bob.waitForType("KEY_PACKAGE", 300)).rejects.toThrow("waitFor timed out");
+    } finally {
+      alice.close();
+      bob.close();
+    }
+  }, 20000);
+
+  it("behavioral E2EE: stale epoch KEY_PACKAGE rejected after REKEY_COMMIT", async () => {
+    const { proc, port } = await startCallsWs();
+    runningServers.push(proc);
+
+    const { alice, bob, roomId, aliceUserId, aliceDeviceId, bobDeviceId } = await createJoinedTwoPeerRoom(port, "behav2");
+
+    try {
+      const beginId = alice.send("REKEY_BEGIN", { roomId, epoch: 1, newEpoch: 1 });
+      await alice.waitForType("REKEY_BEGIN");
+      await bob.waitForType("REKEY_BEGIN");
+      expect((await alice.waitForAck(beginId)).ack?.ok).toBe(true);
+
+      const aliceAckId = alice.send("KEY_ACK", { roomId, epoch: 1, fromDeviceId: aliceDeviceId, messageId: randomUUID(), refId: beginId });
+      await alice.waitForType("KEY_ACKED");
+      expect((await alice.waitForAck(aliceAckId)).ack?.ok).toBe(true);
+
+      const bobAckId = bob.send("KEY_ACK", { roomId, epoch: 1, fromDeviceId: bobDeviceId, messageId: randomUUID(), refId: beginId });
+      await bob.waitForType("KEY_ACKED");
+      expect((await bob.waitForAck(bobAckId)).ack?.ok).toBe(true);
+
+      const commitId = alice.send("REKEY_COMMIT", { roomId, epoch: 1 });
+      await alice.waitForType("REKEY_COMMIT");
+      await bob.waitForType("REKEY_COMMIT");
+      expect((await alice.waitForAck(commitId)).ack?.ok).toBe(true);
+
+      const staleId = alice.send("KEY_PACKAGE", buildDiscoveryKeyPackage({
+        roomId,
+        fromDeviceId: aliceDeviceId,
+        toDeviceId: bobDeviceId,
+        userId: aliceUserId,
+        epoch: 0,
+      }));
+      const staleAck = await alice.waitForAck(staleId);
+      expect(staleAck.ack?.ok).toBe(false);
+      expect(staleAck.ack?.error?.code).toBe("STALE_EPOCH");
+    } finally {
+      alice.close();
+      bob.close();
+    }
+  }, 20000);
+
+  it("behavioral E2EE: rekey membership storm excludes removed peers from quorum and key delivery", async () => {
+    const { proc, port } = await startCallsWs();
+    runningServers.push(proc);
+
+    const charlieUserId = devUserId("charlie-st");
+    const daveUserId = devUserId("dave-stor");
+    const base = await createJoinedTwoPeerRoom(port, "storm1", [charlieUserId, daveUserId]);
+    const { alice, bob, roomId, joinToken, aliceDeviceId, bobDeviceId } = base;
+    const charlieDeviceId = "charlie-storm1-dev";
+    const daveDeviceId = "dave-storm1-dev";
+    let charlie: WsSession | null = null;
+    let dave: WsSession | null = null;
+
+    try {
+      charlie = await joinAdditionalPeer(port, { roomId, joinToken, deviceId: charlieDeviceId, token: "charlie-storm1-token-123456789012" });
+      dave = await joinAdditionalPeer(port, { roomId, joinToken, deviceId: daveDeviceId, token: "dave-storm1-token---123456789012" });
+
+      const kickId = alice.send("PEER_KICKED", { roomId, deviceId: daveDeviceId });
+      expect((await alice.waitForAck(kickId)).ack?.ok).toBe(true);
+
+      const beginId = alice.send("REKEY_BEGIN", { roomId, epoch: 1, newEpoch: 1 });
+      expect((await alice.waitForAck(beginId)).ack?.ok).toBe(true);
+
+      const aliceAckId = alice.send("KEY_ACK", { roomId, epoch: 1, fromDeviceId: aliceDeviceId, messageId: randomUUID(), refId: beginId });
+      expect((await alice.waitForAck(aliceAckId)).ack?.ok).toBe(true);
+
+      const bobAckId = bob.send("KEY_ACK", { roomId, epoch: 1, fromDeviceId: bobDeviceId, messageId: randomUUID(), refId: beginId });
+      expect((await bob.waitForAck(bobAckId)).ack?.ok).toBe(true);
+
+      const commitTooEarlyId = alice.send("REKEY_COMMIT", { roomId, epoch: 1 });
+      const commitTooEarlyAck = await alice.waitForAck(commitTooEarlyId);
+      expect(commitTooEarlyAck.ack?.ok).toBe(false);
+      expect(commitTooEarlyAck.ack?.error?.code).toBe("E2EE_KEY_SYNC_FAILED");
+
+      const charlieAckId = charlie.send("KEY_ACK", { roomId, epoch: 1, fromDeviceId: charlieDeviceId, messageId: randomUUID(), refId: beginId });
+      expect((await charlie.waitForAck(charlieAckId)).ack?.ok).toBe(true);
+
+      const daveAckId = dave.send("KEY_ACK", { roomId, epoch: 1, fromDeviceId: daveDeviceId, messageId: randomUUID(), refId: beginId });
+      const daveAck = await dave.waitForAck(daveAckId);
+      expect(daveAck.ack?.ok).toBe(false);
+      expect(daveAck.ack?.error?.code).toBe("UNAUTHORIZED");
+
+      const commitId = alice.send("REKEY_COMMIT", { roomId, epoch: 1 });
+      expect((await alice.waitForAck(commitId)).ack?.ok).toBe(true);
+
+      const stateId = alice.send("ROOM_STATE_GET", { roomId });
+      const state = await alice.waitForType("ROOM_STATE");
+      const expected = (state.payload.e2ee as Record<string, unknown>).expectedSenderDevices as string[];
+      expect(expected.sort()).toEqual([aliceDeviceId, bobDeviceId, charlieDeviceId].sort());
+      expect(expected).not.toContain(daveDeviceId);
+      expect((await alice.waitForAck(stateId)).ack?.ok).toBe(true);
+    } finally {
+      alice.close();
+      bob.close();
+      charlie?.close();
+      dave?.close();
+    }
+  }, 30000);
+
+  it("server exclusion policy: removed device не получает key material и не участвует в room state", async () => {
+    const { proc, port } = await startCallsWs();
+    runningServers.push(proc);
+
+    const aliceToken = "alice-exclusion-token-123456789012";
+    const bobToken = "bob-exclusion-token--123456789012";
+    const aliceUserId = devUserId(aliceToken);
+    const bobUserId = devUserId(bobToken);
+
+    const alice = new WsSession(await connectWs(port));
+    const bob = new WsSession(await connectWs(port));
+
+    const b64 = Buffer.from("a".repeat(32)).toString("base64");
+    const sig = Buffer.from("s".repeat(64)).toString("base64");
+    const jwkCoord = Buffer.from("x".repeat(32)).toString("base64url");
+
+    try {
+      await alice.helloAndAuth("alice-exclusion-dev", aliceToken);
+      await bob.helloAndAuth("bob-exclusion-dev", bobToken);
+      await alice.e2eeCaps();
+      await bob.e2eeCaps();
+
+      const createId = alice.send("ROOM_CREATE", {
+        preferredRegion: "tr",
+        allowedUserIds: [aliceUserId, bobUserId],
+      });
+      const created = await alice.waitForType("ROOM_CREATED");
+      const roomId = created.payload.roomId as string;
+      const joinToken = (await alice.waitForType("ROOM_JOIN_SECRET")).payload.joinToken as string;
+      await alice.waitForAck(createId);
+
+      const aliceJoinId = alice.send("ROOM_JOIN", { roomId, joinToken, deviceId: "alice-exclusion-dev" });
+      await alice.waitForType("ROOM_JOIN_OK");
+      await alice.waitForType("ROOM_SNAPSHOT");
+      expect((await alice.waitForAck(aliceJoinId)).ack?.ok).toBe(true);
+
+      const bobJoinId = bob.send("ROOM_JOIN", { roomId, joinToken, deviceId: "bob-exclusion-dev" });
+      await bob.waitForType("ROOM_JOIN_OK");
+      await bob.waitForType("ROOM_SNAPSHOT");
+      expect((await bob.waitForAck(bobJoinId)).ack?.ok).toBe(true);
+      await alice.waitForType("PEER_JOINED");
+      await alice.waitForType("REKEY_REQUIRED");
+
+      const removeId = alice.send("DEVICE_REMOVED", { roomId, deviceId: "bob-exclusion-dev" });
+      const removedForBob = await bob.waitForType("DEVICE_REMOVED");
+      expect(removedForBob.payload.deviceId).toBe("bob-exclusion-dev");
+      const removedForAlice = await alice.waitForType("DEVICE_REMOVED");
+      expect(removedForAlice.payload.rekeyRequired).toBe(true);
+      const rekeyRequired = await alice.waitForType("REKEY_REQUIRED");
+      expect(rekeyRequired.payload.reason).toBe("device_removed");
+      expect((await alice.waitForAck(removeId)).ack?.ok).toBe(true);
+
+      const stateId = bob.send("ROOM_STATE_GET", { roomId });
+      const stateAck = await bob.waitForAck(stateId);
+      expect(stateAck.ack?.ok).toBe(false);
+      expect(stateAck.ack?.error?.code).toBe("UNAUTHORIZED");
+
+      const keyPackageId = alice.send("KEY_PACKAGE", {
+        keyPackageType: "DISCOVERY",
+        roomId,
+        fromDeviceId: "alice-exclusion-dev",
+        toDeviceId: "bob-exclusion-dev",
+        targetDeviceId: "bob-exclusion-dev",
+        senderKeyId: randomUUID(),
+        epoch: 0,
+        ciphertext: b64,
+        senderPublicKey: b64,
+        senderSigningPublicKey: b64,
+        salt: b64,
+        sig,
+        messageId: randomUUID(),
+        discoveryNonce: "discovery-nonce-123456",
+        senderIdentity: {
+          userId: aliceUserId,
+          deviceId: "alice-exclusion-dev",
+          sessionId: "session-alice-exclusion",
+          identityPubKeyJwk: { kty: "EC", crv: "P-256", x: jwkCoord, y: jwkCoord },
+        },
+      });
+      const keyPackageAck = await alice.waitForAck(keyPackageId);
+      expect(keyPackageAck.ack?.ok).toBe(false);
+      expect(keyPackageAck.ack?.error?.code).toBe("DEVICE_EXCLUDED");
+
+      const snapshotId = alice.send("ROOM_STATE_GET", { roomId });
+      const roomState = await alice.waitForType("ROOM_STATE");
+      const expectedSenderDevices = (roomState.payload.e2ee as Record<string, unknown>).expectedSenderDevices as string[];
+      expect(expectedSenderDevices).toEqual(["alice-exclusion-dev"]);
+      expect((await alice.waitForAck(snapshotId)).ack?.ok).toBe(true);
+    } finally {
+      alice.close();
+      bob.close();
+    }
+  }, 20000);
 
   it("GET_ROUTER_RTP_CAPABILITIES возвращает кодеки", async () => {
     const { proc, port } = await startCallsWs();

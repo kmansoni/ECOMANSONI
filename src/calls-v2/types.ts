@@ -71,6 +71,10 @@ export type CallsWsEvent =
   | 'ROOM_LEFT'
   | 'PEER_JOINED'
   | 'PEER_LEFT'
+  | 'REKEY_REQUIRED'
+  | 'PEER_KICKED'
+  | 'PEER_BANNED'
+  | 'DEVICE_REMOVED'
   | 'OFFER'
   | 'ANSWER'
   | 'ICE_CANDIDATE'
@@ -92,6 +96,7 @@ export type CallsWsEvent =
   | 'REKEY_COMMIT'
   | 'KEY_PACKAGE'
   | 'KEY_ACK'
+  | 'MAILBOX_BATCH'
   | 'E2EE_READY_ACK'
   | 'ROUTER_RTP_CAPABILITIES'
   // Call signaling relay events (server → client)
@@ -320,6 +325,8 @@ export interface KeyPackagePayload {
   keyPackageType?: 'DISCOVERY' | 'WRAPPED_EPOCH_KEY' | string;
   /** Одноразовый nonce для discovery anti-replay (используется только при keyPackageType=DISCOVERY). */
   discoveryNonce?: string;
+  /** UUID v4 signed inside KEY_PACKAGE payload; required for E2EE anti-replay. */
+  messageId: string;
   sig: string;                  // signature (base64)
   /**
    * Подпись senderIdentity (ECDSA P-256) поверх payload key package.
@@ -348,9 +355,40 @@ export interface KeyAckPayload {
   roomId: string;
   epoch: number;
   fromDeviceId: string;
+  /** UUID v4 for semantic KEY_ACK anti-replay, independent of WS envelope msgId. */
+  messageId: string;
   toDeviceId?: string;
   senderKeyId?: string;
   refId?: string;
+}
+
+export interface SyncMailboxPayload {
+  deviceId: string;
+  lastStreamId?: string;
+  limit?: number;
+}
+
+export interface MailboxAckPayload {
+  deviceId: string;
+  upToStreamId: string;
+}
+
+export interface MailboxBatchMessage {
+  streamId: string;
+  frame: {
+    type: string;
+    payload?: unknown;
+    id?: string;
+    refId?: string;
+    ts?: number;
+    [key: string]: unknown;
+  };
+}
+
+export interface MailboxBatchPayload {
+  deviceId: string;
+  nextStreamId: string;
+  messages: MailboxBatchMessage[];
 }
 
 // ----------- Server response payloads -----------
@@ -533,6 +571,8 @@ export interface ClientMessageMap {
   REKEY_COMMIT: RekeyCommitPayload;
   KEY_PACKAGE: KeyPackagePayload;
   KEY_ACK: KeyAckPayload;
+  SYNC_MAILBOX: SyncMailboxPayload;
+  MAILBOX_ACK: MailboxAckPayload;
   GET_ROUTER_RTP_CAPABILITIES: GetRouterRtpCapabilitiesPayload;
   ROOM_STATE_GET: { roomId: string };
   PING: Record<string, never>;

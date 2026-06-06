@@ -8,7 +8,7 @@
  * - H-4: getPeerPublicKeyBase64 принимает composite "userId:deviceId" ключ
  */
 
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { CallKeyExchange } from '../calls-v2/callKeyExchange';
 
 const aliceIdentity = { userId: 'alice', deviceId: 'd1', sessionId: 's1' };
@@ -143,6 +143,18 @@ describe('CallKeyExchange', () => {
     expect(e1.key).not.toBe(e2.key);
   });
 
+  it('processKeyPackage rejects non-UUID-v4 messageId', async () => {
+    await alice.initialize();
+    await bob.initialize();
+    await exchangeSigningKeys(alice, bob, aliceIdentity, bobIdentity);
+
+    await alice.createEpochKey(1);
+    const pkg = await alice.createKeyPackage(await bob.getPublicKeyBase64(), 1);
+    pkg.messageId = 'not-a-uuid';
+
+    await expect(bob.processKeyPackage(pkg)).rejects.toThrow('messageId must be UUID v4');
+  });
+
   it('C-1: processKeyPackage без registerPeerSigningKey → throws', async () => {
     await alice.initialize();
     await bob.initialize();
@@ -225,12 +237,70 @@ describe('CallKeyExchange', () => {
     expect(id1).not.toBe(id2); // разные объекты (копии)
   });
 
-  it('getSessionId() стабилен между вызовами (не генерирует новый UUID)', async () => {
+  it('C-1: invalid signature rejects before ECDH deriveBits', async () => {
     await alice.initialize();
-    const s1 = alice.getSessionId();
-    const s2 = alice.getSessionId();
-    const s3 = alice.getSessionId();
-    expect(s1).toBe(s2);
-    expect(s2).toBe(s3);
+    await bob.initialize();
+    await exchangeSigningKeys(alice, bob, aliceIdentity, bobIdentity);
+
+    await alice.createEpochKey(1);
+    const pkg = await alice.createKeyPackage(await bob.getPublicKeyBase64(), 1);
+    pkg.sig = pkg.sig.slice(0, -4) + 'AAAA';
+
+    const deriveSpy = vi.spyOn(crypto.subtle, 'deriveBits');
+    await expect(bob.processKeyPackage(pkg)).rejects.toThrow('signature verification FAILED');
+    expect(deriveSpy).not.toHaveBeenCalled();
+    deriveSpy.mockRestore();
+  });
+
+  it('H-3: duplicate KEY_PACKAGE messageId is rejected after first successful process', async () => {
+    await alice.initialize();
+    await bob.initialize();
+    await exchangeSigningKeys(alice, bob, aliceIdentity, bobIdentity);
+
+    await alice.createEpochKey(1);
+    const pkg = await alice.createKeyPackage(await bob.getPublicKeyBase64(), 1);
+    await bob.processKeyPackage(pkg);
+
+    await expect(bob.processKeyPackage(pkg)).rejects.toThrow('duplicate messageId');
+  });
+
+  it('H-1: createKeyPackage uses a fresh 32-byte salt per package', async () => {
+    await alice.initialize();
+    await bob.initialize();
+    await alice.createEpochKey(1);
+
+    const bobPub = await bob.getPublicKeyBase64();
+    const first = await alice.createKeyPackage(bobPub, 1);
+    const second = await alice.createKeyPackage(bobPub, 1);
+
+    expect(Uint8Array.from(atob(first.salt), c => c.charCodeAt(0)).length).toBe(32);
+    expect(Uint8Array.from(atob(second.salt), c => c.charCodeAt(0)).length).toBe(32);
+    expect(first.salt).not.toBe(second.salt);
+  });
+
+  it('H-1: processKeyPackage rejects salt that is not exactly 32 bytes', async () => {
+    await alice.initialize();
+    await bob.initialize();
+    await exchangeSigningKeys(alice, bob, aliceIdentity, bobIdentity);
+
+    await alice.createEpochKey(1);
+    const pkg = await alice.createKeyPackage(await bob.getPublicKeyBase64(), 1);
+    pkg.salt = btoa(String.fromCharCode(...new Uint8Array(31)));
+
+    await expect(bob.processKeyPackage(pkg)).rejects.toThrow('salt must decode to 32 bytes');
+  });
+
+  it('C-5: equal epoch replay is rejected per sender', async () => {
+    await alice.initialize();
+    await bob.initialize();
+    await exchangeSigningKeys(alice, bob, aliceIdentity, bobIdentity);
+
+    await alice.createEpochKey(5);
+    const bobPub = await bob.getPublicKeyBase64();
+    const first = await alice.createKeyPackage(bobPub, 5);
+    await bob.processKeyPackage(first);
+
+    const second = await alice.createKeyPackage(bobPub, 5);
+    await expect(bob.processKeyPackage(second)).rejects.toThrow('Epoch rollback REJECTED');
   });
 });

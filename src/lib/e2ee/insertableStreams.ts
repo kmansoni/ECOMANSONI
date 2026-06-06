@@ -95,10 +95,9 @@ private currentEncryptionKey: { key: CryptoKey; keyId: number; epoch: number } |
 /**
      * Set the current encryption key for outgoing media
      */
-   async setEncryptionKey(key: CryptoKey, keyId: number): Promise<void> {
-     await this.sframeContext.setEncryptionKey(key, keyId);
-     const epoch = this.sframeContext.getEpoch();
-     this.currentEncryptionKey = { key, keyId, epoch };
+   async setEncryptionKey(key: CryptoKey, keyId: number, epoch: number = keyId): Promise<void> {
+     await this.sframeContext.setEncryptionKey(key, keyId, epoch);
+     this.currentEncryptionKey = { key, keyId, epoch: epoch >>> 0 };
 
      // Propagate to script-transform workers (if any)
      // Include epoch for IV uniqueness during key rotation
@@ -115,14 +114,14 @@ private currentEncryptionKey: { key: CryptoKey; keyId: number; epoch: number } |
   /**
     * Set a decryption key for incoming media from a specific peer
     */
-  async setDecryptionKey(key: CryptoKey, keyId: number, peerId: string): Promise<void> {
+  async setDecryptionKey(key: CryptoKey, keyId: number, peerId: string, epoch: number = keyId): Promise<void> {
     let ctx = this.decryptionContexts.get(peerId);
     if (!ctx) {
       ctx = new SFrameContext();
       this.decryptionContexts.set(peerId, ctx);
     }
-    await ctx.setEncryptionKey(key, keyId);
-    this.currentDecryptionKeys.set(peerId, { key, keyId, epoch: ctx.getEpoch() });
+    await ctx.setEncryptionKey(key, keyId, epoch);
+    this.currentDecryptionKeys.set(peerId, { key, keyId, epoch: epoch >>> 0 });
 
     // Propagate to script-transform workers (if any)
     // Include epoch for IV reconstruction
@@ -132,7 +131,7 @@ private currentEncryptionKey: { key: CryptoKey; keyId: number; epoch: number } |
         key, 
         keyId, 
         peerId,
-        epoch: ctx.getEpoch() 
+        epoch: epoch >>> 0
       });
     }
   }
@@ -141,6 +140,33 @@ private currentEncryptionKey: { key: CryptoKey; keyId: number; epoch: number } |
     const source = `
       const encState = { key: null, keyId: 0, counter: 0, epoch: 0 };
       const decStates = new Map();
+      const MAX_REPLAY_WINDOW = 8192;
+
+      function ensureReplayState(state) {
+        if (!state.seenCounters) state.seenCounters = new Set();
+        if (typeof state.highestSeenCounter !== 'number') state.highestSeenCounter = -1;
+        return state;
+      }
+
+      function assertAndTrackCounter(state, counter) {
+        ensureReplayState(state);
+        const floor = state.highestSeenCounter >= 0 ? state.highestSeenCounter - MAX_REPLAY_WINDOW : -1;
+        if (state.highestSeenCounter >= 0 && counter <= floor) {
+          throw new Error('Stale SFrame counter ' + counter + ' (highest: ' + state.highestSeenCounter + ') — possible replay attack');
+        }
+        if (state.seenCounters.has(counter)) {
+          throw new Error('Duplicate SFrame counter ' + counter + ' — possible replay attack');
+        }
+
+        state.seenCounters.add(counter);
+        if (counter > state.highestSeenCounter) {
+          state.highestSeenCounter = counter;
+          const newFloor = state.highestSeenCounter - MAX_REPLAY_WINDOW;
+          state.seenCounters.forEach((c) => {
+            if (c <= newFloor) state.seenCounters.delete(c);
+          });
+        }
+      }
 
       function encodeVarInt(value) {
         if (value < 0) throw new Error('VarInt must be non-negative');
@@ -239,7 +265,13 @@ private currentEncryptionKey: { key: CryptoKey; keyId: number; epoch: number } |
           encState.epoch = msg.epoch >>> 0;
         }
         if (msg.type === 'setDecryptionKey') {
-          decStates.set(msg.peerId, { key: msg.key, keyId: msg.keyId & 0xff, epoch: msg.epoch >>> 0 });
+          decStates.set(msg.peerId, {
+            key: msg.key,
+            keyId: msg.keyId & 0xff,
+            epoch: msg.epoch >>> 0,
+            highestSeenCounter: -1,
+            seenCounters: new Set()
+          });
         }
       });
 
@@ -287,6 +319,7 @@ private currentEncryptionKey: { key: CryptoKey; keyId: number; epoch: number } |
                   state.key,
                   payloadBuf
                 );
+                assertAndTrackCounter(state, parsed.counter);
                 frame.data = plain;
                 self.postMessage({ type: 'frame', direction: 'decrypt', size: plain.byteLength });
                 controller.enqueue(frame);
@@ -301,7 +334,14 @@ private currentEncryptionKey: { key: CryptoKey; keyId: number; epoch: number } |
           }
         });
 
-        transformer.readable.pipeThrough(t).pipeTo(transformer.writable).catch((err) => { self.postMessage({ type: 'pipe_error', message: String(err) }); });
+        transformer.readable.pipeThrough(t).pipeTo(transformer.writable).catch((err) => {
+          self.postMessage({
+            type: 'pipe_error',
+            direction: operation === 'decrypt' ? 'decrypt' : 'encrypt',
+            peerId,
+            message: String(err)
+          });
+        });
         } catch (initErr) {
           self.postMessage({ type: 'error', direction: 'encrypt', message: 'rtctransform init: ' + String(initErr) });
         }
@@ -329,7 +369,7 @@ private currentEncryptionKey: { key: CryptoKey; keyId: number; epoch: number } |
     };
 
     worker.onmessage = (event) => {
-      const data = event.data as { type?: string; direction?: 'encrypt' | 'decrypt'; size?: number; message?: string };
+      const data = event.data as { type?: string; direction?: 'encrypt' | 'decrypt'; peerId?: string; size?: number; message?: string };
       if (data.type === 'frame' && data.direction && typeof data.size === 'number') {
         if (data.direction === 'encrypt') this.stats.encryptedFrames++;
         if (data.direction === 'decrypt') this.stats.decryptedFrames++;
@@ -341,9 +381,10 @@ private currentEncryptionKey: { key: CryptoKey; keyId: number; epoch: number } |
         this.config.onError?.(new Error(data.message || 'ScriptTransform error'), data.direction);
       }
       if (data.type === 'pipe_error') {
-        logger.error('[E2EE] ScriptTransform pipe failed — recovery needed', { error: data.message, trackId });
+        const direction = data.direction ?? 'encrypt';
+        logger.error('[E2EE] ScriptTransform pipe failed — recovery needed', { error: data.message, trackId, direction, peerId: data.peerId });
         this.removeTransform(trackId);
-        this.config.onPipeBreak?.({ trackId, direction: 'encrypt' });
+        this.config.onPipeBreak?.({ trackId, direction, peerId: data.peerId });
       }
     };
 
@@ -376,7 +417,7 @@ private currentEncryptionKey: { key: CryptoKey; keyId: number; epoch: number } |
           type: 'setEncryptionKey',
           key: this.currentEncryptionKey.key,
           keyId: this.currentEncryptionKey.keyId,
-          epoch: this.sframeContext.getEpoch(),
+          epoch: this.currentEncryptionKey.epoch,
         });
       }
       return;
@@ -451,6 +492,7 @@ private currentEncryptionKey: { key: CryptoKey; keyId: number; epoch: number } |
           key: keyState.key,
           keyId: keyState.keyId,
           peerId,
+          epoch: keyState.epoch,
         });
       }
       return;

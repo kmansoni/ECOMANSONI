@@ -8,7 +8,8 @@ import { EpochGuard } from "@/calls-v2/epochGuard";
 import type { CallsWsClient } from "@/calls-v2/wsClient";
 import type { SfuMediaManager } from "@/calls-v2/sfuMediaManager";
 import type { RtpCapabilities } from "@/calls-v2/types";
-import { getOrCreateIdentityKeyPair, signIdentity, exportPublicKey as exportEcdsaPublicKey, verifyIdentity, importPublicKey } from "@/calls-v2/ecdsaIdentity";
+import { getOrCreateIdentityKeyPair, signIdentity, exportPublicKey as exportEcdsaPublicKey, verifyIdentity, importPublicKey, assertPeerIdentityPinned } from "@/calls-v2/ecdsaIdentity";
+import { canSendE2eeReady, type E2eeReadyCheckResult } from "./videoCallProvider.helpers";
 
 interface UseCallsV2E2eeSignalsParams {
   user: { id: string } | null;
@@ -31,6 +32,35 @@ interface UseCallsV2E2eeSignalsParams {
   consumePendingProducersRef: { current: (() => void) | null };
   onE2eeActivated?: () => void;
   onDecryptionKeyReady?: (peerKey: string) => void;
+  hasInboundE2eeReadiness?: () => boolean;
+  getInboundE2eeReadiness?: () => { ready: boolean; missingDecryptionPeers: string[]; pendingConsumers: string[] };
+  missingSenderKeysRef?: { current: Set<string> };
+}
+
+type MailboxFramePayload = {
+  type?: string;
+  payload?: unknown;
+  id?: string;
+  refId?: string;
+  ts?: number;
+};
+
+function parseMailboxFramePayload(framePayload: unknown): Record<string, unknown> | null {
+  if (!framePayload || typeof framePayload !== "object") return null;
+  const rawPayload = (framePayload as MailboxFramePayload).payload;
+  if (!rawPayload) return null;
+  if (typeof rawPayload === "string") {
+    try {
+      const parsed = JSON.parse(rawPayload) as unknown;
+      return parsed && typeof parsed === "object" ? parsed as Record<string, unknown> : null;
+    } catch (err) {
+      logger.warn("[VideoCallContext] MAILBOX_BATCH payload JSON parse failed", {
+        error: err instanceof Error ? err.message : String(err),
+      });
+      return null;
+    }
+  }
+  return typeof rawPayload === "object" ? rawPayload as Record<string, unknown> : null;
 }
 
 const NONCE_TTL_MS = 5 * 60 * 1000;
@@ -56,9 +86,77 @@ export function useCallsV2E2eeSignals({
   consumePendingProducersRef,
   onDecryptionKeyReady,
   onE2eeActivated,
+  hasInboundE2eeReadiness,
+  getInboundE2eeReadiness,
+  missingSenderKeysRef,
 }: UseCallsV2E2eeSignalsParams) {
   const attachedSignalsClientRef = useRef<CallsWsClient | null>(null);
   const detachSignalsRef = useRef<(() => void) | null>(null);
+  const localMissingSenderKeysRef = useRef<Set<string>>(new Set());
+  const effectiveMissingSenderKeysRef = missingSenderKeysRef ?? localMissingSenderKeysRef;
+  const pendingRekeyCommitEpochRef = useRef<number | null>(null);
+
+  const evaluateE2eeReady = useCallback((epoch: number, requireQuorum: boolean): E2eeReadyCheckResult => {
+    return canSendE2eeReady({
+      epoch,
+      mediaEncryption: callMediaEncryptionRef.current,
+      rekeyMachine: rekeyMachineRef.current,
+      missingSenderKeys: effectiveMissingSenderKeysRef.current,
+      inbound: getInboundE2eeReadiness?.() ?? (hasInboundE2eeReadiness ? { ready: hasInboundE2eeReadiness() } : null),
+      requireQuorum,
+    });
+  }, [callMediaEncryptionRef, effectiveMissingSenderKeysRef, getInboundE2eeReadiness, hasInboundE2eeReadiness, rekeyMachineRef]);
+
+  const maybeSendE2eeReady = useCallback((reason: string): boolean => {
+    const client = callsWsRef.current;
+    const roomId = callsWsRoomRef.current;
+    const epoch = e2eeEpochRef.current;
+    const readiness = evaluateE2eeReady(epoch, false);
+    if (!readiness.ready) {
+      logger.debug("[VideoCallContext] E2EE_READY deferred after readiness recheck", { reason, readiness });
+      return false;
+    }
+    if (!client || !roomId) return false;
+    epochGuardRef.current?.markE2eeReady(epoch);
+    onE2eeActivated?.();
+    void client.e2eeReady({ roomId, epoch }).catch((err) => {
+      logger.warn("[VideoCallContext] E2EE_READY recheck send failed", {
+        reason,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    });
+    return true;
+  }, [callsWsRef, callsWsRoomRef, e2eeEpochRef, epochGuardRef, evaluateE2eeReady, onE2eeActivated]);
+
+  const maybeApplyPendingRekeyCommit = useCallback((reason: string): boolean => {
+    const nextEpoch = pendingRekeyCommitEpochRef.current;
+    if (!Number.isFinite(nextEpoch) || nextEpoch === null || nextEpoch <= e2eeEpochRef.current) return false;
+
+    const readiness = evaluateE2eeReady(nextEpoch, false);
+    if (!readiness.ready) {
+      logger.debug("[VideoCallContext] pending REKEY_COMMIT still deferred", { reason, nextEpoch, readiness });
+      return false;
+    }
+
+    pendingRekeyCommitEpochRef.current = null;
+    e2eeEpochRef.current = nextEpoch;
+    rekeyMachineRef.current?.activateEpoch(nextEpoch);
+    epochGuardRef.current?.markE2eeReady(nextEpoch);
+    onE2eeActivated?.();
+
+    const client = callsWsRef.current;
+    const roomId = callsWsRoomRef.current;
+    if (client && roomId) {
+      void client.e2eeReady({ roomId, epoch: nextEpoch }).catch((err) => {
+        logger.warn("[VideoCallContext] E2EE_READY after deferred REKEY_COMMIT failed", {
+          reason,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      });
+    }
+    logger.info("[VideoCallContext] deferred REKEY_COMMIT applied", { reason, epoch: nextEpoch });
+    return true;
+  }, [callsWsRef, callsWsRoomRef, e2eeEpochRef, epochGuardRef, evaluateE2eeReady, onE2eeActivated, rekeyMachineRef]);
 
   const addNonce = useCallback((nonce: string) => {
     const now = Date.now();
@@ -79,7 +177,7 @@ export function useCallsV2E2eeSignals({
   const bytesToBase64 = useCallback((bytes: Uint8Array): string => {
     let binary = '';
     for (let i = 0; i < bytes.length; i++) {
-      const byte = bytes.at(i);
+      const byte = bytes[i];
       if (byte === undefined) continue;
       binary += String.fromCharCode(byte);
     }
@@ -155,6 +253,45 @@ export function useCallsV2E2eeSignals({
       unsubs.push(client.on(event, handler));
     };
 
+    const startForcedRekeyIfLeader = (reason: string) => {
+      const activeRoomId = callsWsRoomRef.current;
+      const machine = rekeyMachineRef.current;
+      const keyExchange = callKeyExchangeRef.current;
+      const mediaEncryption = callMediaEncryptionRef.current;
+      const leaderDeviceId = e2eeLeaderDeviceRef.current;
+      const localDeviceId = getStableCallsDeviceId();
+      if (!activeRoomId || !machine || !keyExchange || !mediaEncryption) return;
+      if (!leaderDeviceId || leaderDeviceId !== localDeviceId) return;
+
+      const newEpoch = machine.initiateRekey({ force: true });
+      if (newEpoch === null) {
+        logger.warn("[VideoCallContext] forced rekey skipped", {
+          reason,
+          state: machine.getState(),
+          pendingEpoch: machine.getPendingEpoch(),
+        });
+        return;
+      }
+
+      epochGuardRef.current?.markEpochAdvanced(newEpoch);
+      void (async () => {
+        try {
+          const epochKey = await keyExchange.createEpochKey(newEpoch);
+          await mediaEncryption.setEncryptionKey(epochKey);
+          await client.rekeyBegin({ roomId: activeRoomId, epoch: newEpoch });
+          machine.onRekeyBeginAcked(newEpoch);
+          logger.info("[VideoCallContext] forced rekey started", { reason, epoch: newEpoch, roomId: activeRoomId });
+        } catch (err) {
+          logger.error("[VideoCallContext] forced rekey failed, aborting", {
+            reason,
+            error: err instanceof Error ? err.message : String(err),
+          });
+          machine.abortRekey(String(err));
+          epochGuardRef.current?.rollbackFailedEpoch(e2eeEpochRef.current);
+        }
+      })();
+    };
+
     on("AUTH_FAIL", (frame) => {
       logger.warn("[VideoCallContext] calls-v2 auth-fail", { payload: frame.payload });
     });
@@ -167,6 +304,83 @@ export function useCallsV2E2eeSignals({
       });
     });
 
+    on("MAILBOX_BATCH", (frame) => {
+      const payload = frame.payload as {
+        deviceId?: string;
+        nextStreamId?: string;
+        messages?: Array<{ streamId?: string; frame?: MailboxFramePayload }>;
+      } | undefined;
+      const localDeviceId = getStableCallsDeviceId();
+      if (payload?.deviceId && payload.deviceId !== localDeviceId) {
+        logger.warn("[VideoCallContext] MAILBOX_BATCH ignored: deviceId mismatch", {
+          payloadDeviceId: payload.deviceId,
+          localDeviceId,
+        });
+        return;
+      }
+      const messages = Array.isArray(payload?.messages) ? payload.messages : [];
+      let replayedKeyPackages = 0;
+      let replayedKeyAcks = 0;
+      for (const item of messages) {
+        const mailboxFrame = item.frame;
+        if (!mailboxFrame) continue;
+
+        if (mailboxFrame.type === "KEY_ACK") {
+          const keyAckPayload = parseMailboxFramePayload(mailboxFrame);
+          if (!keyAckPayload) {
+            logger.warn("[VideoCallContext] MAILBOX_BATCH KEY_ACK ignored: malformed payload", { streamId: item.streamId });
+            continue;
+          }
+          replayedKeyAcks += 1;
+          client.injectServerEvent({
+            v: 1,
+            type: "KEY_ACK",
+            msgId: (mailboxFrame.id as string | undefined) ?? item.streamId ?? crypto.randomUUID(),
+            ts: typeof mailboxFrame.ts === "number" ? mailboxFrame.ts : Date.now(),
+            payload: keyAckPayload,
+          });
+          continue;
+        }
+
+        if (mailboxFrame.type !== "KEY_PACKAGE") continue;
+        const keyPackagePayload = parseMailboxFramePayload(mailboxFrame);
+        if (!keyPackagePayload) {
+          logger.warn("[VideoCallContext] MAILBOX_BATCH KEY_PACKAGE ignored: malformed payload", { streamId: item.streamId });
+          continue;
+        }
+        const replayMsgId =
+          (keyPackagePayload.messageId as string | undefined) ??
+          (mailboxFrame.id as string | undefined) ??
+          item.streamId ??
+          crypto.randomUUID();
+        replayedKeyPackages += 1;
+        client.injectServerEvent({
+          v: 1,
+          type: "KEY_PACKAGE",
+          msgId: replayMsgId,
+          ts: typeof mailboxFrame.ts === "number" ? mailboxFrame.ts : Date.now(),
+          payload: keyPackagePayload,
+        });
+      }
+      if (payload?.nextStreamId) {
+        void client.mailboxAck({ deviceId: localDeviceId, upToStreamId: payload.nextStreamId }).catch((err) => {
+          logger.warn("[VideoCallContext] MAILBOX_ACK failed", { error: err instanceof Error ? err.message : String(err) });
+        });
+      }
+      logger.info("[VideoCallContext] MAILBOX_BATCH processed", {
+        messages: messages.length,
+        replayedKeyPackages,
+        replayedKeyAcks,
+        nextStreamId: payload?.nextStreamId,
+      });
+      if (replayedKeyPackages > 0 || replayedKeyAcks > 0) {
+        window.setTimeout(() => {
+          maybeSendE2eeReady("mailbox-replay");
+          maybeApplyPendingRekeyCommit("mailbox-replay");
+        }, 0);
+      }
+    });
+
     on("ROOM_LEFT", (frame) => {
       logger.warn("[VideoCallContext] calls-v2 room-left", { payload: frame.payload });
     });
@@ -175,10 +389,10 @@ export function useCallsV2E2eeSignals({
        const snapshot = frame.payload as {
          roomId?: string;
          roomVersion?: number | string;
-         e2ee?: { leaderDeviceId?: string };
-         peers?: Array<{ peerId?: string; userId?: string; deviceId?: string }>;
-         producers?: Array<{ producerId?: string; peerDeviceId?: string; kind?: string; source?: string }>;
-       } | null;
+          e2ee?: { leaderDeviceId?: string; missingSenderKeys?: string[] };
+          peers?: Array<{ peerId?: string; userId?: string; deviceId?: string }>;
+          producers?: Array<{ producerId?: string; peerDeviceId?: string; kind?: string; source?: string }>;
+        } | null;
        const roomVersionRaw = snapshot?.roomVersion;
        const roomVersion = typeof roomVersionRaw === "number" ? roomVersionRaw : Number(roomVersionRaw);
        if (!Number.isFinite(roomVersion) || roomVersion < 0) {
@@ -191,11 +405,21 @@ export function useCallsV2E2eeSignals({
          return;
        }
        lastSnapshotRoomVersionRef.current = roomVersion;
-       const leader = snapshot?.e2ee?.leaderDeviceId;
-       if (typeof leader === "string" && leader.length > 0) {
-         e2eeLeaderDeviceRef.current = leader;
-       }
-       if (Array.isArray(snapshot?.peers)) {
+        const leader = snapshot?.e2ee?.leaderDeviceId;
+        if (typeof leader === "string" && leader.length > 0) {
+          e2eeLeaderDeviceRef.current = leader;
+        }
+         const missingSenderKeys = Array.isArray(snapshot?.e2ee?.missingSenderKeys)
+           ? snapshot.e2ee.missingSenderKeys.filter((deviceId): deviceId is string => typeof deviceId === "string" && deviceId.length > 0)
+           : [];
+         effectiveMissingSenderKeysRef.current = new Set(missingSenderKeys);
+        if (missingSenderKeys.length > 0) {
+          logger.warn("[VideoCallContext] ROOM_SNAPSHOT E2EE resync required: missing sender keys", {
+            roomId: snapshot?.roomId,
+            missingSenderKeys,
+          });
+        }
+        if (Array.isArray(snapshot?.peers)) {
          const peerIds: string[] = (snapshot.peers as Array<{ peerId?: string; userId?: string; deviceId?: string }>)
            .map((p) => p.peerId ?? p.userId ?? p.deviceId ?? "")
            .filter(Boolean);
@@ -328,25 +552,26 @@ export function useCallsV2E2eeSignals({
              return;
            }
 
-           const identityKeyPair = await getOrCreateIdentityKeyPair();
-           const sigBytes = await signIdentity(
-             identityKeyPair.privateKey,
-             user?.id ?? "",
-             getStableCallsDeviceId(),
-             sessionIdForDiscovery,
-             senderPublicKey,
-             senderPublicKey,
-             epoch,
-             "",
-             crypto.randomUUID(),
-           );
-           const identityPubKeyJwk = await exportEcdsaPublicKey(identityKeyPair.publicKey);
-           const sigB64 = btoa(String.fromCharCode(...new Uint8Array(sigBytes)));
-
             const discoveryNonce = crypto.randomUUID();
+            const discoveryMessageId = crypto.randomUUID();
             const mySigningPublicKey = await kx.getSigningPublicKeyBase64();
-            // Discovery: используем случайный salt вместо пустого — защищает HKDF от детерминированной деривации
+            // Discovery: используем случайный salt вместо пустого — защищает signed payload от детерминированности
             const discoverySalt = crypto.getRandomValues(new Uint8Array(32));
+            const discoverySaltB64 = bytesToBase64(discoverySalt);
+            const identityKeyPair = await getOrCreateIdentityKeyPair();
+            const sigBytes = await signIdentity(
+              identityKeyPair.privateKey,
+              user?.id ?? "",
+              getStableCallsDeviceId(),
+              sessionIdForDiscovery,
+              senderPublicKey,
+              senderPublicKey,
+              epoch,
+              discoverySaltB64,
+              discoveryMessageId,
+            );
+            const identityPubKeyJwk = await exportEcdsaPublicKey(identityKeyPair.publicKey);
+            const sigB64 = btoa(String.fromCharCode(...new Uint8Array(sigBytes)));
             void client.keyPackage({
               roomId,
               fromDeviceId: getStableCallsDeviceId(),
@@ -356,11 +581,12 @@ export function useCallsV2E2eeSignals({
               epoch,
               keyPackageType: "DISCOVERY",
               discoveryNonce,
+              messageId: discoveryMessageId,
               ciphertext: senderPublicKey,
               sig: sigB64,
               senderPublicKey,
               senderSigningPublicKey: mySigningPublicKey,
-              salt: bytesToBase64(discoverySalt),
+              salt: discoverySaltB64,
              senderIdentity: {
                userId: user?.id ?? "",
                deviceId: getStableCallsDeviceId(),
@@ -399,8 +625,8 @@ export function useCallsV2E2eeSignals({
       if (!Number.isFinite(epoch) || epoch < 0) return;
 
       const msgId =
-        frame.msgId ??
-        ((frame.payload as Record<string, unknown> | undefined)?.messageId as string | undefined);
+        ((frame.payload as Record<string, unknown> | undefined)?.messageId as string | undefined) ??
+        frame.msgId;
       const isValidPkg = rekeyMachineRef.current?.validateKeyPackage(epoch, msgId);
       if (isValidPkg === false) {
         logger.warn("[VideoCallContext] KEY_PACKAGE rejected: anti-replay or stale epoch", { epoch, msgId });
@@ -472,18 +698,6 @@ export function useCallsV2E2eeSignals({
             ].join(":");
 
             const senderSigningKeyB64 = rawPayload?.senderSigningPublicKey as string | undefined;
-            if (senderSigningKeyB64 && senderIdentity?.peerId) {
-              try {
-                await keyExchange.registerPeerSigningKey(senderIdentity.peerId, senderSigningKeyB64);
-              } catch (regErr) {
-                logger.warn("[VideoCallContext] registerPeerSigningKey failed", {
-                  peerId: senderIdentity.peerId,
-                  error: regErr instanceof Error
-                    ? { name: regErr.name, message: regErr.message }
-                    : String(regErr),
-                });
-              }
-            }
 
 const pkgData: KeyPackageData = {
                senderPublicKey: senderPublicKeyB64 ?? "",
@@ -499,12 +713,12 @@ const pkgData: KeyPackageData = {
                },
              };
 
-             // H-3: messageId required for anti-replay protection
-             const messageId = pkgData.messageId;
-             if (!isDiscovery && (!messageId || messageId.length === 0)) {
-               logger.warn("[VideoCallContext] KEY_PACKAGE rejected: messageId is missing — anti-replay required", { epoch });
-               return;
-             }
+              // H-3: messageId required for anti-replay protection
+              const messageId = pkgData.messageId;
+              if (!messageId || messageId.length === 0) {
+                logger.warn("[VideoCallContext] KEY_PACKAGE rejected: messageId is missing — anti-replay required", { epoch, isDiscovery });
+                return;
+              }
 
             if (isDiscovery) {
               if (ciphertextB64 !== senderPublicKeyB64) {
@@ -537,51 +751,48 @@ const pkgData: KeyPackageData = {
               }
 
               // Verify ECDSA signature on discovery packet before creating wrapped epoch key.
-              // Discovery packets carry sigB64 when sent by current-version clients.
-              // If sigB64 is present + senderIdentity has identityPubKeyJwk → verify.
-              // Reject on verification failure. Allow without verification only if
-              // sender is a legacy client (no sig, no identity key) — defense in depth
-              // via WS authentication (only authenticated devices reach this handler).
-              if (sigB64 && sigB64.length > 0) {
-                const senderIdentityJwk = rawPayload?.senderIdentity as
-                  | { identityPubKeyJwk?: JsonWebKey }
-                  | undefined;
-                const senderJwk = senderIdentityJwk?.identityPubKeyJwk;
-                if (senderJwk && senderJwk.kty && senderJwk.crv) {
-                  try {
-                    const senderVerifyKey = await importPublicKey(senderJwk);
-                    const sigBytes = Uint8Array.from(atob(sigB64), (c) => c.charCodeAt(0));
-                    const senderSalt = (rawPayload?.salt as string | undefined) ?? "";
-                    const senderMessageId = (rawPayload?.messageId as string | undefined) ?? "";
-                    const valid = await verifyIdentity(
-                      senderVerifyKey,
-                      senderUserId,
-                      senderDeviceId,
-                      senderSessionId,
-                      senderPublicKeyB64,
-                      ciphertextB64,
-                      epoch,
-                      senderSalt,
-                      senderMessageId,
-                      sigBytes.buffer as ArrayBuffer,
-                    );
-                    if (!valid) {
-                      logger.warn("[VideoCallContext] KEY_PACKAGE discovery rejected: ECDSA signature verification FAILED", {
-                        epoch, senderUserId, senderDeviceId,
-                      });
-                      return;
-                    }
-                    logger.debug("[VideoCallContext] KEY_PACKAGE discovery ECDSA signature verified", {
-                      epoch, senderUserId,
-                    });
-                  } catch (verifyErr) {
-                    logger.warn("[VideoCallContext] KEY_PACKAGE discovery signature verification error", {
-                      epoch, senderUserId, error: verifyErr instanceof Error ? verifyErr.message : String(verifyErr),
-                    });
-                    // Fail-closed: reject if verification attempted but failed
-                    return;
-                  }
+              const senderIdentityJwk = rawPayload?.senderIdentity as
+                | { identityPubKeyJwk?: JsonWebKey }
+                | undefined;
+              const senderJwk = senderIdentityJwk?.identityPubKeyJwk;
+              if (!senderJwk || !senderJwk.kty || !senderJwk.crv) {
+                logger.warn("[VideoCallContext] KEY_PACKAGE discovery rejected: missing sender identity public key", {
+                  epoch,
+                  senderUserId,
+                  senderDeviceId,
+                });
+                return;
+              }
+              try {
+                await assertPeerIdentityPinned(senderUserId, senderDeviceId, senderJwk);
+                const senderVerifyKey = await importPublicKey(senderJwk);
+                const sigBytes = Uint8Array.from(atob(sigB64), (c) => c.charCodeAt(0));
+                const valid = await verifyIdentity(
+                  senderVerifyKey,
+                  senderUserId,
+                  senderDeviceId,
+                  senderSessionId,
+                  senderPublicKeyB64,
+                  ciphertextB64,
+                  epoch,
+                  pkgData.salt,
+                  pkgData.messageId,
+                  sigBytes.buffer as ArrayBuffer,
+                );
+                if (!valid) {
+                  logger.warn("[VideoCallContext] KEY_PACKAGE discovery rejected: ECDSA signature verification FAILED", {
+                    epoch, senderUserId, senderDeviceId,
+                  });
+                  return;
                 }
+                logger.debug("[VideoCallContext] KEY_PACKAGE discovery ECDSA signature verified", {
+                  epoch, senderUserId,
+                });
+              } catch (verifyErr) {
+                logger.warn("[VideoCallContext] KEY_PACKAGE discovery signature verification error", {
+                  epoch, senderUserId, error: verifyErr instanceof Error ? verifyErr.message : String(verifyErr),
+                });
+                return;
               }
 
               logger.info("[VideoCallContext] KEY_PACKAGE discovery accepted: leader responding with wrapped epoch key", {
@@ -626,8 +837,9 @@ const identitySig = btoa(String.fromCharCode(...new Uint8Array(identitySigRaw)))
                      senderKeyId,
                      targetDeviceId: senderDeviceId,
                      epoch,
-                     keyPackageType: "WRAPPED_EPOCH_KEY",
-                     ciphertext: pkg.ciphertext,
+                      keyPackageType: "WRAPPED_EPOCH_KEY",
+                      messageId: pkg.messageId,
+                      ciphertext: pkg.ciphertext,
                      sig: pkg.sig,
                      identitySig,
                      senderPublicKey: pkg.senderPublicKey,
@@ -658,6 +870,69 @@ const identitySig = btoa(String.fromCharCode(...new Uint8Array(identitySigRaw)))
             }
 
             if (!isDiscovery) {
+              const identitySigB64 = rawPayload?.identitySig as string | undefined;
+              const senderIdentityWithJwk = rawPayload?.senderIdentity as
+                | { identityPubKeyJwk?: JsonWebKey }
+                | undefined;
+              const senderJwk = senderIdentityWithJwk?.identityPubKeyJwk;
+
+              if (!identitySigB64 || identitySigB64.length === 0) {
+                logger.warn("[VideoCallContext] KEY_PACKAGE rejected: missing identitySig", { epoch, senderUserId, senderDeviceId });
+                return;
+              }
+              if (!senderJwk || !senderJwk.kty || !senderJwk.crv) {
+                logger.warn("[VideoCallContext] KEY_PACKAGE rejected: missing sender identity public key", { epoch, senderUserId, senderDeviceId });
+                return;
+              }
+
+              try {
+                await assertPeerIdentityPinned(senderUserId, senderDeviceId, senderJwk);
+                const senderIdentityVerifyKey = await importPublicKey(senderJwk);
+                const identitySigBytes = Uint8Array.from(atob(identitySigB64), (c) => c.charCodeAt(0));
+                const identityValid = await verifyIdentity(
+                  senderIdentityVerifyKey,
+                  senderUserId,
+                  senderDeviceId,
+                  senderSessionId,
+                  senderPublicKeyB64,
+                  ciphertextB64,
+                  epoch,
+                  pkgData.salt,
+                  pkgData.messageId,
+                  identitySigBytes.buffer as ArrayBuffer,
+                );
+                if (!identityValid) {
+                  logger.warn("[VideoCallContext] KEY_PACKAGE rejected: identitySig verification FAILED", { epoch, senderUserId, senderDeviceId });
+                  return;
+                }
+              } catch (verifyErr) {
+                logger.warn("[VideoCallContext] KEY_PACKAGE identitySig verification error", {
+                  epoch,
+                  senderUserId,
+                  senderDeviceId,
+                  error: verifyErr instanceof Error ? verifyErr.message : String(verifyErr),
+                });
+                return;
+              }
+
+              if (!senderSigningKeyB64 || !senderIdentity?.peerId) {
+                logger.warn("[VideoCallContext] KEY_PACKAGE rejected: missing sender signing key", { epoch, senderUserId, senderDeviceId });
+                return;
+              }
+              try {
+                await keyExchange.registerPeerSigningKey(senderIdentity.peerId, senderSigningKeyB64);
+              } catch (regErr) {
+                logger.warn("[VideoCallContext] registerPeerSigningKey failed", {
+                  peerId: senderIdentity.peerId,
+                  error: regErr instanceof Error
+                    ? { name: regErr.name, message: regErr.message }
+                    : String(regErr),
+                });
+                return;
+              }
+            }
+
+            if (!isDiscovery) {
               const semanticReplayKey = `wrapped:in:${packageDeliveryKey}`;
               if (keyPackageNonceRef.current.has(semanticReplayKey)) {
                 logger.warn("[VideoCallContext] KEY_PACKAGE wrapped delivery replay rejected", {
@@ -684,9 +959,16 @@ const identitySig = btoa(String.fromCharCode(...new Uint8Array(identitySigRaw)))
                 senderDeviceId,
               });
               await mediaEncryption.setDecryptionKey(peerKey, peerEpochKey);
+              if (senderDeviceId) {
+                effectiveMissingSenderKeysRef.current.delete(senderDeviceId);
+              }
               keyExchangeSuccess = true;
               logger.info("[VideoCallContext] KEY_PACKAGE: processKeyPackage OK", { epoch, senderUserId, peerKey });
               onDecryptionKeyReady?.(peerKey);
+              window.setTimeout(() => {
+                maybeSendE2eeReady("key-package-processed");
+                maybeApplyPendingRekeyCommit("key-package-processed");
+              }, 0);
             } catch (error) {
               const errDetail = error instanceof Error
                 ? { name: error.name, message: error.message }
@@ -706,6 +988,7 @@ const identitySig = btoa(String.fromCharCode(...new Uint8Array(identitySigRaw)))
                 roomId,
                 epoch,
                 fromDeviceId: myDeviceId,
+                messageId: crypto.randomUUID(),
                 toDeviceId: senderDeviceId || undefined,
                 senderKeyId,
                 refId: frame.msgId,
@@ -726,6 +1009,23 @@ const identitySig = btoa(String.fromCharCode(...new Uint8Array(identitySigRaw)))
       const nextEpoch = typeof epochRaw === "number" ? epochRaw : Number(epochRaw);
       if (!Number.isFinite(nextEpoch)) return;
       if (nextEpoch > e2eeEpochRef.current) {
+        const readiness = evaluateE2eeReady(nextEpoch, false);
+        if (!readiness.ready) {
+          pendingRekeyCommitEpochRef.current = nextEpoch;
+          logger.warn("[VideoCallContext] REKEY_COMMIT deferred: E2EE_READY gate is not satisfied yet — fail closed until recovery", readiness);
+          const roomId = callsWsRoomRef.current;
+          const localDeviceId = getStableCallsDeviceId();
+          if (roomId) {
+            void client.syncMailbox({ deviceId: localDeviceId }).catch((err) => {
+              logger.warn("[VideoCallContext] mailbox sync after deferred REKEY_COMMIT failed", err);
+            });
+            void client.roomStateGet(roomId).catch((err) => {
+              logger.warn("[VideoCallContext] room state sync after deferred REKEY_COMMIT failed", err);
+            });
+          }
+          return;
+        }
+
         e2eeEpochRef.current = nextEpoch;
         rekeyMachineRef.current?.activateEpoch(nextEpoch);
         epochGuardRef.current?.markE2eeReady(nextEpoch);
@@ -753,6 +1053,7 @@ const identitySig = btoa(String.fromCharCode(...new Uint8Array(identitySigRaw)))
       }
       if (identity?.peerId) {
         rekeyMachineRef.current?.addPeer(identity.peerId);
+        startForcedRekeyIfLeader("peer_joined");
       }
     });
 
@@ -771,7 +1072,72 @@ const identitySig = btoa(String.fromCharCode(...new Uint8Array(identitySigRaw)))
       }
       if (identity?.peerId) {
         rekeyMachineRef.current?.removePeer(identity.peerId);
+        startForcedRekeyIfLeader("peer_left");
       }
+    });
+
+    on("REKEY_REQUIRED", (frame) => {
+      const payload = frame.payload as { reason?: string } | undefined;
+      startForcedRekeyIfLeader(payload?.reason ?? "server_rekey_required");
+    });
+
+    on("PEER_KICKED", (frame) => {
+      const payload = frame.payload as Record<string, unknown> | undefined;
+      const deviceId = payload?.deviceId as string | undefined;
+      const identity = resolvePeerIdentity({
+        payloadPeerId: payload?.peerId as string | undefined,
+        payloadUserId: payload?.userId as string | undefined,
+        payloadDeviceId: deviceId,
+        fallbackUserId: deviceId ? peerUserIdByDeviceIdRef.current.get(deviceId) : undefined,
+      });
+      if (identity?.deviceId) peerUserIdByDeviceIdRef.current.delete(identity.deviceId);
+      if (identity?.peerId) rekeyMachineRef.current?.removePeer(identity.peerId);
+      startForcedRekeyIfLeader("peer_kicked");
+    });
+
+    on("PEER_BANNED", (frame) => {
+      const payload = frame.payload as Record<string, unknown> | undefined;
+      const deviceId = payload?.deviceId as string | undefined;
+      const identity = resolvePeerIdentity({
+        payloadPeerId: payload?.peerId as string | undefined,
+        payloadUserId: payload?.userId as string | undefined,
+        payloadDeviceId: deviceId,
+        fallbackUserId: deviceId ? peerUserIdByDeviceIdRef.current.get(deviceId) : undefined,
+      });
+      if (identity?.deviceId) peerUserIdByDeviceIdRef.current.delete(identity.deviceId);
+      if (identity?.peerId) rekeyMachineRef.current?.removePeer(identity.peerId);
+      startForcedRekeyIfLeader("peer_banned");
+    });
+
+    on("DEVICE_REMOVED", (frame) => {
+      const payload = frame.payload as Record<string, unknown> | undefined;
+      const deviceId = payload?.deviceId as string | undefined;
+      const identity = resolvePeerIdentity({
+        payloadPeerId: payload?.peerId as string | undefined,
+        payloadUserId: payload?.userId as string | undefined,
+        payloadDeviceId: deviceId,
+        fallbackUserId: deviceId ? peerUserIdByDeviceIdRef.current.get(deviceId) : undefined,
+      });
+      if (identity?.deviceId) peerUserIdByDeviceIdRef.current.delete(identity.deviceId);
+      if (identity?.peerId) rekeyMachineRef.current?.removePeer(identity.peerId);
+      startForcedRekeyIfLeader("device_removed");
+    });
+
+    on("KEY_ACKED", (frame) => {
+      const payload = frame.payload as { roomId?: string; epoch?: number | string; missingSenderKeys?: unknown } | undefined;
+      const missingSenderKeys = Array.isArray(payload?.missingSenderKeys)
+        ? payload.missingSenderKeys.filter((deviceId): deviceId is string => typeof deviceId === "string" && deviceId.length > 0)
+        : [];
+      effectiveMissingSenderKeysRef.current = new Set(missingSenderKeys);
+      if (missingSenderKeys.length > 0) {
+        logger.warn("[VideoCallContext] KEY_ACKED reports missing sender keys", {
+          roomId: payload?.roomId,
+          epoch: payload?.epoch,
+          missingSenderKeys,
+        });
+      }
+      maybeSendE2eeReady("key-acked");
+      maybeApplyPendingRekeyCommit("key-acked");
     });
 
     on("KEY_ACK", (frame) => {
@@ -787,7 +1153,7 @@ const identitySig = btoa(String.fromCharCode(...new Uint8Array(identitySigRaw)))
       if (toDeviceId && toDeviceId !== myDeviceId) return;
       if (epochRaw === undefined || epochRaw === null) return;
       const epoch = typeof epochRaw === "number" ? epochRaw : Number(epochRaw);
-      const msgId = frame.msgId ?? (payload?.messageId as string | undefined);
+      const msgId = (payload?.messageId as string | undefined) ?? frame.msgId;
       if (fromDeviceId && Number.isFinite(epoch) && epoch >= 0) {
         const semanticAckKey = [
           roomId ?? callsWsRoomRef.current ?? "unknown-room",
@@ -888,10 +1254,15 @@ const identitySig = btoa(String.fromCharCode(...new Uint8Array(identitySigRaw)))
     e2eeLeaderDeviceRef,
     epochGuardRef,
     deriveSenderKeyId,
+    bytesToBase64,
     keyPackageNonceRef,
     lastSnapshotRoomVersionRef,
     onDecryptionKeyReady,
     onE2eeActivated,
+    hasInboundE2eeReadiness,
+    getInboundE2eeReadiness,
+    missingSenderKeysRef,
+    effectiveMissingSenderKeysRef,
     peerUserIdByDeviceIdRef,
     callsWsRef,
     sfuManagerRef,
@@ -902,6 +1273,9 @@ const identitySig = btoa(String.fromCharCode(...new Uint8Array(identitySigRaw)))
     pendingProducersToConsumeRef,
     consumePendingProducersRef,
     producerPeerKeyRef,
+    evaluateE2eeReady,
+    maybeSendE2eeReady,
+    maybeApplyPendingRekeyCommit,
   ]);
 
    // Detach function to clean up listeners

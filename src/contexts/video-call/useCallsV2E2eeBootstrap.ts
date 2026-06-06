@@ -33,6 +33,9 @@ interface UseCallsV2E2eeBootstrapParams {
   handleE2eePipeBreakRef: MutableRefObject<((info: PipeBreakInfo) => void) | null>;
   onDecryptionKeyReady?: (peerKey: string) => void;
   onE2eeActivated?: () => void;
+  hasInboundE2eeReadiness?: () => boolean;
+  getInboundE2eeReadiness?: () => { ready: boolean; missingDecryptionPeers: string[]; pendingConsumers: string[] };
+  missingSenderKeysRef?: MutableRefObject<Set<string>>;
 }
 
 export function useCallsV2E2eeBootstrap({
@@ -57,6 +60,9 @@ export function useCallsV2E2eeBootstrap({
   handleE2eePipeBreakRef,
   onDecryptionKeyReady,
   onE2eeActivated,
+  hasInboundE2eeReadiness,
+  getInboundE2eeReadiness,
+  missingSenderKeysRef,
 }: UseCallsV2E2eeBootstrapParams) {
    const { attach } = useCallsV2E2eeSignals({
     user,
@@ -79,6 +85,9 @@ export function useCallsV2E2eeBootstrap({
     consumePendingProducersRef,
     onDecryptionKeyReady,
     onE2eeActivated,
+    hasInboundE2eeReadiness,
+    getInboundE2eeReadiness,
+    missingSenderKeysRef,
   });
 
   const initializeCallsV2E2ee = useCallback(async (client: CallsWsClient): Promise<void> => {
@@ -122,7 +131,12 @@ export function useCallsV2E2eeBootstrap({
     }
     epochGuardRef.current.markAuthenticated();
      attach(client);
-  }, [
+     void client.syncMailbox({ deviceId: getStableCallsDeviceId(), lastStreamId: "0-0", limit: 100 }).catch((err) => {
+       logger.warn("[VideoCallContext] calls-v2 mailbox sync after E2EE attach failed", {
+         error: err instanceof Error ? err.message : String(err),
+       });
+     });
+   }, [
     callKeyExchangeRef,
     callMediaEncryptionRef,
     epochGuardRef,

@@ -10,6 +10,16 @@ import type { CallKeyExchange } from "@/calls-v2/callKeyExchange";
 import type { CallsWsClient } from "@/calls-v2/wsClient";
 import type { PipeBreakInfo } from "@/lib/e2ee/insertableStreams";
 
+function bytesToBase64(bytes: Uint8Array): string {
+  let binary = "";
+  for (let i = 0; i < bytes.length; i++) {
+    const byte = bytes[i];
+    if (byte === undefined) continue;
+    binary += String.fromCharCode(byte);
+  }
+  return btoa(binary);
+}
+
 interface Params {
   user: { id: string } | null;
   callsWsRef: MutableRefObject<CallsWsClient | null>;
@@ -39,6 +49,8 @@ export function useE2eeKeyWatchdog({
 
     const senderPublicKey = await kx.getPublicKeyBase64();
     const sessionIdForDiscovery = kx.getSessionId();
+    const discoveryMessageId = crypto.randomUUID();
+    const discoverySaltB64 = bytesToBase64(crypto.getRandomValues(new Uint8Array(32)));
     const identityKeyPair = await getOrCreateIdentityKeyPair();
     const sigBytes = await signIdentity(
       identityKeyPair.privateKey,
@@ -48,8 +60,8 @@ export function useE2eeKeyWatchdog({
       senderPublicKey,
       senderPublicKey,
       epoch,
-      "",
-      crypto.randomUUID(),
+      discoverySaltB64,
+      discoveryMessageId,
     );
     const identityPubKeyJwk = await exportEcdsaPublicKey(identityKeyPair.publicKey);
     const sigB64 = btoa(String.fromCharCode(...new Uint8Array(sigBytes)));
@@ -63,11 +75,12 @@ export function useE2eeKeyWatchdog({
       epoch,
       keyPackageType: "DISCOVERY",
       discoveryNonce: crypto.randomUUID(),
+      messageId: discoveryMessageId,
       ciphertext: senderPublicKey,
       sig: sigB64,
       senderPublicKey,
       senderSigningPublicKey: mySigningPublicKey,
-      salt: "",
+      salt: discoverySaltB64,
       senderIdentity: {
         userId: user.id,
         deviceId: myDeviceId,

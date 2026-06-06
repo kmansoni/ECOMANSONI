@@ -1,5 +1,7 @@
 import { logger } from "@/lib/logger";
 import type { RtpCapabilities, TransportCreatedPayload } from "@/calls-v2/types";
+import type { CallMediaEncryption } from "@/calls-v2/callMediaEncryption";
+import type { RekeyStateMachine } from "@/calls-v2/rekeyStateMachine";
 import { TURN_CREDENTIALS_EDGE_FNS } from "@/lib/turnCredentialsConfig";
 
 const CALLS_V2_ENABLED_RAW = String(import.meta.env.VITE_CALLS_V2_ENABLED ?? "").trim().toLowerCase();
@@ -212,6 +214,82 @@ export function hasInsertableStreamsSupport(): boolean {
     logger.warn("video_call_context.insertable_streams_check_failed", { error });
     return false;
   }
+}
+
+export type E2eeReadyCheckResult = {
+  ready: boolean;
+  epoch: number;
+  mediaEpoch: number | null;
+  hasOutboundKey: boolean;
+  missingDecryptionPeers: string[];
+  missingSenderKeys: string[];
+  inboundReady: boolean;
+  pendingReceiverTransforms: string[];
+  quorumReady: boolean;
+  rekeyState: string | null;
+  missingAckPeers: string[];
+};
+
+export type E2eeReadyCheckParams = {
+  epoch: number;
+  mediaEncryption: CallMediaEncryption | null | undefined;
+  rekeyMachine?: RekeyStateMachine | null;
+  missingSenderKeys?: Iterable<string>;
+  inbound?: {
+    ready: boolean;
+    missingDecryptionPeers?: string[];
+    pendingConsumers?: string[];
+  } | null;
+  requireQuorum?: boolean;
+};
+
+export function canSendE2eeReady({
+  epoch,
+  mediaEncryption,
+  rekeyMachine,
+  missingSenderKeys,
+  inbound,
+  requireQuorum = false,
+}: E2eeReadyCheckParams): E2eeReadyCheckResult {
+  const activePeers = rekeyMachine?.getActivePeerIds() ?? new Set<string>();
+  const mediaMissingPeers = Array.from(activePeers).filter((peerId) => {
+    if (!peerId) return false;
+    return !mediaEncryption?.hasDecryptionKeyForPeer(peerId);
+  });
+  const inboundMissingPeers = inbound?.missingDecryptionPeers ?? [];
+  const missingDecryptionPeers: string[] = Array.from(new Set<string>([...mediaMissingPeers, ...inboundMissingPeers]));
+  const pendingReceiverTransforms = inbound?.pendingConsumers ?? [];
+  const ackStatus = rekeyMachine?.getAckStatus() ?? [];
+  const missingAckPeers = ackStatus
+    .filter((ack) => activePeers.has(ack.peerId) && !ack.acked)
+    .map((ack) => ack.peerId);
+  const rekeyState = rekeyMachine?.getState() ?? null;
+  const quorumReady = !requireQuorum || missingAckPeers.length === 0;
+  const senderKeys = Array.from(missingSenderKeys ?? []).filter(Boolean);
+  const hasOutboundKey = Boolean(mediaEncryption?.hasOutboundKey());
+  const mediaEpoch = mediaEncryption?.getEpoch() ?? null;
+  const inboundReady = inbound?.ready ?? true;
+
+  return {
+    ready:
+      hasOutboundKey &&
+      mediaEpoch === epoch &&
+      missingDecryptionPeers.length === 0 &&
+      senderKeys.length === 0 &&
+      inboundReady &&
+      pendingReceiverTransforms.length === 0 &&
+      quorumReady,
+    epoch,
+    mediaEpoch,
+    hasOutboundKey,
+    missingDecryptionPeers,
+    missingSenderKeys: senderKeys,
+    inboundReady,
+    pendingReceiverTransforms,
+    quorumReady,
+    rekeyState,
+    missingAckPeers,
+  };
 }
 
 export function extractRouterCapsFromJoinPayload(payload: unknown): RtpCapabilities | null {

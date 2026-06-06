@@ -45,22 +45,57 @@ function openDb(): Promise<IDBDatabase> {
   });
 }
 
-function idbGet(db: IDBDatabase, key: string): Promise<CryptoKeyPair | undefined> {
+function idbGet<T = CryptoKeyPair>(db: IDBDatabase, key: string): Promise<T | undefined> {
   return new Promise((resolve, reject) => {
     const tx = db.transaction(STORE_NAME, "readonly");
     const req = tx.objectStore(STORE_NAME).get(key);
-    req.onsuccess = () => resolve(req.result as CryptoKeyPair | undefined);
+    req.onsuccess = () => resolve(req.result as T | undefined);
     req.onerror = () => reject(req.error);
   });
 }
 
-function idbPut(db: IDBDatabase, key: string, value: CryptoKeyPair): Promise<void> {
+function idbPut<T>(db: IDBDatabase, key: string, value: T): Promise<void> {
   return new Promise((resolve, reject) => {
     const tx = db.transaction(STORE_NAME, "readwrite");
     const req = tx.objectStore(STORE_NAME).put(value, key);
     req.onsuccess = () => resolve();
     req.onerror = () => reject(req.error);
   });
+}
+
+function bytesToBase64(bytes: Uint8Array): string {
+  let binary = "";
+  for (let i = 0; i < bytes.length; i++) {
+    const byte = bytes[i];
+    if (byte === undefined) continue;
+    binary += String.fromCharCode(byte);
+  }
+  return btoa(binary);
+}
+
+function stableStringifyJwk(jwk: JsonWebKey): string {
+  return JSON.stringify({
+    kty: jwk.kty,
+    crv: jwk.crv,
+    x: jwk.x,
+    y: jwk.y,
+    alg: jwk.alg,
+    ext: jwk.ext,
+    key_ops: jwk.key_ops,
+  });
+}
+
+async function fingerprintIdentityJwk(jwk: JsonWebKey): Promise<string> {
+  const encoded = new TextEncoder().encode(stableStringifyJwk(jwk));
+  const digest = await crypto.subtle.digest("SHA-256", encoded);
+  return bytesToBase64(new Uint8Array(digest));
+}
+
+interface TrustedPeerIdentityRecord {
+  userId: string;
+  deviceId: string;
+  fingerprint: string;
+  pinnedAt: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -79,7 +114,7 @@ function idbPut(db: IDBDatabase, key: string, value: CryptoKeyPair): Promise<voi
  */
 export async function getOrCreateIdentityKeyPair(): Promise<CryptoKeyPair> {
   const db = await openDb();
-  const existing = await idbGet(db, KEY_ID);
+  const existing = await idbGet<CryptoKeyPair>(db, KEY_ID);
   if (existing && existing.privateKey && existing.publicKey) {
     db.close();
     return existing;
@@ -181,4 +216,47 @@ export async function importPublicKey(jwk: JsonWebKey): Promise<CryptoKey> {
     true, // public key is exportable
     ["verify"],
   );
+}
+
+/**
+ * Trust On First Use pinning for calls-v2 peer identity keys.
+ * First seen identity public key for userId:deviceId is pinned in IndexedDB.
+ * Any later fingerprint mismatch is rejected fail-closed as possible identity substitution.
+ */
+export async function assertPeerIdentityPinned(
+  userId: string,
+  deviceId: string,
+  jwk: JsonWebKey,
+): Promise<string> {
+  if (!userId || !deviceId) {
+    throw new Error("ecdsaIdentity: cannot pin peer identity without userId and deviceId");
+  }
+  if (jwk.kty !== "EC" || jwk.crv !== "P-256") {
+    throw new Error(`ecdsaIdentity: cannot pin unexpected key type kty=${jwk.kty} crv=${jwk.crv}`);
+  }
+
+  const fingerprint = await fingerprintIdentityJwk(jwk);
+  const key = `peer-identity:${userId}:${deviceId}`;
+  const db = await openDb();
+  try {
+    const existing = await idbGet<TrustedPeerIdentityRecord>(db, key);
+    if (!existing) {
+      await idbPut<TrustedPeerIdentityRecord>(db, key, {
+        userId,
+        deviceId,
+        fingerprint,
+        pinnedAt: Date.now(),
+      });
+      return fingerprint;
+    }
+
+    if (existing.fingerprint !== fingerprint) {
+      throw new Error(
+        `ecdsaIdentity: peer identity key changed for ${userId}:${deviceId} — TOFU pin mismatch`
+      );
+    }
+    return fingerprint;
+  } finally {
+    db.close();
+  }
 }

@@ -6,15 +6,17 @@
 
 import { describe, it, expect, vi } from 'vitest';
 
-vi.mock('mediasoup-client', () => ({
-  Device: vi.fn().mockImplementation(() => ({
-    loaded: false,
-    load: vi.fn().mockImplementation(async () => {}),
-    createSendTransport: vi.fn(),
-    createRecvTransport: vi.fn(),
-    rtpCapabilities: {},
-  })),
-}));
+vi.mock('mediasoup-client', () => {
+  class MockDevice {
+    loaded = false;
+    load = vi.fn().mockImplementation(async () => {});
+    createSendTransport = vi.fn();
+    createRecvTransport = vi.fn();
+    rtpCapabilities = {};
+  }
+
+  return { Device: MockDevice };
+});
 
 vi.mock('@/lib/logger', () => ({
   logger: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() },

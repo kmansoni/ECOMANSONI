@@ -24,6 +24,12 @@ export interface CallIdentity {
 
 import { logger } from '@/lib/logger';
 
+const UUID_V4_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+function isUuidV4(value: string): boolean {
+  return UUID_V4_RE.test(value);
+}
+
 /**
  * epoch → non-extractable AES-128-GCM CryptoKey для SFrame.
  * СЫРЫЕ БАЙТЫ КЛЮЧА НЕ ВКЛЮЧЕНЫ — они хранятся в приватном поле epochRawBytes
@@ -57,6 +63,10 @@ export class CallKeyExchange {
   private epochRawBytes: Map<number, Uint8Array> = new Map();
   /** peerId (userId:deviceId) → их ECDSA signing CryptoKey */
   private peerSigningKeys: Map<string, CryptoKey> = new Map();
+  /** Signed KEY_PACKAGE messageIds processed by this instance (anti-replay). */
+  private seenKeyPackageMessageIds: Set<string> = new Set();
+  /** peerId (userId:deviceId) → highest processed KEY_PACKAGE epoch. */
+  private highestProcessedEpochBySender: Map<string, number> = new Map();
 
   constructor(identity: CallIdentity) {
     this.identity = identity;
@@ -280,6 +290,14 @@ export class CallKeyExchange {
     if (!pkg.messageId || typeof pkg.messageId !== 'string' || pkg.messageId.length === 0) {
       throw new Error('[CallKeyExchange] processKeyPackage: messageId is missing.');
     }
+    if (!isUuidV4(pkg.messageId)) {
+      throw new Error('[CallKeyExchange] processKeyPackage: messageId must be UUID v4.');
+    }
+    if (this.seenKeyPackageMessageIds.has(pkg.messageId)) {
+      throw new Error(`[CallKeyExchange] KEY_PACKAGE replay REJECTED: duplicate messageId=${pkg.messageId}`);
+    }
+
+    const saltBytes = decodeRequiredBase64Bytes(pkg.salt, 32, 'salt');
 
     // ── C-1: Verify ECDSA signature BEFORE any other processing ──
     const senderId = `${pkg.senderIdentity.userId}:${pkg.senderIdentity.deviceId}`;
@@ -305,6 +323,12 @@ export class CallKeyExchange {
     }
 
     // ── C-5: Monotonicity check ──
+    const highestPeerEpoch = this.highestProcessedEpochBySender.get(senderId);
+    if (highestPeerEpoch !== undefined && pkg.epoch <= highestPeerEpoch) {
+      throw new Error(
+        `[CallKeyExchange] Epoch rollback REJECTED: received epoch=${pkg.epoch} <= highest processed for ${senderId}=${highestPeerEpoch} (replay/rollback)`
+      );
+    }
     if (this.currentEpochKey && pkg.epoch < this.currentEpochKey.epoch) {
       throw new Error(
         `[CallKeyExchange] Epoch rollback REJECTED: received epoch=${pkg.epoch} < current=${this.currentEpochKey.epoch}`
@@ -338,7 +362,7 @@ export class CallKeyExchange {
       {
         name: 'HKDF',
         hash: 'SHA-256',
-        salt: base64ToBytes(pkg.salt),
+        salt: saltBytes,
         info,
       },
       hkdfKey,
@@ -366,6 +390,8 @@ export class CallKeyExchange {
 
     this.epochKeys.set(pkg.epoch, epochKey);
     this.currentEpochKey = epochKey;
+    this.seenKeyPackageMessageIds.add(pkg.messageId);
+    this.highestProcessedEpochBySender.set(senderId, pkg.epoch);
 
     // ── H-5: Evict old epoch keys for forward secrecy ──
     for (const storedEpoch of Array.from(this.epochKeys.keys())) {
@@ -431,6 +457,8 @@ export class CallKeyExchange {
     this.epochKeys.clear();
     this.epochRawBytes.clear();
     this.peerSigningKeys.clear();
+    this.seenKeyPackageMessageIds.clear();
+    this.highestProcessedEpochBySender.clear();
   }
 
   // ─── Private ────────────────────────────────────────────────────────────────
@@ -455,7 +483,7 @@ export class CallKeyExchange {
 function bytesToBase64(bytes: Uint8Array): string {
   let binary = '';
   for (let i = 0; i < bytes.length; i++) {
-    const byte = bytes.at(i);
+    const byte = bytes[i];
     if (byte === undefined) continue;
     binary += String.fromCharCode(byte);
   }
@@ -465,4 +493,17 @@ function bytesToBase64(bytes: Uint8Array): string {
 function base64ToBytes(b64: string): Uint8Array<ArrayBuffer> {
   const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
   return new Uint8Array(bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer);
+}
+
+function decodeRequiredBase64Bytes(b64: string, expectedLength: number, field: string): Uint8Array<ArrayBuffer> {
+  let bytes: Uint8Array<ArrayBuffer>;
+  try {
+    bytes = base64ToBytes(b64);
+  } catch {
+    throw new Error(`[CallKeyExchange] processKeyPackage: ${field} must be valid base64.`);
+  }
+  if (bytes.length !== expectedLength) {
+    throw new Error(`[CallKeyExchange] processKeyPackage: ${field} must decode to ${expectedLength} bytes, got ${bytes.length}.`);
+  }
+  return bytes;
 }

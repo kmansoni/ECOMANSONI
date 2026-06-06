@@ -63,6 +63,16 @@ import type { RtpCapabilities, ConsumerAddedPayload, ConsumerReplayDescriptor } 
 import type { CallIdentity, KeyPackageData } from "@/calls-v2/callKeyExchange";
 import type { RekeyEvent } from "@/calls-v2/rekeyStateMachine";
 
+function bytesToBase64(bytes: Uint8Array): string {
+  let binary = "";
+  for (let i = 0; i < bytes.length; i++) {
+    const byte = bytes[i];
+    if (byte === undefined) continue;
+    binary += String.fromCharCode(byte);
+  }
+  return btoa(binary);
+}
+
 import { VideoCallSignalingContext } from "./VideoCallSignalingContext";
 import { VideoCallMediaContext } from "./VideoCallMediaContext";
 import { VideoCallUIContext } from "./VideoCallUIContext";
@@ -95,9 +105,28 @@ import {
   getMediaPermissionToastPayload,
   getCallsBootstrapToastPayload,
   isMediaErrorForCall,
+  canSendE2eeReady,
 } from "./videoCallProvider.helpers";
 
 const TURN_ONLY_LEGACY_MODE = false;
+
+type PendingReceiverTransform = {
+  consumerId: string;
+  producerId: string;
+  peerKey: string;
+  roomId: string;
+  createdAt: number;
+  attempts: number;
+  timeoutId: number | null;
+};
+
+type InboundE2eeReadiness = {
+  ready: boolean;
+  missingDecryptionPeers: string[];
+  pendingConsumers: string[];
+};
+
+const PENDING_RECEIVER_TRANSFORM_TIMEOUT_MS = 15_000;
 
 // ─── VideoCallProvider ─────────────────────────────────────────────────────────
 export function VideoCallProvider({ children }: { children: ReactNode }) {
@@ -167,6 +196,198 @@ const unansweredCallTimerRef = useRef<number | null>(null);
    const handleE2eePipeBreakRef = useRef<((info: import('@/lib/e2ee/insertableStreams').PipeBreakInfo) => void) | null>(null);
 
    const remoteTrackListenerCleanupsRef = useRef<Array<() => void>>([]);
+   const pendingReceiverTransformsRef = useRef<Map<string, PendingReceiverTransform>>(new Map());
+   const missingSenderKeysRef = useRef<Set<string>>(new Set());
+
+   const getInboundE2eeReadiness = useCallback((): InboundE2eeReadiness => {
+     const mediaEncryption = callMediaEncryptionRef.current;
+     const pendingConsumers = Array.from(pendingReceiverTransformsRef.current.keys());
+     const activePeers = rekeyMachineRef.current?.getActivePeerIds() ?? new Set<string>();
+     const requiredPeerIds = new Set<string>(activePeers);
+
+     for (const pending of pendingReceiverTransformsRef.current.values()) {
+       requiredPeerIds.add(pending.peerKey);
+     }
+
+     for (const peerKey of producerPeerKeyRef.current.values()) {
+       requiredPeerIds.add(peerKey);
+     }
+
+     const missingDecryptionPeers = Array.from(requiredPeerIds).filter((peerId) => {
+       if (!peerId) return false;
+       return !mediaEncryption?.hasDecryptionKeyForPeer(peerId);
+     });
+
+     return {
+       ready: pendingConsumers.length === 0 && missingDecryptionPeers.length === 0,
+       missingDecryptionPeers,
+       pendingConsumers,
+      };
+    }, []);
+
+    const maybeSendE2eeReadyRef = useRef<(reason: string) => void>(() => undefined);
+
+     const tryAttachPendingReceiverTransform = useCallback((consumerId: string, reason: string): boolean => {
+      const pending = pendingReceiverTransformsRef.current.get(consumerId);
+      if (!pending) return true;
+
+      const enc = callMediaEncryptionRef.current;
+      const receiver = sfuManagerRef.current?.getConsumerReceiver(consumerId);
+      if (enc && receiver && enc.hasDecryptionKeyForPeer(pending.peerKey)) {
+        enc.setupReceiverTransform(receiver, pending.peerKey, consumerId);
+        if (pending.timeoutId !== null) {
+          window.clearTimeout(pending.timeoutId);
+        }
+        pendingReceiverTransformsRef.current.delete(consumerId);
+        logger.info("[VideoCallContext] E2EE receiver transform attached", {
+          consumerId,
+          producerId: pending.producerId,
+          peerKey: pending.peerKey,
+          reason,
+        });
+        if (pending.attempts > 0) {
+          void callsWsRef.current?.consumerResume({ roomId: pending.roomId, consumerId }).then(() => {
+            if (callsWsMediaRoomRef.current !== pending.roomId) return;
+            rebuildRemoteStream();
+          }).catch((err) => {
+            logger.error("[VideoCallContext] deferred consumer resume failed after E2EE transform attach", {
+              consumerId,
+              producerId: pending.producerId,
+              roomId: pending.roomId,
+              error: err instanceof Error ? err.message : String(err),
+            });
+            processedConsumerIdsRef.current.delete(consumerId);
+            sfuManagerRef.current?.closeConsumer(consumerId);
+          });
+        }
+        maybeSendE2eeReadyRef.current("receiver-transform-attached");
+        return true;
+      }
+
+      pending.attempts += 1;
+      if (Date.now() - pending.createdAt > PENDING_RECEIVER_TRANSFORM_TIMEOUT_MS) {
+        if (pending.timeoutId !== null) {
+          window.clearTimeout(pending.timeoutId);
+        }
+        pendingReceiverTransformsRef.current.delete(consumerId);
+        logger.error("[VideoCallContext] E2EE receiver transform attach timeout — fail closed", {
+          consumerId,
+          producerId: pending.producerId,
+          peerKey: pending.peerKey,
+          roomId: pending.roomId,
+          reason,
+          hasEncryptor: Boolean(enc),
+          hasReceiver: Boolean(receiver),
+          hasDecryptionKey: Boolean(enc?.hasDecryptionKeyForPeer(pending.peerKey)),
+        });
+        sfuManagerRef.current?.closeConsumer(consumerId);
+        processedConsumerIdsRef.current.delete(consumerId);
+        return false;
+      }
+
+      logger.debug("[VideoCallContext] E2EE receiver transform pending", {
+        consumerId,
+        producerId: pending.producerId,
+        peerKey: pending.peerKey,
+        roomId: pending.roomId,
+        reason,
+        attempts: pending.attempts,
+        hasEncryptor: Boolean(enc),
+        hasReceiver: Boolean(receiver),
+        hasDecryptionKey: Boolean(enc?.hasDecryptionKeyForPeer(pending.peerKey)),
+      });
+      if (pending.timeoutId !== null) {
+        window.clearTimeout(pending.timeoutId);
+      }
+      pending.timeoutId = window.setTimeout(() => {
+        tryAttachPendingReceiverTransform(consumerId, "deferred-retry");
+      }, 250);
+      return false;
+    }, []);
+
+    const queueReceiverTransform = useCallback((params: {
+      consumerId: string;
+      producerId: string;
+      peerKey: string;
+      roomId: string;
+      reason: string;
+    }): boolean => {
+      const { consumerId, producerId, peerKey, roomId, reason } = params;
+      const existing = pendingReceiverTransformsRef.current.get(consumerId);
+      if (!existing) {
+        const pending: PendingReceiverTransform = {
+          consumerId,
+          producerId,
+          peerKey,
+          roomId,
+          createdAt: Date.now(),
+          attempts: 0,
+          timeoutId: null,
+        };
+        pending.timeoutId = window.setTimeout(() => {
+          tryAttachPendingReceiverTransform(consumerId, "fail-closed-timeout");
+        }, PENDING_RECEIVER_TRANSFORM_TIMEOUT_MS);
+        pendingReceiverTransformsRef.current.set(consumerId, pending);
+      } else {
+        existing.producerId = producerId;
+        existing.peerKey = peerKey;
+        existing.roomId = roomId;
+      }
+      return tryAttachPendingReceiverTransform(consumerId, reason);
+    }, [tryAttachPendingReceiverTransform]);
+
+    const retryPendingReceiverTransformsForPeer = useCallback((peerKey: string): void => {
+      for (const pending of Array.from(pendingReceiverTransformsRef.current.values())) {
+        if (pending.peerKey === peerKey) {
+          tryAttachPendingReceiverTransform(pending.consumerId, "decryption-key-ready");
+        }
+      }
+    }, [tryAttachPendingReceiverTransform]);
+
+    const retryAllPendingReceiverTransforms = useCallback((reason: string): void => {
+      for (const consumerId of Array.from(pendingReceiverTransformsRef.current.keys())) {
+        tryAttachPendingReceiverTransform(consumerId, reason);
+      }
+    }, [tryAttachPendingReceiverTransform]);
+
+    const hasInboundE2eeReadiness = useCallback((): boolean => {
+      const readiness = getInboundE2eeReadiness();
+      if (!readiness.ready) {
+        logger.warn("[VideoCallContext] E2EE_READY blocked: inbound media is not cryptographically ready", readiness);
+      }
+      return readiness.ready;
+    }, [getInboundE2eeReadiness]);
+
+    const maybeSendE2eeReady = useCallback((reason: string): void => {
+      const client = callsWsRef.current;
+      const roomId = callsWsRoomRef.current;
+      const epoch = e2eeEpochRef.current;
+      const readiness = canSendE2eeReady({
+        epoch,
+        mediaEncryption: callMediaEncryptionRef.current,
+        rekeyMachine: rekeyMachineRef.current,
+        missingSenderKeys: missingSenderKeysRef.current,
+        inbound: getInboundE2eeReadiness(),
+        requireQuorum: false,
+      });
+
+      if (!readiness.ready) {
+        logger.debug("[VideoCallContext] E2EE_READY still deferred", { reason, readiness });
+        return;
+      }
+      if (!client || !roomId) return;
+
+      epochGuardRef.current?.markE2eeReady(epoch);
+      setIsE2eeActive(true);
+      void client.e2eeReady({ roomId, epoch }).catch((err) => {
+        logger.warn("[VideoCallContext] deferred E2EE_READY send failed", {
+          reason,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      });
+    }, [getInboundE2eeReadiness]);
+
+    maybeSendE2eeReadyRef.current = maybeSendE2eeReady;
 
    // UI-lock: keeps call UI visible even during transient status changes (permission prompts, etc.)
   const [isCallUiActive, setIsCallUiActive] = useState(false);
@@ -397,8 +618,14 @@ const unansweredCallTimerRef = useRef<number | null>(null);
     mediaBootstrapErrorLogAtRef.current.clear();
     mediaBootstrapToastShownRef.current.clear();
     mediaBootstrapRetryAttemptsRef.current.clear();
-    consumerCreateParamsRef.current.clear();
-    producerPeerKeyRef.current.clear();
+     consumerCreateParamsRef.current.clear();
+     producerPeerKeyRef.current.clear();
+     for (const pending of pendingReceiverTransformsRef.current.values()) {
+       if (pending.timeoutId !== null) {
+         window.clearTimeout(pending.timeoutId);
+       }
+     }
+     pendingReceiverTransformsRef.current.clear();
     pendingProducersToConsumeRef.current.clear();
     consumePendingProducersRef.current = null;
     peerUserIdByDeviceIdRef.current.clear();
@@ -551,6 +778,8 @@ const unansweredCallTimerRef = useRef<number | null>(null);
 
     const senderPublicKey = await kx.getPublicKeyBase64();
     const sessionIdForDiscovery = kx.getSessionId();
+    const discoveryMessageId = crypto.randomUUID();
+    const discoverySaltB64 = bytesToBase64(crypto.getRandomValues(new Uint8Array(32)));
     const identityKeyPair = await getOrCreateIdentityKeyPair();
     const sigBytes = await signIdentity(
       identityKeyPair.privateKey,
@@ -560,8 +789,8 @@ const unansweredCallTimerRef = useRef<number | null>(null);
       senderPublicKey,
       senderPublicKey,
       epoch,
-      "",
-      crypto.randomUUID(),
+      discoverySaltB64,
+      discoveryMessageId,
     );
     const identityPubKeyJwk = await exportEcdsaPublicKey(identityKeyPair.publicKey);
     const sigB64 = btoa(String.fromCharCode(...new Uint8Array(sigBytes)));
@@ -575,11 +804,12 @@ const unansweredCallTimerRef = useRef<number | null>(null);
       epoch,
       keyPackageType: "DISCOVERY",
       discoveryNonce: crypto.randomUUID(),
+      messageId: discoveryMessageId,
       ciphertext: senderPublicKey,
       sig: sigB64,
       senderPublicKey,
       senderSigningPublicKey: mySigningPublicKey,
-      salt: "",
+      salt: discoverySaltB64,
       senderIdentity: {
         userId: user.id,
         deviceId: myDeviceId,
@@ -627,10 +857,13 @@ const unansweredCallTimerRef = useRef<number | null>(null);
     producerAddedUnsubRef,
     isCallStillActiveForBootstrap: (callId) => activeCallsV2BootstrapCallIdRef.current === callId,
     onE2eeActivated: () => setIsE2eeActive(true),
-    onDecryptionKeyReady: (_peerKey) => {
-      // Transforms are attached immediately on consumer creation (fail-closed).
-      // MediaEncryptor drops frames until the key arrives — no deferred retry needed.
+    onDecryptionKeyReady: (peerKey) => {
+      retryPendingReceiverTransformsForPeer(peerKey);
+      window.setTimeout(() => maybeSendE2eeReadyRef.current("decryption-key-ready"), 0);
     },
+    hasInboundE2eeReadiness,
+    getInboundE2eeReadiness,
+    missingSenderKeysRef,
   });
 
    const { rebuildRemoteStream, bootstrapCallsV2Media } = useCallsV2MediaBootstrap({
@@ -647,11 +880,15 @@ const unansweredCallTimerRef = useRef<number | null>(null);
      callsWsRecvTransportRef,
      turnIceServersRef,
      epochGuardRef,
-     e2eeEpochRef,
-     callKeyExchangeRef,
-     callMediaEncryptionRef,
-     localProducerIdsRef,
-     consumerCreateParamsRef,
+      e2eeEpochRef,
+      callKeyExchangeRef,
+      callMediaEncryptionRef,
+      rekeyMachineRef,
+      missingSenderKeysRef,
+      localProducerIdsRef,
+      onE2eeReady: () => setIsE2eeActive(true),
+      getInboundE2eeReadiness,
+      consumerCreateParamsRef,
      producerPeerKeyRef,
      mediaBootstrapBlockedUntilRef,
      mediaBootstrapErrorLogAtRef,
@@ -683,6 +920,7 @@ dispatchFsm,
     pipeBreakRecoveryInFlightRef,
     handleE2eePipeBreakRef,
     rebuildRemoteStream,
+    tryAttachPendingReceiverTransform,
   );
 
   useProducerCoverageProbe(sfuManagerRef, callsWsRef, callsWsMediaRoomRef);
@@ -803,10 +1041,22 @@ dispatchFsm,
         }
 
         if (REQUIRE_SFRAME && hasE2eeSupport()) {
-          const enc = callMediaEncryptionRef.current;
-          const receiver = sfuManagerRef.current?.getConsumerReceiver(consumer.id);
-          if (receiver && enc) {
-            enc.setupReceiverTransform(receiver, peerKey, consumer.id);
+          const attached = queueReceiverTransform({
+            consumerId: consumer.id,
+            producerId: c.producerId,
+            peerKey,
+            roomId,
+            reason: "consumer-added",
+          });
+          retryAllPendingReceiverTransforms("consumer-added-replay");
+          if (!attached) {
+            logger.warn("[VideoCallContext] consumer resume deferred until E2EE receiver transform attaches", {
+              consumerId: consumer.id,
+              producerId: c.producerId,
+              peerKey,
+              roomId,
+            });
+            return;
           }
         }
 

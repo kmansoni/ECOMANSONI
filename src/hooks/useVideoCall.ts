@@ -98,8 +98,8 @@ export function useVideoCall(options: UseVideoCallOptions = {}) {
   const peerConnectionRef = useRef<RTCPeerConnection | null>(null);
   const broadcastChannelRef = useRef<RealtimeChannel | null>(null);
   const signalsChannelRef = useRef<RealtimeChannel | null>(null);
-  const callTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  const signalPollRef = useRef<NodeJS.Timeout | null>(null);
+  const callTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const signalPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const iceRestartCountRef = useRef(0);
   const isCleaningUpRef = useRef(false);
   const pendingCandidatesRef = useRef<RTCIceCandidateInit[]>([]);
@@ -107,7 +107,7 @@ export function useVideoCall(options: UseVideoCallOptions = {}) {
   const lastAnswerSdpRef = useRef<string | null>(null);
   const localStreamRef = useRef<MediaStream | null>(null);
   const setupStartedAtRef = useRef<number | null>(null);
-  const statusSampleTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const statusSampleTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const seenSignalIdsRef = useRef<Set<string>>(new Set());
   
   // Track if we're in an active call process (used to prevent visibility-based cleanup)
@@ -1288,7 +1288,7 @@ export function useVideoCall(options: UseVideoCallOptions = {}) {
   useEffect(() => {
     if (!currentCall) return;
 
-    let statusPollInterval: NodeJS.Timeout | null = null;
+    let statusPollInterval: ReturnType<typeof setInterval> | null = null;
 
     const handleCallStatusUpdate = (updatedStatus: string) => {
       log("Call status updated:", updatedStatus);

@@ -106,7 +106,7 @@ export class CallMediaEncryption {
   async setEncryptionKey(epochKey: EpochKeyMaterial): Promise<void> {
     // MediaEncryptor.setEncryptionKey(CryptoKey, keyId: number)
     // keyId = epoch число (0–255, используется как SFrame Key ID)
-    await this.encryptor.setEncryptionKey(epochKey.key, epochKey.epoch & 0xff);
+    await this.encryptor.setEncryptionKey(epochKey.key, epochKey.epoch & 0xff, epochKey.epoch);
     this.currentEpoch = epochKey.epoch;
     this.hasEncryptionKey = true;
     logger.debug(`[CallMediaEncryption] Encryption key set for epoch ${epochKey.epoch}`);
@@ -127,7 +127,7 @@ export class CallMediaEncryption {
     logger.debug(`[CallMediaEncryption] setDecryptionKey: peer=${peerId} aliases=${JSON.stringify(aliases)} epoch=${epochKey.epoch} keyId=${keyId}`);
 
     for (const alias of aliases) {
-      await this.encryptor.setDecryptionKey(epochKey.key, keyId, alias);
+      await this.encryptor.setDecryptionKey(epochKey.key, keyId, alias, epochKey.epoch);
       this.peerDecryptionEpochs.set(alias, epochKey.epoch);
     }
 

@@ -92,6 +92,9 @@ const ajv = new Ajv2020({ strict: true, allErrors: true });
 addFormats(ajv);
 
 const DEVICE_ID_PATTERN = "^[A-Za-z0-9._:-]{6,128}$";
+const UUID_V4_PATTERN = "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$";
+const BASE64_PATTERN = "^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$";
+const ROOM_ID_PATTERN = "^[A-Za-z0-9._:-]{1,256}$";
 
 const callInvitePayloadValidate = ajv.compile({
   type: "object",
@@ -142,12 +145,107 @@ const envelopeValidate = ajv.compile({
   }
 });
 
+const identityPubKeyJwkSchema = {
+  type: "object",
+  additionalProperties: true,
+  required: ["kty", "crv", "x", "y"],
+  properties: {
+    kty: { type: "string", const: "EC" },
+    crv: { type: "string", const: "P-256" },
+    x: { type: "string", minLength: 40, maxLength: 96 },
+    y: { type: "string", minLength: 40, maxLength: 96 },
+    ext: { type: "boolean" },
+    key_ops: { type: "array", items: { type: "string" } },
+  },
+};
+
+const senderIdentitySchema = {
+  type: "object",
+  additionalProperties: false,
+  required: ["userId", "deviceId", "sessionId", "identityPubKeyJwk"],
+  properties: {
+    userId: { type: "string", minLength: 1, maxLength: 256 },
+    deviceId: { type: "string", pattern: DEVICE_ID_PATTERN },
+    sessionId: { type: "string", minLength: 1, maxLength: 256 },
+    identityPubKeyJwk: identityPubKeyJwkSchema,
+  },
+};
+
+const keyPackageBaseProperties = {
+  keyPackageType: { type: "string", enum: ["DISCOVERY", "WRAPPED_EPOCH_KEY"] },
+  roomId: { type: "string", pattern: ROOM_ID_PATTERN },
+  fromDeviceId: { type: "string", pattern: DEVICE_ID_PATTERN },
+  toDeviceId: { type: "string", pattern: DEVICE_ID_PATTERN },
+  targetDeviceId: { type: "string", pattern: DEVICE_ID_PATTERN },
+  senderKeyId: { type: "string", minLength: 1, maxLength: 256 },
+  epoch: { type: "integer", minimum: 0, maximum: 2147483647 },
+  ciphertext: { type: "string", minLength: 24, maxLength: 65536, pattern: BASE64_PATTERN },
+  senderPublicKey: { type: "string", minLength: 24, maxLength: 4096, pattern: BASE64_PATTERN },
+  senderSigningPublicKey: { type: "string", minLength: 24, maxLength: 4096, pattern: BASE64_PATTERN },
+  salt: { type: "string", minLength: 44, maxLength: 44, pattern: BASE64_PATTERN },
+  sig: { type: "string", minLength: 64, maxLength: 256, pattern: BASE64_PATTERN },
+  identitySig: { type: "string", minLength: 64, maxLength: 256, pattern: BASE64_PATTERN },
+  messageId: { type: "string", pattern: UUID_V4_PATTERN },
+  discoveryNonce: { type: "string", minLength: 16, maxLength: 256 },
+  senderIdentity: senderIdentitySchema,
+};
+
+const keyPackageDiscoveryValidate = ajv.compile({
+  type: "object",
+  additionalProperties: false,
+  required: [
+    "keyPackageType",
+    "roomId",
+    "fromDeviceId",
+    "toDeviceId",
+    "targetDeviceId",
+    "senderKeyId",
+    "epoch",
+    "ciphertext",
+    "senderPublicKey",
+    "senderSigningPublicKey",
+    "salt",
+    "sig",
+    "messageId",
+    "discoveryNonce",
+    "senderIdentity",
+  ],
+  properties: keyPackageBaseProperties,
+});
+
+const keyPackageWrappedEpochKeyValidate = ajv.compile({
+  type: "object",
+  additionalProperties: false,
+  required: [
+    "keyPackageType",
+    "roomId",
+    "fromDeviceId",
+    "toDeviceId",
+    "targetDeviceId",
+    "senderKeyId",
+    "epoch",
+    "ciphertext",
+    "senderPublicKey",
+    "senderSigningPublicKey",
+    "salt",
+    "sig",
+    "identitySig",
+    "messageId",
+    "senderIdentity",
+  ],
+  properties: keyPackageBaseProperties,
+});
+
 function nowMs() {
   return Date.now();
 }
 
 function uuid() {
   return crypto.randomUUID();
+}
+
+function isUuidV4(value) {
+  return typeof value === "string" && new RegExp(UUID_V4_PATTERN).test(value);
 }
 
 function send(ws, frame) {
@@ -173,12 +271,462 @@ function wsError(code, message, details, retryable) {
   return { code, message, details, retryable };
 }
 
+function decodeBase64Length(value) {
+  if (typeof value !== "string" || !new RegExp(BASE64_PATTERN).test(value)) return -1;
+  try {
+    return Buffer.from(value, "base64").length;
+  } catch {
+    return -1;
+  }
+}
+
+function validateKeyPackagePayload(payload) {
+  const type = payload?.keyPackageType;
+  const validator = type === "DISCOVERY"
+    ? keyPackageDiscoveryValidate
+    : type === "WRAPPED_EPOCH_KEY"
+      ? keyPackageWrappedEpochKeyValidate
+      : null;
+
+  if (!validator) {
+    return {
+      ok: false,
+      code: "INVALID_KEY_PACKAGE_TYPE",
+      message: "KEY_PACKAGE keyPackageType must be DISCOVERY or WRAPPED_EPOCH_KEY",
+      errors: [{ instancePath: "/keyPackageType", message: "unsupported or missing keyPackageType" }],
+    };
+  }
+
+  if (!validator(payload)) {
+    return {
+      ok: false,
+      code: "INVALID_KEY_PACKAGE_SCHEMA",
+      message: `Invalid ${type} KEY_PACKAGE schema`,
+      errors: validator.errors ?? [],
+    };
+  }
+
+  if (payload.toDeviceId !== payload.targetDeviceId) {
+    return {
+      ok: false,
+      code: "INVALID_KEY_PACKAGE_TARGET",
+      message: "toDeviceId and targetDeviceId must match",
+      errors: [{ instancePath: "/targetDeviceId", message: "must match toDeviceId" }],
+    };
+  }
+
+  if (payload.fromDeviceId !== payload.senderIdentity.deviceId) {
+    return {
+      ok: false,
+      code: "INVALID_KEY_PACKAGE_IDENTITY",
+      message: "fromDeviceId must match senderIdentity.deviceId",
+      errors: [{ instancePath: "/senderIdentity/deviceId", message: "must match fromDeviceId" }],
+    };
+  }
+
+  if (decodeBase64Length(payload.salt) !== 32) {
+    return {
+      ok: false,
+      code: "INVALID_KEY_PACKAGE_SALT",
+      message: "KEY_PACKAGE salt must decode to 32 bytes",
+      errors: [{ instancePath: "/salt", message: "must be 32 base64-decoded bytes" }],
+    };
+  }
+
+  if (decodeBase64Length(payload.senderPublicKey) <= 0) {
+    return {
+      ok: false,
+      code: "INVALID_KEY_PACKAGE_SENDER_PUBLIC_KEY",
+      message: "senderPublicKey must be valid base64",
+      errors: [{ instancePath: "/senderPublicKey", message: "must be valid base64" }],
+    };
+  }
+
+  if (decodeBase64Length(payload.senderSigningPublicKey) <= 0) {
+    return {
+      ok: false,
+      code: "INVALID_KEY_PACKAGE_SIGNING_PUBLIC_KEY",
+      message: "senderSigningPublicKey must be valid base64",
+      errors: [{ instancePath: "/senderSigningPublicKey", message: "must be valid base64" }],
+    };
+  }
+
+  if (decodeBase64Length(payload.sig) <= 0) {
+    return {
+      ok: false,
+      code: "INVALID_KEY_PACKAGE_SIGNATURE",
+      message: "sig must be valid base64",
+      errors: [{ instancePath: "/sig", message: "must be valid base64" }],
+    };
+  }
+
+  if (type === "WRAPPED_EPOCH_KEY" && decodeBase64Length(payload.identitySig) <= 0) {
+    return {
+      ok: false,
+      code: "INVALID_KEY_PACKAGE_IDENTITY_SIGNATURE",
+      message: "identitySig must be valid base64",
+      errors: [{ instancePath: "/identitySig", message: "must be valid base64" }],
+    };
+  }
+
+  if (type === "DISCOVERY" && payload.ciphertext !== payload.senderPublicKey) {
+    return {
+      ok: false,
+      code: "INVALID_DISCOVERY_PACKAGE",
+      message: "DISCOVERY ciphertext must equal senderPublicKey",
+      errors: [{ instancePath: "/ciphertext", message: "must equal senderPublicKey for DISCOVERY" }],
+    };
+  }
+
+  return { ok: true, type };
+}
+
 // In-memory dev state
-const rooms = new Map(); // roomId -> { callId, region, nodeId, epoch, memberSetVersion, peers: Map(deviceId -> {userId, role, e2eeReady}), producers: [], consumers: [] }
+const rooms = new Map(); // roomId -> { callId, region, nodeId, epoch, memberSetVersion, peers: Map(deviceId -> {userId, role, e2eeReady}), producers: [], consumers: [], keyPackages: Map() }
+
+const KEY_PACKAGE_MAILBOX_MAX_PER_ROOM = readPositiveIntEnv("CALLS_KEY_PACKAGE_MAILBOX_MAX_PER_ROOM", 500, { min: 50 });
+
+const DEFAULT_ROUTER_RTP_CAPABILITIES = Object.freeze({
+  codecs: [
+    {
+      kind: "audio",
+      mimeType: "audio/opus",
+      clockRate: 48000,
+      channels: 2,
+      preferredPayloadType: 100,
+      rtcpFeedback: [],
+      parameters: {},
+    },
+    {
+      kind: "video",
+      mimeType: "video/VP8",
+      clockRate: 90000,
+      preferredPayloadType: 101,
+      rtcpFeedback: [
+        { type: "nack" },
+        { type: "nack", parameter: "pli" },
+        { type: "ccm", parameter: "fir" },
+        { type: "goog-remb" },
+        { type: "transport-cc" },
+      ],
+      parameters: {},
+    },
+  ],
+  headerExtensions: [
+    {
+      kind: "audio",
+      uri: "urn:ietf:params:rtp-hdrext:sdes:mid",
+      preferredId: 1,
+      preferredEncrypt: false,
+      direction: "sendrecv",
+    },
+    {
+      kind: "video",
+      uri: "urn:ietf:params:rtp-hdrext:sdes:mid",
+      preferredId: 1,
+      preferredEncrypt: false,
+      direction: "sendrecv",
+    },
+    {
+      kind: "video",
+      uri: "http://www.webrtc.org/experiments/rtp-hdrext/abs-send-time",
+      preferredId: 4,
+      preferredEncrypt: false,
+      direction: "sendrecv",
+    },
+  ],
+});
 
 const deviceSockets = new Map(); // deviceId -> ws
 const userDeviceSockets = new Map(); // userId -> Set<deviceIds> (for broadcast when to_device unknown)
 const deviceOwners = new Map(); // deviceId -> userId (anti-squatting guard)
+
+function participantKey(userId, deviceId) {
+  return `${userId || "unknown"}:${deviceId || "unknown"}`;
+}
+
+function isDeviceExcluded(room, deviceId, userId = null) {
+  if (!room?.excludedDevices || !deviceId) return false;
+  if (room.excludedDevices.has(deviceId)) return true;
+  return userId ? room.excludedDevices.has(participantKey(userId, deviceId)) : false;
+}
+
+function getRoomByCallId(callId) {
+  if (!callId) return null;
+  for (const room of rooms.values()) {
+    if (room.callId === callId) return room;
+  }
+  return null;
+}
+
+function markDeviceExcluded(room, { userId, deviceId, reason = "device_removed", actorUserId = null } = {}) {
+  if (!room || !deviceId) return null;
+  room.excludedDevices ??= new Map();
+  const now = nowMs();
+  const record = {
+    userId: userId ?? room.peers?.get(deviceId)?.userId ?? null,
+    deviceId,
+    reason,
+    actorUserId,
+    roomVersion: room.memberSetVersion,
+    excludedAt: now,
+  };
+  room.excludedDevices.set(deviceId, record);
+  if (record.userId) room.excludedDevices.set(participantKey(record.userId, deviceId), record);
+  return record;
+}
+
+function activeNonExcludedDeviceIds(room) {
+  if (!room?.peers) return [];
+  return Array.from(room.peers.entries())
+    .filter(([deviceId, peer]) => !isDeviceExcluded(room, deviceId, peer?.userId))
+    .map(([deviceId]) => deviceId);
+}
+
+async function removePeerAndNotifyModeration(roomId, deviceId, {
+  eventType = "DEVICE_REMOVED",
+  reason = "device_removed",
+  actorUserId = null,
+} = {}) {
+  const room = rooms.get(roomId);
+  if (!room || !deviceId) return { ok: false, code: "ROOM_NOT_FOUND" };
+  const peer = room.peers.get(deviceId);
+  const userId = peer?.userId ?? deviceOwners.get(deviceId) ?? null;
+  markDeviceExcluded(room, { userId, deviceId, reason, actorUserId });
+  if (room.peers.has(deviceId)) {
+    room.peers.delete(deviceId);
+    room.memberSetVersion++;
+  }
+  markDeviceExcludedFromSenderKeys(room, deviceId);
+  pruneRoomKeyPackages(room);
+  pruneSenderKeyStates(room);
+  await store.removeMember?.(room.callId, deviceId);
+  const roomVersion = await store.bumpRoomVersion(room.callId);
+
+  const removedWs = deviceSockets.get(deviceId);
+  if (removedWs && removedWs.readyState === WebSocket.OPEN) {
+    send(removedWs, {
+      v: 1,
+      type: eventType,
+      msgId: uuid(),
+      ts: nowMs(),
+      payload: { roomId, userId, deviceId, reason, actorUserId, roomVersion },
+    });
+  }
+
+  for (const [pid, remainingPeer] of room.peers.entries()) {
+    if (isDeviceExcluded(room, pid, remainingPeer?.userId)) continue;
+    const pws = deviceSockets.get(pid);
+    if (!pws || pws.readyState !== WebSocket.OPEN) continue;
+    send(pws, {
+      v: 1,
+      type: eventType,
+      msgId: uuid(),
+      ts: nowMs(),
+      payload: { roomId, userId, deviceId, reason, actorUserId, roomVersion, rekeyRequired: true },
+    });
+    send(pws, {
+      v: 1,
+      type: "REKEY_REQUIRED",
+      msgId: uuid(),
+      ts: nowMs(),
+      payload: { roomId, reason, deviceId, roomVersion },
+    });
+  }
+
+  return { ok: true, roomVersion };
+}
+
+function pruneRoomKeyPackages(room) {
+  if (!room?.keyPackages) return;
+  const now = nowMs();
+  for (const [key, pkg] of room.keyPackages.entries()) {
+    if (Number(pkg.expiresAt ?? 0) <= now || isDeviceExcluded(room, pkg.toDeviceId) || isDeviceExcluded(room, pkg.fromDeviceId)) {
+      markSenderKeyPackageExpired(room, pkg);
+      room.keyPackages.delete(key);
+    }
+  }
+
+  const overflow = room.keyPackages.size - KEY_PACKAGE_MAILBOX_MAX_PER_ROOM;
+  if (overflow > 0) {
+    const ordered = Array.from(room.keyPackages.entries())
+      .sort(([, a], [, b]) => Number(a.createdAt ?? 0) - Number(b.createdAt ?? 0));
+    for (const [key] of ordered.slice(0, overflow)) {
+      room.keyPackages.delete(key);
+    }
+  }
+}
+
+function keyPackageMailboxKey(pkg) {
+  return [
+    pkg.roomId,
+    String(pkg.epoch ?? 0),
+    pkg.fromDeviceId,
+    pkg.toDeviceId,
+    pkg.senderKeyId ?? pkg.messageId ?? "unknown-key",
+    pkg.keyPackageType ?? "SENDER_KEY",
+  ].join(":");
+}
+
+function senderKeyStateKey({ roomId, epoch, fromDeviceId, toDeviceId, senderKeyId }) {
+  return [
+    roomId,
+    String(epoch ?? 0),
+    fromDeviceId,
+    toDeviceId,
+    senderKeyId ?? "unknown-key",
+  ].join(":");
+}
+
+function ensureSenderKeyStateMap(room) {
+  room.keyPackageStates ??= new Map();
+  return room.keyPackageStates;
+}
+
+function upsertSenderKeyState(room, pkg, status, extra = {}) {
+  if (!room || !pkg?.roomId || !pkg?.fromDeviceId || !pkg?.toDeviceId) return null;
+  const senderKeyId = pkg.senderKeyId ?? pkg.messageId ?? pkg.frameMsgId ?? "unknown-key";
+  const key = senderKeyStateKey({ ...pkg, senderKeyId });
+  const states = ensureSenderKeyStateMap(room);
+  const now = nowMs();
+  const prev = states.get(key) ?? {};
+  const next = {
+    roomId: pkg.roomId,
+    epoch: Number(pkg.epoch ?? 0),
+    senderDeviceId: pkg.fromDeviceId,
+    targetDeviceId: pkg.toDeviceId,
+    senderKeyId,
+    status,
+    createdAt: prev.createdAt ?? pkg.createdAt ?? now,
+    updatedAt: now,
+    expiresAt: pkg.expiresAt ?? prev.expiresAt ?? now + KEY_TTL_MS,
+    messageId: pkg.messageId ?? prev.messageId ?? null,
+    frameMsgId: pkg.frameMsgId ?? prev.frameMsgId ?? null,
+    deliveredAt: status === "delivered" ? now : (prev.deliveredAt ?? null),
+    ackedAt: status === "acked" ? now : (prev.ackedAt ?? null),
+    expiredAt: status === "expired" ? now : (prev.expiredAt ?? null),
+    excludedAt: status === "excluded" ? now : (prev.excludedAt ?? null),
+    ...extra,
+  };
+  states.set(key, next);
+  return next;
+}
+
+function markSenderKeyPackageExpired(room, pkg) {
+  upsertSenderKeyState(room, pkg, "expired");
+}
+
+function markSenderKeyPackageDelivered(room, pkg) {
+  upsertSenderKeyState(room, pkg, "delivered");
+}
+
+function markSenderKeyPackageAcked(room, pkg) {
+  upsertSenderKeyState(room, pkg, "acked");
+}
+
+function getSenderKeyDeliveryStatus(room, { roomId, epoch, fromDeviceId, toDeviceId, senderKeyId }) {
+  if (!room?.keyPackageStates) return null;
+  const exactKey = senderKeyStateKey({ roomId, epoch, fromDeviceId, toDeviceId, senderKeyId });
+  const exact = room.keyPackageStates.get(exactKey);
+  if (exact) return exact;
+
+  // Fallback for packages where senderKeyId was not available but messageId/frameMsgId was used.
+  let latest = null;
+  for (const state of room.keyPackageStates.values()) {
+    if (
+      state.roomId === roomId &&
+      Number(state.epoch) === Number(epoch ?? 0) &&
+      state.senderDeviceId === fromDeviceId &&
+      state.targetDeviceId === toDeviceId &&
+      state.status !== "expired"
+    ) {
+      if (!latest || Number(state.updatedAt ?? 0) > Number(latest.updatedAt ?? 0)) latest = state;
+    }
+  }
+  return latest;
+}
+
+function pruneSenderKeyStates(room) {
+  if (!room?.keyPackageStates) return;
+  const now = nowMs();
+  const minEpoch = Number(room.epoch ?? 0) - 2;
+  const currentDevices = room.peers ?? new Map();
+  for (const [key, state] of room.keyPackageStates.entries()) {
+    if (!currentDevices.has(state.targetDeviceId) || !currentDevices.has(state.senderDeviceId)) {
+      room.keyPackageStates.set(key, { ...state, status: "excluded", excludedAt: now, updatedAt: now });
+      continue;
+    }
+    if (Number(state.expiresAt ?? 0) <= now && state.status !== "acked" && state.status !== "excluded") {
+      room.keyPackageStates.set(key, { ...state, status: "expired", expiredAt: now, updatedAt: now });
+      continue;
+    }
+    if (Number(state.epoch ?? 0) < minEpoch || Number(state.expiresAt ?? 0) + KEY_TTL_MS <= now) {
+      room.keyPackageStates.delete(key);
+    }
+  }
+}
+
+function markDeviceExcludedFromSenderKeys(room, deviceId) {
+  if (!room || !deviceId) return;
+  const now = nowMs();
+  for (const pkg of room.keyPackages?.values?.() ?? []) {
+    if (pkg.toDeviceId === deviceId || pkg.fromDeviceId === deviceId) {
+      upsertSenderKeyState(room, pkg, "excluded", { excludedAt: now });
+    }
+  }
+  for (const [key, state] of room.keyPackageStates?.entries?.() ?? []) {
+    if (state.targetDeviceId === deviceId || state.senderDeviceId === deviceId) {
+      room.keyPackageStates.set(key, { ...state, status: "excluded", excludedAt: now, updatedAt: now });
+    }
+  }
+}
+
+function getMissingSenderKeys(room, targetDeviceId) {
+  if (!room || !targetDeviceId) return [];
+  pruneRoomKeyPackages(room);
+  pruneSenderKeyStates(room);
+  const currentEpoch = Number(room.epoch ?? 0);
+  return activeNonExcludedDeviceIds(room).filter((deviceId) => {
+    if (deviceId === targetDeviceId) return false;
+    const state = getSenderKeyDeliveryStatus(room, {
+      roomId: room.roomId,
+      epoch: currentEpoch,
+      fromDeviceId: deviceId,
+      toDeviceId: targetDeviceId,
+      senderKeyId: undefined,
+    });
+    return !state || state.status !== "acked";
+  });
+}
+
+function makeKeyPackageFrame(pkg, seq) {
+  const frame = {
+    v: 1,
+    type: "KEY_PACKAGE",
+    msgId: pkg.frameMsgId ?? pkg.messageId ?? uuid(),
+    ts: nowMs(),
+    payload: pkg.payload,
+  };
+  if (Number.isInteger(seq)) frame.seq = seq;
+  return frame;
+}
+
+async function replayKeyPackageMailbox(room, targetWs, targetDeviceId, conn = null) {
+  if (!room || !targetWs || targetWs.readyState !== WebSocket.OPEN || !targetDeviceId) return 0;
+  pruneRoomKeyPackages(room);
+  let delivered = 0;
+  const packages = Array.from(room.keyPackages?.values?.() ?? [])
+    .filter((pkg) => pkg.toDeviceId === targetDeviceId && !isDeviceExcluded(room, pkg.toDeviceId) && !isDeviceExcluded(room, pkg.fromDeviceId))
+    .sort((a, b) => Number(a.createdAt ?? 0) - Number(b.createdAt ?? 0));
+  for (const pkg of packages) {
+    send(targetWs, makeKeyPackageFrame(pkg, conn ? conn.nextOutboundSeq++ : undefined));
+    pkg.attempts = Number(pkg.attempts ?? 0) + 1;
+    pkg.deliveredAt = nowMs();
+    markSenderKeyPackageDelivered(room, pkg);
+    delivered++;
+  }
+  return delivered;
+}
 
 function normalizeDeviceId(value) {
   if (typeof value !== "string") return null;
@@ -448,10 +996,11 @@ function sendGwHello(ws, seq) {
   });
 }
 
-async function makeSnapshot(roomId) {
+async function makeSnapshot(roomId, targetDeviceId = null) {
   const room = rooms.get(roomId);
   if (!room) return null;
 
+  pruneRoomKeyPackages(room);
   const roomVersion = await store.getRoomVersion(room.callId);
 
   return {
@@ -463,14 +1012,18 @@ async function makeSnapshot(roomId) {
     epoch: room.epoch,
     memberSetVersion: room.memberSetVersion,
     serverTime: nowMs(),
-    peers: Array.from(room.peers.values()).map((p) => ({
+    peers: Array.from(room.peers.values())
+      .filter((p) => !isDeviceExcluded(room, p.deviceId, p.userId))
+      .map((p) => ({
       userId: p.userId,
       deviceId: p.deviceId,
       role: p.role,
       state: "joined",
       e2eeReady: p.e2eeReady,
     })),
-    producers: room.producers.map((pr) => ({
+    producers: room.producers
+      .filter((pr) => !isDeviceExcluded(room, pr.ownerDeviceId ?? pr.deviceId, pr.ownerUserId ?? pr.userId))
+      .map((pr) => ({
       producerId: pr.producerId,
       ownerUserId: pr.ownerUserId ?? pr.userId,
       ownerDeviceId: pr.ownerDeviceId ?? pr.deviceId,
@@ -479,7 +1032,9 @@ async function makeSnapshot(roomId) {
       generation: pr.generation ?? 1,
       createdAt: pr.createdAt ?? nowMs(),
     })),
-    consumers: room.consumers.map((c) => ({
+    consumers: room.consumers
+      .filter((c) => !isDeviceExcluded(room, c.consumerDeviceId ?? c.deviceId, c.consumerUserId ?? c.userId))
+      .map((c) => ({
       consumerId: c.consumerId,
       producerId: c.producerId,
       state: c.state ?? "created",
@@ -487,10 +1042,10 @@ async function makeSnapshot(roomId) {
     e2ee: {
       required: true,
       epoch: room.epoch,
-      leaderDeviceId: Array.from(room.peers.keys())[0] ?? "",
-      expectedSenderDevices: Array.from(room.peers.keys()),
+      leaderDeviceId: activeNonExcludedDeviceIds(room)[0] ?? "",
+      expectedSenderDevices: activeNonExcludedDeviceIds(room),
       protocolVersion: 1,
-      missingSenderKeys: []
+      missingSenderKeys: targetDeviceId && !isDeviceExcluded(room, targetDeviceId) ? getMissingSenderKeys(room, targetDeviceId) : []
     }
   };
 }
@@ -734,7 +1289,16 @@ wss.on("connection", (ws, req) => {
         const limit = Math.max(1, Math.min(200, Number(frame.payload?.limit ?? 50)));
         const { cursorTo, items } = await store.sync(deviceId, lastStreamId, limit);
 
-        const messages = items.map((it) => ({ streamId: it.streamId, frame: it.msg }));
+        const messages = items
+          .filter((it) => {
+            const callId = it?.msg?.callId;
+            if (!callId) return true;
+            const room = getRoomByCallId(callId);
+            if (!room) return false;
+            if (!room.peers.has(deviceId)) return false;
+            return !isDeviceExcluded(room, deviceId, conn.userId) && !isDeviceExcluded(room, it?.msg?.fromDevice);
+          })
+          .map((it) => ({ streamId: it.streamId, frame: it.msg }));
         const nextStreamId = cursorTo;
 
         send(ws, {
@@ -810,7 +1374,8 @@ wss.on("connection", (ws, req) => {
         const nodeId = "local-sfu-1";
 
 rooms.set(roomId, {
-           callId,
+            roomId,
+            callId,
            region,
            nodeId,
            ownerUserId: conn.userId,
@@ -822,10 +1387,14 @@ rooms.set(roomId, {
            }),
            epoch: 0,
            memberSetVersion: 0,
-           peers: new Map(),
-           producers: [],
-           consumers: []
-         });
+            peers: new Map(),
+             excludedDevices: new Map(),
+             producers: [],
+             consumers: [],
+              keyPackages: new Map(),
+              keyPackageStates: new Map(),
+              processedKeyPackageIds: new Set()
+           });
 
         // initialize room version
         await store.bumpRoomVersion(callId);
@@ -896,6 +1465,10 @@ const bindResult = bindConnectionDevice(conn, ws, frame.payload?.deviceId ?? con
           return;
         }
         const deviceId = bindResult.deviceId;
+        if (isDeviceExcluded(room, deviceId, conn.userId)) {
+          ack(ws, frame.msgId, false, wsError("DEVICE_EXCLUDED", "Device is removed from this room", { roomId, deviceId }, false));
+          return;
+        }
 
         room.memberSetVersion++;
         await store.addMember(room.callId, deviceId);
@@ -926,6 +1499,10 @@ const bindResult = bindConnectionDevice(conn, ws, frame.payload?.deviceId ?? con
             epoch: room.epoch,
             memberSetVersion: room.memberSetVersion,
             roomVersion,
+            routerRtpCapabilities: DEFAULT_ROUTER_RTP_CAPABILITIES,
+            mediasoup: {
+              routerRtpCapabilities: DEFAULT_ROUTER_RTP_CAPABILITIES,
+            },
             turn: {
               turnAvailable,
               turnUrls,
@@ -938,7 +1515,7 @@ const bindResult = bindConnectionDevice(conn, ws, frame.payload?.deviceId ?? con
 
         // Broadcast PEER_JOINED to existing peers
         for (const [pid, peer] of room.peers.entries()) {
-          if (pid === deviceId) continue;
+          if (pid === deviceId || isDeviceExcluded(room, pid, peer?.userId)) continue;
           const pws = deviceSockets.get(pid);
           if (pws && pws.readyState === WebSocket.OPEN) {
             send(pws, {
@@ -946,13 +1523,20 @@ const bindResult = bindConnectionDevice(conn, ws, frame.payload?.deviceId ?? con
               type: "PEER_JOINED",
               msgId: uuid(),
               ts: nowMs(),
-              payload: { roomId, userId: conn.userId, deviceId, roomVersion },
+              payload: { roomId, userId: conn.userId, deviceId, roomVersion, rekeyRequired: true },
+            });
+            send(pws, {
+              v: 1,
+              type: "REKEY_REQUIRED",
+              msgId: uuid(),
+              ts: nowMs(),
+              payload: { roomId, reason: "peer_joined", deviceId, roomVersion },
             });
           }
         }
 
         // Send snapshot right away
-        const snapshot = await makeSnapshot(roomId);
+        const snapshot = await makeSnapshot(roomId, deviceId);
         if (snapshot) {
           send(ws, {
             v: 1,
@@ -963,6 +1547,8 @@ const bindResult = bindConnectionDevice(conn, ws, frame.payload?.deviceId ?? con
             payload: snapshot
           });
         }
+
+        await replayKeyPackageMailbox(room, ws, deviceId, conn);
 
         // Offline mailbox is handled via SYNC_MAILBOX.
 
@@ -1103,17 +1689,9 @@ const bindResult = bindConnectionDevice(conn, ws, frame.payload?.deviceId ?? con
           return;
         }
         const p = frame.payload ?? {};
-        // Validate required KEY_PACKAGE fields
-        if (!p.targetDeviceId && !p.toDeviceId) {
-          ack(ws, frame.msgId, false, wsError("INVALID_KEY_PACKAGE", "Missing required field: targetDeviceId", {}, false));
-          return;
-        }
-        if (!p.ciphertext || typeof p.ciphertext !== "string" || p.ciphertext.length < 24) {
-          ack(ws, frame.msgId, false, wsError("INVALID_KEY_PACKAGE", "Missing or invalid ciphertext field", {}, false));
-          return;
-        }
-        if (p.ciphertext.length > 65536) {
-          ack(ws, frame.msgId, false, wsError("INVALID_KEY_PACKAGE", "ciphertext must be a string under 64KB", {}, false));
+        const validation = validateKeyPackagePayload(p);
+        if (!validation.ok) {
+          ack(ws, frame.msgId, false, wsError(validation.code, validation.message, { errors: validation.errors }, false));
           return;
         }
         const room = rooms.get(p.roomId);
@@ -1126,20 +1704,56 @@ const bindResult = bindConnectionDevice(conn, ws, frame.payload?.deviceId ?? con
           return;
         }
 
+        const targetDeviceId = p.toDeviceId ?? p.targetDeviceId;
+        if (p.fromDeviceId !== conn.deviceId) {
+          ack(ws, frame.msgId, false, wsError("UNAUTHORIZED", "Sender device mismatch", {}, false));
+          return;
+        }
+        if (Number(p.epoch ?? 0) < Number(room.epoch ?? 0)) {
+          ack(ws, frame.msgId, false, wsError("STALE_EPOCH", "KEY_PACKAGE epoch is older than current room epoch", { roomId: p.roomId, epoch: p.epoch, currentEpoch: room.epoch }, false));
+          return;
+        }
+        if (isDeviceExcluded(room, conn.deviceId, conn.userId)) {
+          ack(ws, frame.msgId, false, wsError("DEVICE_EXCLUDED", "Sender is removed from this room", { roomId: p.roomId, deviceId: conn.deviceId }, false));
+          return;
+        }
+        if (isDeviceExcluded(room, targetDeviceId)) {
+          ack(ws, frame.msgId, false, wsError("DEVICE_EXCLUDED", "Recipient is removed from this room", { roomId: p.roomId, deviceId: targetDeviceId }, false));
+          return;
+        }
+        room.processedKeyPackageIds ??= new Set();
+        if (room.processedKeyPackageIds.has(p.messageId)) {
+          return ack(ws, frame.msgId, false, wsError("REPLAY_DETECTED", "Duplicate KEY_PACKAGE messageId", { roomId: p.roomId, messageId: p.messageId }, false));
+        }
         if (p.toDeviceId && !(await store.assertMember(room.callId, p.toDeviceId))) {
           ack(ws, frame.msgId, false, wsError("UNAUTHORIZED", "Recipient is not a call member", {}, false));
+          return;
+        }
+        if (!(await store.assertMember(room.callId, targetDeviceId))) {
+          ack(ws, frame.msgId, false, wsError("UNAUTHORIZED", "Recipient is not a call member", {}, false));
+          return;
+        }
+        if (!room.peers.has(conn.deviceId)) {
+          ack(ws, frame.msgId, false, wsError("UNAUTHORIZED", "Sender is not an active room peer", {}, false));
+          return;
+        }
+        if (!room.peers.has(targetDeviceId)) {
+          ack(ws, frame.msgId, false, wsError("UNAUTHORIZED", "Recipient is not an active room peer", {}, false));
           return;
         }
         const record = {
           roomId: p.roomId,
           epoch: p.epoch,
           fromDeviceId: p.fromDeviceId,
-          toDeviceId: p.toDeviceId,
+          toDeviceId: p.toDeviceId ?? p.targetDeviceId,
           senderKeyId: p.senderKeyId,
+          messageId: p.messageId,
+          frameMsgId: frame.msgId,
           keyPackageType: p.keyPackageType ?? "SENDER_KEY",
           ciphertext: p.ciphertext,
           sig: p.sig,
           protocolVersion: p.protocolVersion ?? 1,
+          payload: { ...p, toDeviceId: p.toDeviceId ?? p.targetDeviceId, targetDeviceId: p.targetDeviceId ?? p.toDeviceId },
           createdAt: nowMs(),
           expiresAt: nowMs() + KEY_TTL_MS,
           deliveredAt: null,
@@ -1149,8 +1763,17 @@ const bindResult = bindConnectionDevice(conn, ws, frame.payload?.deviceId ?? con
         // save route for ACK routing
         await store.saveRoute(frame.msgId, record.fromDeviceId);
 
+        pruneRoomKeyPackages(room);
+        pruneSenderKeyStates(room);
+        room.processedKeyPackageIds.add(p.messageId);
+        room.keyPackages ??= new Map();
+        room.keyPackageStates ??= new Map();
+        room.keyPackages.set(keyPackageMailboxKey(record), record);
+        upsertSenderKeyState(room, record, "pending");
+
         const recipientFrame = {
           ...frame,
+          payload: record.payload,
           ts: nowMs(),
         };
         if (store.features.offlineMailbox) {
@@ -1162,8 +1785,8 @@ const bindResult = bindConnectionDevice(conn, ws, frame.payload?.deviceId ?? con
             callId: room.callId,
             fromDevice: record.fromDeviceId,
             epoch: record.epoch,
-            payload: record.ciphertext,
-            refId: record.senderKeyId,
+            payload: JSON.stringify(record.payload),
+            refId: record.senderKeyId ?? record.messageId ?? "",
             sig: record.sig,
           });
         }
@@ -1172,6 +1795,8 @@ const bindResult = bindConnectionDevice(conn, ws, frame.payload?.deviceId ?? con
         const recipientWs = deviceSockets.get(record.toDeviceId);
         if (recipientWs && recipientWs.readyState === WebSocket.OPEN) {
           send(recipientWs, recipientFrame);
+          record.deliveredAt = nowMs();
+          markSenderKeyPackageDelivered(room, record);
         }
         return ack(ws, frame.msgId, true);
       }
@@ -1182,6 +1807,18 @@ const bindResult = bindConnectionDevice(conn, ws, frame.payload?.deviceId ?? con
           return;
         }
         const p = frame.payload ?? {};
+        if (!isUuidV4(p.messageId)) {
+          ack(ws, frame.msgId, false, wsError("VALIDATION_FAILED", "KEY_ACK messageId must be UUID v4", { field: "messageId" }, false));
+          return;
+        }
+        if (typeof p.fromDeviceId !== "string" || p.fromDeviceId !== conn.deviceId) {
+          ack(ws, frame.msgId, false, wsError("VALIDATION_FAILED", "KEY_ACK fromDeviceId must match authenticated device", { field: "fromDeviceId" }, false));
+          return;
+        }
+        if (!Number.isSafeInteger(Number(p.epoch)) || Number(p.epoch) < 0) {
+          ack(ws, frame.msgId, false, wsError("VALIDATION_FAILED", "KEY_ACK epoch must be a non-negative safe integer", { field: "epoch" }, false));
+          return;
+        }
 
         const room = rooms.get(p.roomId);
         if (!room) {
@@ -1192,11 +1829,22 @@ const bindResult = bindConnectionDevice(conn, ws, frame.payload?.deviceId ?? con
           ack(ws, frame.msgId, false, wsError("UNAUTHORIZED", "Not a call member", {}, false));
           return;
         }
+        if (isDeviceExcluded(room, conn.deviceId, conn.userId)) {
+          ack(ws, frame.msgId, false, wsError("DEVICE_EXCLUDED", "Device is removed from this room", { roomId: p.roomId, deviceId: conn.deviceId }, false));
+          return;
+        }
+
+        room.processedKeyAckIds ??= new Set();
+        if (room.processedKeyAckIds.has(p.messageId)) {
+          ack(ws, frame.msgId, false, wsError("REPLAY_DETECTED", "Duplicate KEY_ACK messageId", { roomId: p.roomId, messageId: p.messageId }, false));
+          return;
+        }
+        room.processedKeyAckIds.add(p.messageId);
 
         // Track rekey ACK only if this ACK refers to the begin message for this epoch
         const beginId = await store.getRekeyBeginId(room.callId, p.epoch);
         if (beginId && frame.payload?.refId === beginId) {
-          await store.markAck(room.callId, p.epoch, p.fromDeviceId);
+          await store.markAck(room.callId, p.epoch, conn.deviceId);
         }
 
         // Route ACK back to initiator using route(refId)
@@ -1205,7 +1853,21 @@ const bindResult = bindConnectionDevice(conn, ws, frame.payload?.deviceId ?? con
           const initiator = await store.getRoute(refId);
           if (initiator) {
             const ackFrame = { ...frame, ts: nowMs() };
-            if (store.features.offlineMailbox) {
+            for (const roomCandidate of rooms.values()) {
+              if (roomCandidate.callId !== room.callId || !roomCandidate.keyPackages) continue;
+              for (const pkg of roomCandidate.keyPackages.values()) {
+                if (
+                  pkg.toDeviceId === conn.deviceId &&
+                  pkg.fromDeviceId === initiator &&
+                  (pkg.senderKeyId === p.senderKeyId || pkg.frameMsgId === refId || pkg.messageId === refId)
+                ) {
+                  pkg.ackedAt = nowMs();
+                  markSenderKeyPackageAcked(roomCandidate, pkg);
+                  roomCandidate.keyPackages.delete(keyPackageMailboxKey(pkg));
+                }
+              }
+            }
+            if (store.features.offlineMailbox && !isDeviceExcluded(room, initiator)) {
               await store.deliver(initiator, {
                 ver: 1,
                 id: ackFrame.msgId,
@@ -1214,7 +1876,7 @@ const bindResult = bindConnectionDevice(conn, ws, frame.payload?.deviceId ?? con
                 callId: room.callId,
                 fromDevice: p.fromDeviceId,
                 epoch: p.epoch,
-                payload: "",
+                payload: JSON.stringify(ackFrame.payload ?? {}),
                 refId,
                 sig: "",
               });
@@ -1223,6 +1885,17 @@ const bindResult = bindConnectionDevice(conn, ws, frame.payload?.deviceId ?? con
             if (wsi && wsi.readyState === WebSocket.OPEN) send(wsi, ackFrame);
           }
         }
+
+        const roomVersion = await store.getRoomVersion(room.callId);
+        const currentMissingSenderKeys = getMissingSenderKeys(room, conn.deviceId);
+        send(ws, {
+          v: 1,
+          type: "KEY_ACKED",
+          msgId: uuid(),
+          ts: nowMs(),
+          seq: conn.nextOutboundSeq++,
+          payload: { roomId: p.roomId, epoch: p.epoch, fromDeviceId: conn.deviceId, roomVersion, missingSenderKeys: currentMissingSenderKeys },
+        });
 
         return ack(ws, frame.msgId, true);
       }
@@ -1235,7 +1908,7 @@ const bindResult = bindConnectionDevice(conn, ws, frame.payload?.deviceId ?? con
         const p = frame.payload ?? {};
         const roomId = typeof p.roomId === "string" && p.roomId.trim() ? p.roomId.trim() : conn.roomId;
         const room = roomId ? rooms.get(roomId) : null;
-        if (!room || !conn.deviceId || !room.peers.has(conn.deviceId)) {
+        if (!room || !conn.deviceId || !room.peers.has(conn.deviceId) || isDeviceExcluded(room, conn.deviceId, conn.userId)) {
           ack(ws, frame.msgId, false, wsError("UNAUTHORIZED", "Not a room member", {}, false));
           return;
         }
@@ -1244,8 +1917,8 @@ const bindResult = bindConnectionDevice(conn, ws, frame.payload?.deviceId ?? con
           return;
         }
 
-        for (const [peerDeviceId] of room.peers.entries()) {
-          if (peerDeviceId === conn.deviceId) continue;
+        for (const [peerDeviceId, peer] of room.peers.entries()) {
+          if (peerDeviceId === conn.deviceId || isDeviceExcluded(room, peerDeviceId, peer?.userId)) continue;
           const targetWs = deviceSockets.get(peerDeviceId);
           if (!targetWs || targetWs.readyState !== WebSocket.OPEN) continue;
           send(targetWs, {
@@ -1279,9 +1952,13 @@ const bindResult = bindConnectionDevice(conn, ws, frame.payload?.deviceId ?? con
           ack(ws, frame.msgId, false, wsError("UNAUTHORIZED", "Not a call member", {}, false));
           return;
         }
+        if (isDeviceExcluded(room, conn.deviceId, conn.userId)) {
+          ack(ws, frame.msgId, false, wsError("DEVICE_EXCLUDED", "Device is removed from this room", { roomId: p.roomId, deviceId: conn.deviceId }, false));
+          return;
+        }
 
         // save begin id and need-set
-        const toDevices = room ? Array.from(room.peers.keys()) : [];
+        const toDevices = activeNonExcludedDeviceIds(room);
         const epoch = p.newEpoch ?? p.epoch ?? 0;
         await store.setRekeyBeginId(room.callId, epoch, frame.msgId);
         await store.setNeed(room.callId, epoch, toDevices);
@@ -1325,6 +2002,10 @@ const bindResult = bindConnectionDevice(conn, ws, frame.payload?.deviceId ?? con
           ack(ws, frame.msgId, false, wsError("UNAUTHORIZED", "Not a call member", {}, false));
           return;
         }
+        if (isDeviceExcluded(room, conn.deviceId, conn.userId)) {
+          ack(ws, frame.msgId, false, wsError("DEVICE_EXCLUDED", "Device is removed from this room", { roomId: p.roomId, deviceId: conn.deviceId }, false));
+          return;
+        }
 
         if (!store.features.rekeyCommit) {
           ack(ws, frame.msgId, false, wsError("E2EE_KEY_SYNC_FAILED", "DEGRADED_NO_COMMIT", {}, false));
@@ -1342,7 +2023,7 @@ const bindResult = bindConnectionDevice(conn, ws, frame.payload?.deviceId ?? con
         room.epoch = epoch;
         await store.bumpRoomVersion(room.callId);
 
-        const toDevices = Array.from(room.peers.keys());
+        const toDevices = activeNonExcludedDeviceIds(room);
         for (const to of toDevices) {
           const commitFrame = { ...frame, ts: nowMs() };
           if (store.features.offlineMailbox) {
@@ -1395,7 +2076,7 @@ const bindResult = bindConnectionDevice(conn, ws, frame.payload?.deviceId ?? con
           msgId: uuid(),
           ts: nowMs(),
           seq: conn.nextOutboundSeq++,
-          payload: { roomId, routerRtpCapabilities: null },
+          payload: { roomId, routerRtpCapabilities: DEFAULT_ROUTER_RTP_CAPABILITIES },
         });
         return ack(ws, frame.msgId, true);
       }
@@ -1484,7 +2165,7 @@ const bindResult = bindConnectionDevice(conn, ws, frame.payload?.deviceId ?? con
         const kind = frame.payload?.kind === "audio" ? "audio" : "video";
 
         const room = pRoomId ? rooms.get(pRoomId) : (conn.roomId ? rooms.get(conn.roomId) : null);
-        if (room && conn.deviceId && room.peers.has(conn.deviceId)) {
+        if (room && conn.deviceId && room.peers.has(conn.deviceId) && !isDeviceExcluded(room, conn.deviceId, conn.userId)) {
           const source = kind === "audio" ? "microphone" : "camera";
           const roomVersion = await store.getRoomVersion(room.callId);
           room.producers.push({
@@ -1508,8 +2189,8 @@ const bindResult = bindConnectionDevice(conn, ws, frame.payload?.deviceId ?? con
 
 // PRODUCER_ADDED for other peers
           const producer = { producerId, ownerUserId: conn.userId, ownerDeviceId: conn.deviceId, kind, source, generation: 1, createdAt: nowMs() };
-          for (const [peerDeviceId] of room.peers.entries()) {
-            if (peerDeviceId === conn.deviceId) continue;
+          for (const [peerDeviceId, peer] of room.peers.entries()) {
+            if (peerDeviceId === conn.deviceId || isDeviceExcluded(room, peerDeviceId, peer?.userId)) continue;
             const targetWs = deviceSockets.get(peerDeviceId);
             if (!targetWs || targetWs.readyState !== WebSocket.OPEN) continue;
             send(targetWs, {
@@ -1563,7 +2244,7 @@ const bindResult = bindConnectionDevice(conn, ws, frame.payload?.deviceId ?? con
         const cRoomId = frame.payload?.roomId;
         const producerId = frame.payload?.producerId;
         const room = cRoomId ? rooms.get(cRoomId) : (conn.roomId ? rooms.get(conn.roomId) : null);
-        if (!room || !conn.deviceId || !room.peers.has(conn.deviceId)) {
+        if (!room || !conn.deviceId || !room.peers.has(conn.deviceId) || isDeviceExcluded(room, conn.deviceId, conn.userId)) {
           ack(ws, frame.msgId, false, wsError("UNAUTHORIZED", "Not a room member", {}, false));
           return;
         }
@@ -1637,7 +2318,7 @@ ownerDeviceId: conn.deviceId,
         const pRoomId = frame.payload?.roomId;
         const producerId = frame.payload?.producerId;
         const room = pRoomId ? rooms.get(pRoomId) : (conn.roomId ? rooms.get(conn.roomId) : null);
-        if (room && conn.deviceId && room.peers.has(conn.deviceId)) {
+        if (room && conn.deviceId && room.peers.has(conn.deviceId) && !isDeviceExcluded(room, conn.deviceId, conn.userId)) {
           const producerIdx = room.producers.findIndex((p) => p.producerId === producerId && p.ownerDeviceId === conn.deviceId);
           if (producerIdx >= 0) {
             room.producers.splice(producerIdx, 1);
@@ -1650,8 +2331,8 @@ ownerDeviceId: conn.deviceId,
             if (cIdx >= 0) room.consumers.splice(cIdx, 1);
           }
           const roomVersion = await store.getRoomVersion(room.callId);
-          for (const [peerDeviceId] of room.peers.entries()) {
-            if (peerDeviceId === conn.deviceId) continue;
+          for (const [peerDeviceId, peer] of room.peers.entries()) {
+            if (peerDeviceId === conn.deviceId || isDeviceExcluded(room, peerDeviceId, peer?.userId)) continue;
             const targetWs = deviceSockets.get(peerDeviceId);
             if (!targetWs || targetWs.readyState !== WebSocket.OPEN) continue;
             send(targetWs, {
@@ -1696,10 +2377,43 @@ return ack(ws, frame.msgId, true);
         const cRoomId = frame.payload?.roomId;
         const consumerId = frame.payload?.consumerId;
         const room = cRoomId ? rooms.get(cRoomId) : (conn.roomId ? rooms.get(conn.roomId) : null);
-        if (room && conn.deviceId && room.peers.has(conn.deviceId)) {
+        if (room && conn.deviceId && room.peers.has(conn.deviceId) && !isDeviceExcluded(room, conn.deviceId, conn.userId)) {
           const cIdx = room.consumers.findIndex((c) => c.consumerId === consumerId && c.ownerDeviceId === conn.deviceId);
           if (cIdx >= 0) room.consumers.splice(cIdx, 1);
         }
+        return ack(ws, frame.msgId, true);
+      }
+
+      case "DEVICE_REMOVED":
+      case "PEER_KICKED":
+      case "PEER_BANNED": {
+        if (!conn.authenticated) {
+          ack(ws, frame.msgId, false, wsError("UNAUTHENTICATED", "AUTH required", {}, true));
+          return;
+        }
+        const p = frame.payload ?? {};
+        const roomId = typeof p.roomId === "string" ? p.roomId : null;
+        const targetDeviceId = normalizeDeviceId(p.deviceId ?? p.targetDeviceId);
+        const room = roomId ? rooms.get(roomId) : null;
+        if (!room || !targetDeviceId) {
+          ack(ws, frame.msgId, false, wsError("VALIDATION_FAILED", "Missing roomId or deviceId", {}, false));
+          return;
+        }
+        if (!room.peers.has(conn.deviceId) || room.peers.get(conn.deviceId)?.userId !== room.ownerUserId) {
+          ack(ws, frame.msgId, false, wsError("UNAUTHORIZED", "Only room owner can remove devices", {}, false));
+          return;
+        }
+        if (targetDeviceId === conn.deviceId) {
+          ack(ws, frame.msgId, false, wsError("VALIDATION_FAILED", "Owner cannot remove itself", {}, false));
+          return;
+        }
+        const reason = frame.type === "PEER_BANNED" ? "peer_banned" : frame.type === "PEER_KICKED" ? "peer_kicked" : "device_removed";
+        await removePeerAndNotifyModeration(roomId, targetDeviceId, {
+          eventType: frame.type,
+          reason,
+          actorUserId: conn.userId,
+        });
+        if (room.peers.size === 0) rooms.delete(roomId);
         return ack(ws, frame.msgId, true);
       }
 
@@ -1710,8 +2424,11 @@ return ack(ws, frame.msgId, true);
         }
         const leaveRoomId = frame.payload?.roomId;
         const room = leaveRoomId ? rooms.get(leaveRoomId) : null;
-        if (room && conn.deviceId && room.peers.has(conn.deviceId)) {
+        if (room && conn.deviceId && room.peers.has(conn.deviceId) && !isDeviceExcluded(room, conn.deviceId, conn.userId)) {
           room.peers.delete(conn.deviceId);
+          markDeviceExcludedFromSenderKeys(room, conn.deviceId);
+          pruneRoomKeyPackages(room);
+          pruneSenderKeyStates(room);
           room.memberSetVersion++;
           const roomVersion = await store.getRoomVersion(room.callId);
           // W2: persist member removal to store (was missing — only ws close did this)
@@ -1719,11 +2436,16 @@ return ack(ws, frame.msgId, true);
           void store.bumpRoomVersion?.(room.callId);
           // Notify remaining peers
           for (const [pid, peer] of room.peers.entries()) {
+            if (isDeviceExcluded(room, pid, peer?.userId)) continue;
             const pws = deviceSockets.get(pid);
             if (pws && pws.readyState === WebSocket.OPEN) {
               send(pws, {
                 v: 1, type: "PEER_LEFT", msgId: uuid(), ts: nowMs(),
-                payload: { roomId: leaveRoomId, deviceId: conn.deviceId, userId: conn.userId, roomVersion },
+                payload: { roomId: leaveRoomId, deviceId: conn.deviceId, userId: conn.userId, roomVersion, rekeyRequired: true },
+              });
+              send(pws, {
+                v: 1, type: "REKEY_REQUIRED", msgId: uuid(), ts: nowMs(),
+                payload: { roomId: leaveRoomId, reason: "peer_left", deviceId: conn.deviceId, roomVersion },
               });
             }
           }
@@ -1765,11 +2487,11 @@ return ack(ws, frame.msgId, true);
         }
         const roomId = frame.payload?.roomId ?? conn.roomId;
         const room = roomId ? rooms.get(roomId) : null;
-        if (!room || !conn.deviceId || !room.peers.has(conn.deviceId)) {
+        if (!room || !conn.deviceId || !room.peers.has(conn.deviceId) || isDeviceExcluded(room, conn.deviceId, conn.userId)) {
           ack(ws, frame.msgId, false, wsError("UNAUTHORIZED", "Not a room member", {}, false));
           return;
         }
-        const snapshot = await makeSnapshot(roomId);
+        const snapshot = await makeSnapshot(roomId, conn.deviceId);
         if (snapshot) {
           send(ws, {
             v: 1,
@@ -1823,6 +2545,9 @@ return ack(ws, frame.msgId, true);
       if (!room.peers.has(conn.deviceId)) continue;
 
       room.peers.delete(conn.deviceId);
+      markDeviceExcludedFromSenderKeys(room, conn.deviceId);
+      pruneRoomKeyPackages(room);
+      pruneSenderKeyStates(room);
       room.memberSetVersion++;
       void store.removeMember?.(room.callId, conn.deviceId);
 
@@ -1834,7 +2559,11 @@ return ack(ws, frame.msgId, true);
           if (pws && pws.readyState === WebSocket.OPEN) {
             send(pws, {
               v: 1, type: "PEER_LEFT", msgId: uuid(), ts: nowMs(),
-              payload: { roomId: roomIdFromLoop, deviceId: conn.deviceId, userId: conn.userId, roomVersion },
+              payload: { roomId: roomIdFromLoop, deviceId: conn.deviceId, userId: conn.userId, roomVersion, rekeyRequired: true },
+            });
+            send(pws, {
+              v: 1, type: "REKEY_REQUIRED", msgId: uuid(), ts: nowMs(),
+              payload: { roomId: roomIdFromLoop, reason: "peer_left", deviceId: conn.deviceId, roomVersion },
             });
           }
         }

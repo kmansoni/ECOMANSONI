@@ -27,6 +27,8 @@ import type {
   RekeyCommitPayload,
   KeyPackagePayload,
   KeyAckPayload,
+  SyncMailboxPayload,
+  MailboxAckPayload,
   GetRouterRtpCapabilitiesPayload,
   CallSignalInvitePayload,
   CallSignalStatePayload,
@@ -459,6 +461,14 @@ export class CallsWsClient {
     return this.sendOrderedAcked('KEY_ACK', payload, timeoutMs);
   }
 
+  syncMailbox(payload: SyncMailboxPayload, timeoutMs?: number): Promise<void> {
+    return this.sendOrderedAcked('SYNC_MAILBOX', payload, timeoutMs);
+  }
+
+  mailboxAck(payload: MailboxAckPayload, timeoutMs?: number): Promise<void> {
+    return this.sendOrderedAcked('MAILBOX_ACK', payload, timeoutMs);
+  }
+
   getRouterRtpCapabilities(payload: GetRouterRtpCapabilitiesPayload | string, timeoutMs?: number): Promise<void> {
     const p = typeof payload === 'string' ? { roomId: payload } : payload;
     return this.sendOrderedAcked('GET_ROUTER_RTP_CAPABILITIES', p, timeoutMs);
@@ -493,6 +503,15 @@ export class CallsWsClient {
 
   sendRaw(type: string, payload: object, timeoutMs?: number): Promise<void> {
     return this.sendOrderedAcked(type, payload, timeoutMs);
+  }
+
+  injectServerEvent(frame: WsEnvelopeV1): void {
+    if (typeof frame.msgId === "string") {
+      if (this.seenServerMsgIds.has(frame.msgId)) return;
+      this.seenServerMsgIds.add(frame.msgId);
+      this.seenServerMsgIdQueue.push(frame.msgId);
+    }
+    this.emit(frame.type as CallsWsEvent, frame);
   }
 
   on(

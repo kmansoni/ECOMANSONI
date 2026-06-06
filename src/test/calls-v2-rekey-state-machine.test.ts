@@ -14,6 +14,10 @@ function makeStateMachine(overrides?: { rekeyDeadlineMs?: number; rekeyCooldownM
   });
 }
 
+function testUuid(n: number): string {
+  return `00000000-0000-4000-8000-${n.toString().padStart(12, '0')}`;
+}
+
 describe('RekeyStateMachine', () => {
   let sm: RekeyStateMachine;
 
@@ -59,10 +63,10 @@ describe('RekeyStateMachine', () => {
     sm.initiateRekey();
     sm.onRekeyBeginAcked(1);
 
-    sm.onKeyAckReceived('peer1', 1, 'msg-1');
+    sm.onKeyAckReceived('peer1', 1, testUuid(1));
     expect(sm.getState()).toBe('KEY_DELIVERY');
 
-    sm.onKeyAckReceived('peer2', 1, 'msg-2');
+    sm.onKeyAckReceived('peer2', 1, testUuid(2));
     expect(sm.getState()).toBe('REKEY_COMMITTED');
   });
 
@@ -109,14 +113,24 @@ describe('RekeyStateMachine', () => {
     sm.initiateRekey();
     sm.onRekeyBeginAcked(1);
 
-    const first = sm.onKeyAckReceived('peer1', 1, 'dup-id');
+    const first = sm.onKeyAckReceived('peer1', 1, testUuid(3));
     expect(first).toBe(true);
 
     // Duplicate messageId should be rejected
     // Add peer2 so state stays in KEY_DELIVERY
     sm.addPeer('peer2');
-    const second = sm.onKeyAckReceived('peer1', 1, 'dup-id');
+    const second = sm.onKeyAckReceived('peer1', 1, testUuid(3));
     expect(second).toBe(false);
+  });
+
+  it('Anti-replay: invalid messageId format rejected', () => {
+    sm.setActivePeers(['peer1']);
+    sm.initiateRekey();
+    sm.onRekeyBeginAcked(1);
+
+    const result = sm.onKeyAckReceived('peer1', 1, 'not-a-uuid');
+    expect(result).toBe(false);
+    expect(sm.getState()).toBe('KEY_DELIVERY');
   });
 
   it('Stale epoch KEY_ACK rejected (epoch < current)', () => {
@@ -132,7 +146,7 @@ describe('RekeyStateMachine', () => {
     sm.onRekeyBeginAcked(2);
 
     // Stale ACK for epoch 0
-    const result = sm.onKeyAckReceived('peer1', 0, 'stale-msg');
+    const result = sm.onKeyAckReceived('peer1', 0, testUuid(4));
     expect(result).toBe(false);
   });
 
@@ -141,7 +155,7 @@ describe('RekeyStateMachine', () => {
     sm.initiateRekey();
     sm.onRekeyBeginAcked(1);
 
-    sm.onKeyAckReceived('peer1', 1, 'msg-p1');
+    sm.onKeyAckReceived('peer1', 1, testUuid(5));
     expect(sm.getState()).toBe('KEY_DELIVERY');
 
     // peer2 leaves: quorum should now be satisfied
@@ -154,7 +168,7 @@ describe('RekeyStateMachine', () => {
     sm.initiateRekey();
     sm.onRekeyBeginAcked(1);
 
-    sm.onKeyAckReceived('peer1', 1, 'msg-p1');
+    sm.onKeyAckReceived('peer1', 1, testUuid(5));
     // peer1 alone should have triggered quorum, but let's test addPeer before quorum
     // Reset: no peers initially
     sm.destroy();
@@ -177,10 +191,10 @@ describe('RekeyStateMachine', () => {
 
     // Add a new late joiner
     sm.addPeer('peer2');
-    sm.onKeyAckReceived('peer1', 2, 'msg-p1-2');
+    sm.onKeyAckReceived('peer1', 2, testUuid(6));
     expect(sm.getState()).toBe('KEY_DELIVERY'); // peer2 still needs ACK
 
-    sm.onKeyAckReceived('peer2', 2, 'msg-p2-2');
+    sm.onKeyAckReceived('peer2', 2, testUuid(7));
     expect(sm.getState()).toBe('REKEY_COMMITTED');
   });
 
@@ -247,8 +261,8 @@ describe('RekeyStateMachine', () => {
     sm.onRekeyBeginAcked(epoch!);
     expect(sm.getState()).toBe('KEY_DELIVERY');
 
-    sm.onKeyAckReceived('alice', epoch!, 'ack-alice');
-    sm.onKeyAckReceived('bob', epoch!, 'ack-bob');
+    sm.onKeyAckReceived('alice', epoch!, testUuid(8));
+    sm.onKeyAckReceived('bob', epoch!, testUuid(9));
     expect(sm.getState()).toBe('REKEY_COMMITTED');
 
     sm.activateEpoch(epoch!);
@@ -271,11 +285,11 @@ describe('RekeyStateMachine', () => {
     sm.onRekeyBeginAcked(1);
     expect(sm.getState()).toBe('KEY_DELIVERY');
 
-    sm.onKeyAckReceived('peer1', 1, 'ack1');
+    sm.onKeyAckReceived('peer1', 1, testUuid(10));
     // Без фикса: квор бы сложился на одном peer1
     expect(sm.getState()).toBe('KEY_DELIVERY');
 
-    sm.onKeyAckReceived('peer2', 1, 'ack2');
+    sm.onKeyAckReceived('peer2', 1, testUuid(11));
     expect(sm.getState()).toBe('REKEY_COMMITTED');
   });
 
@@ -290,15 +304,15 @@ describe('RekeyStateMachine', () => {
     sm.setActivePeers(['peer1', 'peer3']);
     sm.onRekeyBeginAcked(1);
 
-    sm.onKeyAckReceived('peer1', 1, 'a1');
+    sm.onKeyAckReceived('peer1', 1, testUuid(12));
     expect(sm.getState()).toBe('KEY_DELIVERY'); // peer3 ещё не заACKал
 
     // ACK от peer2 должен быть проигнорирован — его уже нет в активных
-    const staleAck = sm.onKeyAckReceived('peer2', 1, 'stale');
+    const staleAck = sm.onKeyAckReceived('peer2', 1, testUuid(13));
     expect(staleAck).toBe(false);
     expect(sm.getState()).toBe('KEY_DELIVERY');
 
-    sm.onKeyAckReceived('peer3', 1, 'a3');
+    sm.onKeyAckReceived('peer3', 1, testUuid(14));
     expect(sm.getState()).toBe('REKEY_COMMITTED');
   });
 });

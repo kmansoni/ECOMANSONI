@@ -75,15 +75,19 @@ async function acquireLocalMedia(isVideo: boolean): Promise<{ stream: MediaStrea
     channelCount: { ideal: 1, max: 1 },
     sampleRate: { ideal: 48000 },
     sampleSize: { ideal: 16 },
-    latency: { ideal: 0.02, max: 0.08 },
   };
+  const audioConstraintsWithLatency = {
+    ...baseAudio,
+    // Some browsers expose audio latency constraints even though this DOM lib version does not type them.
+    latency: { ideal: 0.02, max: 0.08 },
+  } as MediaTrackConstraints;
 
   const tuneAudioTrack = async (stream: MediaStream, label: string): Promise<void> => {
     const track = stream.getAudioTracks()[0];
     if (!track) return;
     if (typeof track.applyConstraints === "function") {
       try {
-        await track.applyConstraints(baseAudio);
+        await track.applyConstraints(audioConstraintsWithLatency);
       } catch (error) {
         logger.warn("video_call_sfu.audio_track_constraints_apply_failed", { label, error });
       }
@@ -100,7 +104,7 @@ async function acquireLocalMedia(isVideo: boolean): Promise<{ stream: MediaStrea
       channelCount: settings?.channelCount,
       sampleRate: settings?.sampleRate,
       sampleSize: settings?.sampleSize,
-      latency: settings?.latency,
+      latency: (settings as MediaTrackSettings & { latency?: number }).latency,
     });
   };
 
@@ -141,26 +145,26 @@ async function acquireLocalMedia(isVideo: boolean): Promise<{ stream: MediaStrea
   try {
     if (isVideo) {
       try {
-        const stream = await request({ audio: baseAudio, video: hdVideo }, "video+audio(hd)");
+        const stream = await request({ audio: audioConstraintsWithLatency, video: hdVideo }, "video+audio(hd)");
         await tuneAudioTrack(stream, "video+audio(hd)");
         return { stream, isAudioOnly: false };
       } catch (error) {
         logger.warn("video_call_sfu.acquire_media_hd_failed", { error });
         try {
-          const stream = await request({ audio: baseAudio, video: safeVideo }, "video+audio(safe)");
+          const stream = await request({ audio: audioConstraintsWithLatency, video: safeVideo }, "video+audio(safe)");
           await tuneAudioTrack(stream, "video+audio(safe)");
           return { stream, isAudioOnly: false };
         } catch (safeError) {
           logger.warn("video_call_sfu.acquire_media_safe_failed", { error: safeError });
           // Graceful degradation: keep the call alive in audio-only mode.
-          const stream = await request({ audio: baseAudio, video: false }, "audio-only fallback");
+          const stream = await request({ audio: audioConstraintsWithLatency, video: false }, "audio-only fallback");
           await tuneAudioTrack(stream, "audio-only fallback");
           return { stream, isAudioOnly: true };
         }
       }
     }
 
-    const stream = await request({ audio: baseAudio, video: false }, "audio-only");
+    const stream = await request({ audio: audioConstraintsWithLatency, video: false }, "audio-only");
     await tuneAudioTrack(stream, "audio-only");
     return { stream, isAudioOnly: true };
   } catch (err) {

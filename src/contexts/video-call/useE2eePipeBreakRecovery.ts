@@ -21,6 +21,7 @@ export function useE2eePipeBreakRecovery(
   pipeBreakRecoveryInFlightRef: { current: Set<string> },
   handleE2eePipeBreakRef: { current: ((info: PipeBreakInfo) => void) | null },
   rebuildRemoteStream: () => void,
+  retryPendingReceiverTransform?: (consumerId: string, reason: string) => boolean,
 ): void {
   const handleE2eePipeBreak = useCallback(async (info: PipeBreakInfo) => {
     const { trackId, direction, peerId } = info;
@@ -151,6 +152,24 @@ export function useE2eePipeBreakRecovery(
           || storedParams.producerId;
         if (newReceiver) {
           encryption.setupReceiverTransform(newReceiver, peerKey, newConsumer.id);
+        } else if (retryPendingReceiverTransform) {
+          const attached = retryPendingReceiverTransform(newConsumer.id, 'receiver-pipe-break-recovery');
+          if (!attached) {
+            logger.warn('[VideoCallContext] E2EE receiver recovery: resume deferred until transform attaches', {
+              consumerId: newConsumer.id,
+              producerId: storedParams.producerId,
+              peerKey,
+            });
+            return;
+          }
+        } else {
+          logger.error('[VideoCallContext] E2EE receiver recovery: receiver unavailable — fail closed', {
+            consumerId: newConsumer.id,
+            producerId: storedParams.producerId,
+            peerKey,
+          });
+          sfuManager.closeConsumer(newConsumer.id);
+          return;
         }
 
         if (client && roomId) {
@@ -184,6 +203,7 @@ export function useE2eePipeBreakRecovery(
     pipeBreakRetryAtRef,
     pipeBreakRecoveryInFlightRef,
     rebuildRemoteStream,
+    retryPendingReceiverTransform,
   ]);
 
   useEffect(() => {

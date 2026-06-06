@@ -20,6 +20,7 @@ import {
   hasE2eeSupport,
   hasInsertableStreamsSupport,
   extractRouterCapsFromJoinPayload,
+  canSendE2eeReady,
 } from "./videoCallProvider.helpers";
 import { useCallsV2E2eeBootstrap } from "./useCallsV2E2eeBootstrap";
 
@@ -60,6 +61,9 @@ interface UseCallsV2BootstrapParams {
   isCallStillActiveForBootstrap: (callId: string) => boolean;
   onE2eeActivated?: () => void;
   onDecryptionKeyReady?: (peerKey: string) => void;
+  hasInboundE2eeReadiness?: () => boolean;
+  getInboundE2eeReadiness?: () => { ready: boolean; missingDecryptionPeers: string[]; pendingConsumers: string[] };
+  missingSenderKeysRef?: MutableRefObject<Set<string>>;
 }
 
 const CALLS_V2_PREFERRED_REGION = String(import.meta.env.VITE_CALLS_V2_PREFERRED_REGION ?? "ru")
@@ -113,6 +117,9 @@ export function useCallsV2Bootstrap({
   isCallStillActiveForBootstrap,
   onE2eeActivated,
   onDecryptionKeyReady,
+  hasInboundE2eeReadiness,
+  getInboundE2eeReadiness,
+  missingSenderKeysRef,
 }: UseCallsV2BootstrapParams) {
   const { initializeCallsV2E2ee } = useCallsV2E2eeBootstrap({
     user,
@@ -136,6 +143,9 @@ export function useCallsV2Bootstrap({
     handleE2eePipeBreakRef,
     onE2eeActivated,
     onDecryptionKeyReady,
+    hasInboundE2eeReadiness,
+    getInboundE2eeReadiness,
+    missingSenderKeysRef,
   });
 
   const ensureCallsV2Connected = useCallback((): Promise<CallsWsClient | null> => {
@@ -240,6 +250,9 @@ export function useCallsV2Bootstrap({
       logger.info("[VideoCallContext] calls-v2 hello:ok", { deviceId });
       await client.auth({ accessToken });
       logger.info("[VideoCallContext] calls-v2 auth:ok");
+      void client.syncMailbox({ deviceId: getStableCallsDeviceId(), lastStreamId: "0-0", limit: 100 }).catch((err) => {
+        logger.warn("[VideoCallContext] calls-v2 mailbox sync after auth failed", { error: err instanceof Error ? err.message : String(err) });
+      });
       const hasE2ee = hasE2eeSupport();
       const hasInsertableStreams = hasInsertableStreamsSupport();
       if (REQUIRE_SFRAME && !hasE2ee) {
@@ -526,9 +539,22 @@ export function useCallsV2Bootstrap({
           logger.info("[VideoCallContext] calls-v2 TURN iceServers seeded from ROOM_JOIN_OK", { count: joinedTurn.iceServers.length });
         }
         epochGuardRef.current?.markRoomJoined(e2eeEpochRef.current);
-        await client.e2eeReady({ roomId, epoch: e2eeEpochRef.current });
-        epochGuardRef.current?.markE2eeReady(e2eeEpochRef.current);
-        logger.info("[VideoCallContext] calls-v2 e2ee-ready:ok", { roomId, epoch: e2eeEpochRef.current });
+        const initialReadiness = canSendE2eeReady({
+          epoch: e2eeEpochRef.current,
+          mediaEncryption: callMediaEncryptionRef.current,
+          rekeyMachine: rekeyMachineRef.current,
+          missingSenderKeys: missingSenderKeysRef?.current,
+          inbound: getInboundE2eeReadiness?.() ?? (hasInboundE2eeReadiness ? { ready: hasInboundE2eeReadiness() } : null),
+          requireQuorum: false,
+        });
+        if (initialReadiness.ready) {
+          await client.e2eeReady({ roomId, epoch: e2eeEpochRef.current });
+          epochGuardRef.current?.markE2eeReady(e2eeEpochRef.current);
+          onE2eeActivated?.();
+          logger.info("[VideoCallContext] calls-v2 e2ee-ready:ok", { roomId, epoch: e2eeEpochRef.current });
+        } else {
+          logger.warn("[VideoCallContext] calls-v2 E2EE_READY deferred after ROOM_JOIN_OK: gate is not satisfied", initialReadiness);
+        }
 
         const joinedUnsub = client.on("ROOM_JOINED", (frame) => {
           const payload = frame.payload as { roomId?: string; routerRtpCapabilities?: RtpCapabilities; mediasoup?: { routerRtpCapabilities?: RtpCapabilities } } | undefined;
@@ -632,33 +658,77 @@ export function useCallsV2Bootstrap({
           rekeyTimerRef.current = null;
         }
 
-        rekeyTimerRef.current = window.setInterval(() => {
+        rekeyMachineRef.current?.onEvent((event) => {
+          if (event.type !== 'REKEY_COMMITTED') return;
+
           const activeClient = callsWsRef.current;
           const activeRoomId = callsWsRoomRef.current;
           const machine = rekeyMachineRef.current;
-          const keyExchange = callKeyExchangeRef.current;
-          if (!activeClient || !activeRoomId || !machine || !keyExchange) return;
-
-          const newEpoch = machine.initiateRekey();
-          if (newEpoch === null) return;
-
-          const mediaEncryption = callMediaEncryptionRef.current;
-          epochGuardRef.current?.markEpochAdvanced(newEpoch);
+          if (!activeClient || !activeRoomId || !machine) return;
 
           void (async () => {
             try {
-              const epochKey = await keyExchange.createEpochKey(newEpoch);
-              if (mediaEncryption) await mediaEncryption.setEncryptionKey(epochKey);
+              const readiness = canSendE2eeReady({
+                epoch: event.epoch,
+                mediaEncryption: callMediaEncryptionRef.current,
+                rekeyMachine: machine,
+                missingSenderKeys: missingSenderKeysRef?.current,
+                inbound: getInboundE2eeReadiness?.() ?? (hasInboundE2eeReadiness ? { ready: hasInboundE2eeReadiness() } : null),
+                requireQuorum: true,
+              });
+              if (!readiness.ready) {
+                logger.warn("[VideoCallContext] calls-v2 rekey:commit blocked by E2EE_READY gate", readiness);
+                machine.abortRekey("E2EE_READY gate not satisfied before local leader commit");
+                epochGuardRef.current?.rollbackFailedEpoch(e2eeEpochRef.current);
+                return;
+              }
 
-              await activeClient.rekeyBegin({ roomId: activeRoomId, epoch: newEpoch });
-              machine.onRekeyBeginAcked(newEpoch);
-              logger.info("[VideoCallContext] calls-v2 rekey:begin sent", { epoch: newEpoch });
+              await activeClient.rekeyCommit({ roomId: activeRoomId, epoch: event.epoch });
+              machine.activateEpoch(event.epoch);
+              e2eeEpochRef.current = event.epoch;
+              epochGuardRef.current?.markE2eeReady(event.epoch);
+              onE2eeActivated?.();
+              await activeClient.e2eeReady({ roomId: activeRoomId, epoch: event.epoch });
+              logger.info("[VideoCallContext] calls-v2 rekey:commit sent", { epoch: event.epoch, roomId: activeRoomId });
             } catch (err) {
-              logger.error("[VideoCallContext] calls-v2 rekey:begin failed, aborting", err);
+              logger.error("[VideoCallContext] calls-v2 rekey:commit failed, aborting", err);
               machine.abortRekey(String(err));
               epochGuardRef.current?.rollbackFailedEpoch(e2eeEpochRef.current);
             }
           })();
+        });
+
+          const startRekey = (force: boolean, reason: string) => {
+            const activeClient = callsWsRef.current;
+            const activeRoomId = callsWsRoomRef.current;
+            const machine = rekeyMachineRef.current;
+            const keyExchange = callKeyExchangeRef.current;
+            if (!activeClient || !activeRoomId || !machine || !keyExchange) return;
+
+            const newEpoch = machine.initiateRekey({ force });
+            if (newEpoch === null) return;
+
+            const mediaEncryption = callMediaEncryptionRef.current;
+            epochGuardRef.current?.markEpochAdvanced(newEpoch);
+
+            void (async () => {
+              try {
+                const epochKey = await keyExchange.createEpochKey(newEpoch);
+                if (mediaEncryption) await mediaEncryption.setEncryptionKey(epochKey);
+
+                await activeClient.rekeyBegin({ roomId: activeRoomId, epoch: newEpoch });
+                machine.onRekeyBeginAcked(newEpoch);
+                logger.info("[VideoCallContext] calls-v2 rekey:begin sent", { epoch: newEpoch, reason });
+              } catch (err) {
+                logger.error("[VideoCallContext] calls-v2 rekey:begin failed, aborting", err);
+                machine.abortRekey(String(err));
+                epochGuardRef.current?.rollbackFailedEpoch(e2eeEpochRef.current);
+              }
+            })();
+          };
+
+        rekeyTimerRef.current = window.setInterval(() => {
+          startRekey(false, "periodic");
         }, REKEY_INTERVAL_MS);
         return true;
       } catch (err) {
@@ -687,6 +757,10 @@ export function useCallsV2Bootstrap({
       lastCallsBootstrapErrorRef,
       lastSnapshotRoomVersionRef,
       isCallStillActiveForBootstrap,
+      getInboundE2eeReadiness,
+      hasInboundE2eeReadiness,
+      missingSenderKeysRef,
+      onE2eeActivated,
       peerUserIdByDeviceIdRef,
       producerPeerKeyRef,
       rekeyMachineRef,

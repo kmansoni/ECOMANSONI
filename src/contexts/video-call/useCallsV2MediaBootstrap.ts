@@ -14,6 +14,7 @@ import {
   CALLS_V2_ENDPOINTS,
   MEDIA_BOOTSTRAP_RETRY_BACKOFF_MS,
   REQUIRE_SFRAME,
+  canSendE2eeReady,
   extractRouterCapsFromJoinPayload,
   hasE2eeSupport,
   isValidTransportCreatedPayload,
@@ -36,7 +37,11 @@ interface UseCallsV2MediaBootstrapParams {
   e2eeEpochRef: MutableRefObject<number>;
   callKeyExchangeRef: MutableRefObject<CallKeyExchange | null>;
   callMediaEncryptionRef: MutableRefObject<CallMediaEncryption | null>;
+  rekeyMachineRef: MutableRefObject<import("@/calls-v2/rekeyStateMachine").RekeyStateMachine | null>;
+  missingSenderKeysRef?: MutableRefObject<Set<string>>;
   localProducerIdsRef: MutableRefObject<{ audio: string | null; video: string | null }>;
+  onE2eeReady?: () => void;
+  getInboundE2eeReadiness?: () => { ready: boolean; missingDecryptionPeers: string[]; pendingConsumers: string[] };
   consumerCreateParamsRef: MutableRefObject<Map<string, import("@/calls-v2/types").ConsumerReplayDescriptor>>;
   producerPeerKeyRef: MutableRefObject<Map<string, string>>;
   mediaBootstrapBlockedUntilRef: MutableRefObject<Map<string, number>>;
@@ -77,7 +82,11 @@ export function useCallsV2MediaBootstrap({
   e2eeEpochRef,
   callKeyExchangeRef,
   callMediaEncryptionRef,
+  rekeyMachineRef,
+  missingSenderKeysRef,
   localProducerIdsRef,
+  onE2eeReady,
+  getInboundE2eeReadiness,
   consumerCreateParamsRef,
   producerPeerKeyRef,
   mediaBootstrapBlockedUntilRef,
@@ -529,7 +538,26 @@ await client.transportConnect({
         }
       }
 
-      rebuildRemoteStream();
+      if (REQUIRE_SFRAME && hasE2eeSupport()) {
+          const readiness = canSendE2eeReady({
+            epoch: e2eeEpochRef.current,
+            mediaEncryption: callMediaEncryptionRef.current,
+            rekeyMachine: rekeyMachineRef.current,
+            missingSenderKeys: missingSenderKeysRef?.current,
+            inbound: getInboundE2eeReadiness?.() ?? null,
+            requireQuorum: false,
+          });
+          if (readiness.ready) {
+            await client.e2eeReady({ roomId, epoch: e2eeEpochRef.current });
+            epochGuardRef.current?.markE2eeReady(e2eeEpochRef.current);
+            onE2eeReady?.();
+            logger.info("[VideoCallContext] calls-v2 e2ee-ready:ok after media bootstrap", { roomId, epoch: e2eeEpochRef.current });
+          } else {
+            logger.warn("[VideoCallContext] calls-v2 E2EE_READY still deferred after media bootstrap", readiness);
+          }
+        }
+
+       rebuildRemoteStream();
 
       callsWsMediaRoomRef.current = roomId;
       mediaBootstrapBlockedUntilRef.current.delete(roomId);
@@ -565,12 +593,16 @@ dispatchFsm,
     ensureCallsV2Connected,
     epochGuardRef,
     localProducerIdsRef,
+    missingSenderKeysRef,
+    getInboundE2eeReadiness,
+    onE2eeReady,
     markMediaBootstrapProgress,
     mediaBootstrapBlockedUntilRef,
     mediaBootstrapErrorLogAtRef,
     mediaBootstrapToastShownRef,
     pendingProducersToConsumeRef,
     producerPeerKeyRef,
+    rekeyMachineRef,
     consumePendingProducersRef,
     rebuildRemoteStream,
     reportMediaBootstrapFailure,

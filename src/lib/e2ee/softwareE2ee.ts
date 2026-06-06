@@ -42,22 +42,22 @@ export class SoftwareE2eeEncryptor {
   /**
    * Set encryption key for outgoing media.
    */
-  async setEncryptionKey(key: CryptoKey, keyId: number): Promise<void> {
-    await this.encryptor.setEncryptionKey(key, keyId);
-    logger.debug('[SoftwareE2eeEncryptor] Encryption key set', { keyId });
+  async setEncryptionKey(key: CryptoKey, keyId: number, epoch: number = keyId): Promise<void> {
+    await this.encryptor.setEncryptionKey(key, keyId, epoch);
+    logger.debug('[SoftwareE2eeEncryptor] Encryption key set', { keyId, epoch });
   }
 
   /**
    * Set decryption key for a specific peer.
    */
-  async setDecryptionKey(key: CryptoKey, keyId: number, peerId: string): Promise<void> {
+  async setDecryptionKey(key: CryptoKey, keyId: number, peerId: string, epoch: number = keyId): Promise<void> {
     let ctx = this.decryptors.get(peerId);
     if (!ctx) {
       ctx = new SFrameContext();
       this.decryptors.set(peerId, ctx);
     }
-    await ctx.setEncryptionKey(key, keyId);
-    logger.debug('[SoftwareE2eeEncryptor] Decryption key set', { peerId, keyId });
+    await ctx.setEncryptionKey(key, keyId, epoch);
+    logger.debug('[SoftwareE2eeEncryptor] Decryption key set', { peerId, keyId, epoch });
   }
 
   /**

@@ -247,4 +247,51 @@ describe('SFrame', () => {
 
     expect(new TextDecoder().decode(decrypted)).toBe('keyframe-after-ratchet');
   });
+
+  it('rejects duplicate SFrame counter replay', async () => {
+    const key = await crypto.subtle.generateKey(
+      { name: 'AES-GCM', length: 128 },
+      false,
+      ['encrypt', 'decrypt'],
+    );
+
+    const sender = new SFrameMediaContext();
+    const receiver = new SFrameMediaContext();
+    await sender.setKey(key, 13);
+    await receiver.setKey(key, 13);
+
+    const frame = new TextEncoder().encode('replay-protected-frame').buffer;
+    const encrypted = await sender.encryptFrame(frame);
+    const first = await receiver.decryptFrame(encrypted);
+
+    expect(new TextDecoder().decode(first)).toBe('replay-protected-frame');
+    await expect(receiver.decryptFrame(encrypted)).rejects.toThrow(/Duplicate SFrame counter|possible replay attack/);
+  });
+
+  it('allows same counter only after epoch changes', async () => {
+    const key1 = await crypto.subtle.generateKey(
+      { name: 'AES-GCM', length: 128 },
+      false,
+      ['encrypt', 'decrypt'],
+    );
+    const key2 = await crypto.subtle.generateKey(
+      { name: 'AES-GCM', length: 128 },
+      false,
+      ['encrypt', 'decrypt'],
+    );
+
+    const sender = new SFrameMediaContext();
+    const receiver = new SFrameMediaContext();
+    await sender.setKey(key1, 21);
+    await receiver.setKey(key1, 21);
+
+    const firstEncrypted = await sender.encryptFrame(new TextEncoder().encode('epoch-21-counter-0').buffer);
+    expect(new TextDecoder().decode(await receiver.decryptFrame(firstEncrypted))).toBe('epoch-21-counter-0');
+
+    await sender.setKey(key2, 22);
+    await receiver.setKey(key2, 22);
+
+    const secondEncrypted = await sender.encryptFrame(new TextEncoder().encode('epoch-22-counter-0').buffer);
+    expect(new TextDecoder().decode(await receiver.decryptFrame(secondEncrypted))).toBe('epoch-22-counter-0');
+  });
 });

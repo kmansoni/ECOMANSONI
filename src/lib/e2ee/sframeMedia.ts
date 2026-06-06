@@ -46,7 +46,7 @@ export class SFrameMediaContext {
     this.keyEpoch = 0;
     this.currentKeyId = keyId;
     this.baseKeyMaterial = baseKeyMaterial ? baseKeyMaterial.slice(0) : null;
-    await this.ctx.setEncryptionKey(key, keyId);
+    await this.ctx.setEncryptionKey(key, keyId, keyId);
   }
 
   /**
@@ -69,7 +69,7 @@ export class SFrameMediaContext {
     );
     this.keyEpoch += 1;
     this.currentKeyId = keyId;
-    await this.ctx.setEncryptionKey(nextKey, keyId);
+    await this.ctx.setEncryptionKey(nextKey, keyId, keyId);
   }
 
   async encryptFrame(frame: ArrayBuffer, meta: MediaFrameMeta = {}): Promise<ArrayBuffer> {

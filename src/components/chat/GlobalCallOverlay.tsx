@@ -12,6 +12,7 @@ import { logger } from "@/lib/logger";
 export function GlobalCallOverlay() {
   const {
     status,
+    callState,
     currentCall,
     incomingCall,
     answerCall,

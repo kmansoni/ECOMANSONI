@@ -44,7 +44,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "20.19.x"
           cache: npm
 
       - name: Setup Supabase CLI
@@ -74,13 +74,30 @@ jobs:
         if: ${{ env.DRY_RUN == 'true' }}
         run: echo "Dry run enabled. Deploy steps will be skipped."
 
+      - name: Prepare build metadata
+        shell: bash
+        run: |
+          echo "VITE_APP_COMMIT_SHA=${GITHUB_SHA}" >> "$GITHUB_ENV"
+          echo "VITE_APP_BUILD_TIME=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_ENV"
+          echo "VITE_APP_VERSION=$(node -p \"require('./package.json').version\")" >> "$GITHUB_ENV"
+
       - name: Build frontend
         run: npm run build
 
+      - name: Write deployment revision marker
+        shell: bash
+        run: |
+          cat > dist/version.json <<EOF
+          {"commitSha":"${GITHUB_SHA}","buildTime":"${VITE_APP_BUILD_TIME}","version":"${VITE_APP_VERSION}","workflow":"deploy-sync.yml"}
+          EOF
+          printf '%s\n' "${GITHUB_SHA}" > dist/REVISION
+
+      - name: Backend safety gate
+        run: npm run check:backend
+
       - name: Deploy Supabase (migrations + functions + secrets)
         if: ${{ env.DRY_RUN != 'true' }}
-        continue-on-error: true
-        run: pwsh -NoProfile -ExecutionPolicy Bypass -File scripts/supabase-deploy.ps1 -SkipSyncGuard -SkipDbPush
+        run: pwsh -NoProfile -ExecutionPolicy Bypass -File scripts/supabase-deploy.ps1
 
       - name: Install PostgreSQL client
         run: sudo apt-get update && sudo apt-get install -y postgresql-client
@@ -140,9 +157,13 @@ jobs:
             git fetch origin main
             git checkout main
             git pull --ff-only origin main
-            printf 'VITE_SUPABASE_URL="%s"\nVITE_SUPABASE_PUBLISHABLE_KEY="%s"\n' "$VITE_SUPABASE_URL" "$VITE_SUPABASE_PUBLISHABLE_KEY" > .env.production
+            printf 'VITE_SUPABASE_URL="%s"\nVITE_SUPABASE_PUBLISHABLE_KEY="%s"\nVITE_APP_COMMIT_SHA="%s"\nVITE_APP_BUILD_TIME="%s"\nVITE_APP_VERSION="%s"\n' "$VITE_SUPABASE_URL" "$VITE_SUPABASE_PUBLISHABLE_KEY" "${{ github.sha }}" "${{ env.VITE_APP_BUILD_TIME }}" "${{ env.VITE_APP_VERSION }}" > .env.production
             npm ci
             npm run build
+            cat > dist/version.json <<EOF
+            {"commitSha":"${{ github.sha }}","buildTime":"${{ env.VITE_APP_BUILD_TIME }}","version":"${{ env.VITE_APP_VERSION }}","workflow":"deploy-sync.yml"}
+            EOF
+            printf '%s\n' "${{ github.sha }}" > dist/REVISION
             if [ -n "$SYSTEMD_SERVICES" ]; then
               for svc in $SYSTEMD_SERVICES; do
                 sudo systemctl restart "$svc"

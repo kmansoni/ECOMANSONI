@@ -2,6 +2,15 @@ export function createInMemoryStore({ degraded = true } = {}) {
   const membersByCall = new Map(); // callId -> Set(deviceId)
   const roomVersionByCall = new Map(); // callId -> number
   const usedJoinTokenJti = new Map(); // jti -> expMs
+  const mailboxesByDevice = new Map(); // deviceId -> Array<{ streamId, msg }>
+  const mailboxDedup = new Map(); // deviceId:msgId -> expMs
+  const mailboxCursors = new Map(); // deviceId -> streamId
+  const routesByMsgId = new Map(); // msgId -> fromDevice
+  const rekeyNeedByEpoch = new Map(); // callId:epoch -> Set(deviceId)
+  const rekeyAckByEpoch = new Map(); // callId:epoch -> Set(deviceId)
+  const rekeyCommitted = new Set(); // callId:epoch
+  const rekeyBeginIds = new Map(); // callId:epoch -> beginMsgId
+  let streamSeq = 0;
 
   function pruneJoinTokenJti() {
     const now = Date.now();
@@ -12,38 +21,83 @@ export function createInMemoryStore({ degraded = true } = {}) {
     }
   }
 
+  function pruneMailboxDedup() {
+    const now = Date.now();
+    for (const [key, expMs] of mailboxDedup.entries()) {
+      if (!expMs || expMs <= now) mailboxDedup.delete(key);
+    }
+  }
+
+  function rekeyKey(callId, epoch) {
+    return `${callId}:${epoch}`;
+  }
+
+  function compareStreamIds(a, b) {
+    const [ams, aseq] = String(a || "0-0").split("-").map((v) => Number(v) || 0);
+    const [bms, bseq] = String(b || "0-0").split("-").map((v) => Number(v) || 0);
+    if (ams !== bms) return ams - bms;
+    return aseq - bseq;
+  }
+
   return {
     kind: "in-memory",
     degraded,
     features: {
-      offlineMailbox: false,
-      rekeyCommit: false,
+      offlineMailbox: true,
+      rekeyCommit: true,
     },
 
-    async deliver() {
-      // No offline mailbox in degraded mode.
-      return { ok: true, dup: false };
+    async deliver(toDevice, msg) {
+      if (!toDevice || !msg?.id) return { ok: false, dup: false };
+      pruneMailboxDedup();
+      const dedupKey = `${toDevice}:${msg.id}`;
+      if (mailboxDedup.has(dedupKey)) return { ok: false, dup: true };
+      mailboxDedup.set(dedupKey, Date.now() + 600_000);
+      const streamId = `${Date.now()}-${++streamSeq}`;
+      const items = mailboxesByDevice.get(toDevice) ?? [];
+      items.push({ streamId, msg: { ...msg } });
+      if (items.length > 5000) items.splice(0, items.length - 5000);
+      mailboxesByDevice.set(toDevice, items);
+      return { ok: true, dup: false, streamId };
     },
 
-    async sync() {
-      // No offline mailbox in degraded mode.
-      return { cursorTo: "0-0", items: [] };
+    async sync(deviceId, cursorFrom = "0-0", limit = 50) {
+      const items = mailboxesByDevice.get(deviceId) ?? [];
+      const selected = items
+        .filter((entry) => compareStreamIds(entry.streamId, cursorFrom) > 0)
+        .slice(0, Math.max(1, Number(limit) || 50));
+      const cursorTo = selected.length > 0 ? selected[selected.length - 1].streamId : cursorFrom;
+      return { cursorTo, items: selected.map((entry) => ({ streamId: entry.streamId, msg: { ...entry.msg } })) };
     },
 
-    async ack() {
-      // no-op
+    async ack(deviceId, cursorTo) {
+      if (deviceId && cursorTo) mailboxCursors.set(deviceId, cursorTo);
     },
 
-    async setNeed() {
-      // no-op
+    async getSavedCursor(deviceId) {
+      return mailboxCursors.get(deviceId) ?? null;
     },
 
-    async markAck() {
-      // no-op
+    async setNeed(callId, epoch, devices) {
+      rekeyNeedByEpoch.set(rekeyKey(callId, epoch), new Set(devices));
     },
 
-    async tryCommit() {
-      return { ok: false, reason: "DEGRADED_NO_COMMIT" };
+    async markAck(callId, epoch, deviceId) {
+      const key = rekeyKey(callId, epoch);
+      const set = rekeyAckByEpoch.get(key) ?? new Set();
+      set.add(deviceId);
+      rekeyAckByEpoch.set(key, set);
+    },
+
+    async tryCommit(callId, epoch) {
+      const key = rekeyKey(callId, epoch);
+      if (rekeyCommitted.has(key)) return { ok: true, reason: "ALREADY" };
+      const need = rekeyNeedByEpoch.get(key) ?? new Set();
+      if (need.size === 0) return { ok: false, reason: "NO_NEED_SET" };
+      const ack = rekeyAckByEpoch.get(key) ?? new Set();
+      if (ack.size < need.size) return { ok: false, reason: "ACK_INCOMPLETE", ack: ack.size, need: need.size };
+      rekeyCommitted.add(key);
+      return { ok: true, reason: "OK", ack: ack.size, need: need.size };
     },
 
     async assertMember(callId, deviceId) {
@@ -77,20 +131,20 @@ export function createInMemoryStore({ degraded = true } = {}) {
       return roomVersionByCall.get(callId) ?? 0;
     },
 
-    async saveRoute() {
-      // no-op
+    async saveRoute(msgId, fromDevice) {
+      if (msgId && fromDevice) routesByMsgId.set(msgId, fromDevice);
     },
 
-    async getRoute() {
-      return null;
+    async getRoute(msgId) {
+      return routesByMsgId.get(msgId) ?? null;
     },
 
-    async setRekeyBeginId() {
-      // no-op
+    async setRekeyBeginId(callId, epoch, beginMsgId) {
+      rekeyBeginIds.set(rekeyKey(callId, epoch), beginMsgId);
     },
 
-    async getRekeyBeginId() {
-      return null;
+    async getRekeyBeginId(callId, epoch) {
+      return rekeyBeginIds.get(rekeyKey(callId, epoch)) ?? null;
     },
 
     async markJoinTokenUsed(jti, expMs, userId) {
