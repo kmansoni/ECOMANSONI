@@ -1017,11 +1017,6 @@ wss.on("connection", (ws, req) => {
           ack(ws, frame.msgId, false, wsError("UNAUTHORIZED", "Not a room member", {}, false));
           return;
         }
-        if (!isPeerE2EEReadyForEpoch(room, conn.deviceId)) {
-          ack(ws, frame.msgId, false, wsError("E2EE_NOT_READY", "E2EE readiness required before media operations", { expectedEpoch: room.epoch }, true));
-          return;
-        }
-
         const direction = frame.payload?.direction === "recv" ? "recv" : "send";
         const transport = await mediaPlane.createTransport(room.roomId, conn.deviceId, direction);
         const transportId = transport.id;

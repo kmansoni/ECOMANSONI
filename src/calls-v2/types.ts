@@ -96,6 +96,7 @@ export type CallsWsEvent =
   | 'REKEY_COMMIT'
   | 'KEY_PACKAGE'
   | 'KEY_ACK'
+  | 'KEY_ACKED'
   | 'MAILBOX_BATCH'
   | 'E2EE_READY_ACK'
   | 'ROUTER_RTP_CAPABILITIES'

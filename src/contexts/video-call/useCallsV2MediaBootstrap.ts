@@ -404,6 +404,7 @@ screenStream,
         },
         { timeoutMs: 5000 }
       );
+      void sendCreatedPromise.catch(() => undefined);
       await client.transportCreate({ roomId, direction: "send" });
       const sendCreated = await sendCreatedPromise;
       const sendParams = sendCreated.payload as import("@/calls-v2/types").TransportCreatedPayload | undefined;
@@ -477,6 +478,7 @@ screenStream,
         },
         { timeoutMs: 5000 }
       );
+      void recvCreatedPromise.catch(() => undefined);
       await client.transportCreate({ roomId, direction: "recv" });
       const recvCreated = await recvCreatedPromise;
       const recvParams = recvCreated.payload as import("@/calls-v2/types").TransportCreatedPayload | undefined;
