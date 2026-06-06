@@ -135,11 +135,26 @@ export class CallMediaEncryption {
   }
 
   /**
+   * Проверяет, что call-сессия уже прошла auth + room join для подключения transforms.
+   *
+   * Важно: setupSenderTransform/setupReceiverTransform являются частью подготовки E2EE,
+   * а не подтверждением E2EE_READY. Требование mediaAllowed здесь создаёт deadlock:
+   * E2EE_READY нельзя отправить до ключей/transforms, но transforms нельзя подключить
+   * до E2EE_READY. Поэтому guard проверяет только базовый контекст комнаты и epoch,
+   * а fail-closed инвариант обеспечивается обязательным outbound key ниже.
+   */
+  private assertTransformSetupContext(operation: string): void {
+    this.epochGuard?.assertAuthenticated(operation);
+    this.epochGuard?.assertInRoom(operation);
+    this.epochGuard?.assertEpochValid(this.currentEpoch, operation);
+  }
+
+  /**
    * Подключить SFrame encrypt transform на outbound RTCRtpSender.
    * Вызывать ПОСЛЕ setEncryptionKey() и ПОСЛЕ produce().
    *
    * H-6: THROWS если encryption key не установлен — fail-closed, не допускаем незашифрованный медиа.
-   * M-6: assertMediaAllowed() через EpochGuard если установлен.
+   * M-6: EpochGuard проверяет auth/room/epoch; E2EE_READY выставляется после успешного подключения transforms.
    *
    * Fail-closed: throws if Insertable Streams unavailable — call must not proceed unencrypted.
    * Caller must verify CallMediaEncryption.isSupported() before entering a call.
@@ -148,8 +163,7 @@ export class CallMediaEncryption {
    * @param trackId — producer.id (для идентификации transform в логах)
    */
   setupSenderTransform(sender: RTCRtpSender, trackId: string): void {
-    // M-6: assert epoch guard allows media
-    this.epochGuard?.assertMediaAllowed('setupSenderTransform');
+    this.assertTransformSetupContext('setupSenderTransform');
 
     // H-6: BLOCKED if no encryption key — throw, do not attach transform without key
     if (!this.hasEncryptionKey) {
@@ -171,17 +185,16 @@ export class CallMediaEncryption {
    *
    * Receiver можно подключать до прихода decryption key — MediaEncryptor дропнет фреймы
    * пока ключ не придёт (fail-closed в SFrame transport).
-   * M-6: assertMediaAllowed() через EpochGuard если установлен.
+   * M-6: EpochGuard проверяет auth/room/epoch; E2EE_READY выставляется после успешного подключения transforms.
    *
-   * Fail-closed: throws if Insertable Streams unavailable.
+   * Fail-closed: throws if browser doesn't support Insertable Streams.
    *
    * @param receiver — RTCRtpReceiver от SfuMediaManager.getConsumerReceiver()
    * @param peerId — userId или producerId отправителя
    * @param trackId — consumer.id (для идентификации)
    */
   setupReceiverTransform(receiver: RTCRtpReceiver, peerId: string, trackId: string): void {
-    // M-6: assert epoch guard allows media
-    this.epochGuard?.assertMediaAllowed('setupReceiverTransform');
+    this.assertTransformSetupContext('setupReceiverTransform');
 
     const resolvedPeerId = this.resolveReceiverPeerId(peerId);
     const hasKey = this.peerDecryptionEpochs.has(resolvedPeerId);
