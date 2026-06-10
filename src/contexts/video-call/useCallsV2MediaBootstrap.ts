@@ -204,15 +204,15 @@ screenStream,
       return;
     }
 
-    const producerIds: string[] = [];
+      const producerIds: string[] = [];
     for (const track of tracks) {
-      const producer = await manager.produce(track, { trackId: track.id, source: "screen" });
-      if (REQUIRE_SFRAME && hasE2eeSupport()) {
-        const sender = manager.getProducerSender(producer.id);
-        if (sender) {
-          callMediaEncryptionRef.current?.setupSenderTransform(sender, producer.id);
-        }
-      }
+      const producer = await manager.produce(
+        track,
+        { trackId: track.id, source: "screen" },
+        REQUIRE_SFRAME && hasE2eeSupport()
+          ? (sender, producerId) => callMediaEncryptionRef.current?.setupSenderTransform(sender, producerId)
+          : undefined
+      );
       producerIds.push(producer.id);
     }
     screenShareProducerIdsRef.current = producerIds;
@@ -350,20 +350,23 @@ screenStream,
       }
       const sfuManager = sfuManagerRef.current;
 
-      // P0 fix: Register ICE restart callback after SfuMediaManager is created.
-      // Without this, ICE restarts fail silently because onIceRestartNeeded is null.
-      if (sfuManager && callsWsRef.current) {
-        sfuManager.setIceRestartCallback(async (transportId, direction) => {
-          logger.info("[VideoCallContext] ICE restart needed", { transportId, direction });
-          const client = callsWsRef.current;
-          if (!client) return;
-          await client.transportConnect({
-            roomId,
-            transportId,
-            dtlsParameters: { fingerprints: [] },
-          });
-        });
-      }
+// P0 fix: Register ICE restart callback after SfuMediaManager is created.
+   // Without this, ICE restarts fail silently because onIceRestartNeeded is null.
+   // CRITICAL FIX: During ICE restart, mediasoup-client generates NEW DTLS parameters
+   // with fresh fingerprints. We must NOT send stale DTLS parameters — that breaks
+   // DTLS handshake and causes SFU to close the transport ("firewall error").
+   if (sfuManager && callsWsRef.current) {
+     sfuManager.setIceRestartCallback(async (transportId, direction) => {
+       logger.info("[VideoCallContext] ICE restart needed", { transportId, direction });
+       const client = callsWsRef.current;
+       if (!client) return;
+
+       // Do NOT send any DTLS parameters here — mediasoup-client will invoke the
+       // 'connect' event handler with fresh DTLS parameters from the ICE restart.
+       // The connect handler (defined in createSendTransport/createRecvTransport below)
+       // will be called automatically with the new parameters.
+     });
+   }
 
       // P0-3 fix: Register connection lost/restored callbacks to dispatch FSM events.
       // CONNECTION_LOST moves FSM to reconnecting state; CONNECTION_RESTORED returns to in_call.
@@ -494,27 +497,27 @@ screenStream,
       markMediaBootstrapProgress("recv_transport_created");
       dispatchFsm("TRANSPORT_CONNECTED");
 
-      sfuManager.createRecvTransport(
-        {
-          id: recvParams.transportId,
-          iceParameters: recvParams.iceParameters as import("mediasoup-client").types.IceParameters,
-          iceCandidates: recvParams.iceCandidates as import("mediasoup-client").types.IceCandidate[],
-          dtlsParameters: recvParams.dtlsParameters as import("mediasoup-client").types.DtlsParameters,
-          iceServers: iceServersSnapshot,
-        },
-        async (dtlsParameters) => {
-await client.transportConnect({
-            roomId,
-            transportId: recvParams.transportId,
-            dtlsParameters: dtlsParameters as import("@/calls-v2/types").DtlsParameters,
-          });
-          logger.info("[VideoCallContext] calls-v2 transport-connect:recv:ok", { roomId });
-        }
-      );
-      callsWsRecvTransportRef.current = recvParams.transportId;
+sfuManager.createRecvTransport(
+         {
+           id: recvParams.transportId,
+           iceParameters: recvParams.iceParameters as import("mediasoup-client").types.IceParameters,
+           iceCandidates: recvParams.iceCandidates as import("mediasoup-client").types.IceCandidate[],
+           dtlsParameters: recvParams.dtlsParameters as import("mediasoup-client").types.DtlsParameters,
+           iceServers: iceServersSnapshot,
+         },
+         async (dtlsParameters) => {
+           await client.transportConnect({
+             roomId,
+             transportId: recvParams.transportId,
+             dtlsParameters: dtlsParameters as import("@/calls-v2/types").DtlsParameters,
+           });
+           logger.info("[VideoCallContext] calls-v2 transport-connect:recv:ok", { roomId });
+         }
+       );
+       callsWsRecvTransportRef.current = recvParams.transportId;
 
-      // Process pending producers now that recv transport is ready
-      consumePendingProducersRef.current?.();
+       // Process pending producers now that recv transport is ready
+       consumePendingProducersRef.current?.();
 
       // Create E2EE key BEFORE producing tracks (H-6 fix: must be set BEFORE setupSenderTransform).
       // FIX: reuse the epoch key already created during room bootstrap to avoid generating
@@ -538,15 +541,15 @@ await client.transportConnect({
       const tracks = stream.getTracks().filter((track) => track.readyState === "live");
       for (const track of tracks) {
         const source = track.kind === "audio" ? "microphone" : "camera";
-        const producer = await sfuManager.produce(track, { trackId: track.id, source });
+        const producer = await sfuManager.produce(
+          track,
+          { trackId: track.id, source },
+          REQUIRE_SFRAME && hasE2eeSupport()
+            ? (sender, producerId) => callMediaEncryptionRef.current?.setupSenderTransform(sender, producerId)
+            : undefined
+        );
         if (track.kind === "audio" || track.kind === "video") {
           localProducerIdsRef.current[track.kind] = producer.id;
-        }
-        if (REQUIRE_SFRAME && hasE2eeSupport()) {
-          const sender = sfuManagerRef.current?.getProducerSender(producer.id);
-          if (sender) {
-            callMediaEncryptionRef.current?.setupSenderTransform(sender, producer.id);
-          }
         }
       }
 

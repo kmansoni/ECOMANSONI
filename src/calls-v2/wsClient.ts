@@ -116,10 +116,34 @@ export class CallsWsClient {
   private readonly connectionStateHandlers = new Set<ConnectionStateHandler>();
 
   constructor(private readonly config: CallsWsConfig) {
-    this.seenServerMsgIdsCleanupTimer = window.setInterval(
-      () => this.cleanupSeenServerMsgIds(),
-      30_000
-    );
+    // WS-1/WS-2 fix: Timer is NOT started in constructor to avoid leak if client is abandoned
+    // Timer is started on connect() and stopped on disconnect()/destroy()
+  }
+
+  // WS-1/WS-2 fix: Helper methods for timer lifecycle
+  private startCleanupTimer(): void {
+    if (this.seenServerMsgIdsCleanupTimer === null) {
+      this.seenServerMsgIdsCleanupTimer = window.setInterval(
+        () => this.cleanupSeenServerMsgIds(),
+        30_000
+      );
+    }
+  }
+
+  private stopCleanupTimer(): void {
+    if (this.seenServerMsgIdsCleanupTimer !== null) {
+      window.clearInterval(this.seenServerMsgIdsCleanupTimer);
+      this.seenServerMsgIdsCleanupTimer = null;
+    }
+  }
+
+  /**
+   * WS-1/WS-2 fix: Destroy the client and clean up all resources.
+   * Use this instead of disconnect() when the client will be garbage collected.
+   */
+  destroy(): void {
+    this.stopCleanupTimer();
+    this.disconnect();
   }
 
   get connectionState(): ConnectionState {
@@ -224,6 +248,8 @@ export class CallsWsClient {
         ws.addEventListener('message', (ev) => this.onMessage(ev.data));
         this.setConnectionState('connected');
         this.startHeartbeat();
+        // WS-1/WS-2 fix: Start cleanup timer on successful connection
+        this.startCleanupTimer();
         resolve();
       };
 
@@ -252,6 +278,8 @@ export class CallsWsClient {
 
   private onWsClose = (ev: CloseEvent) => {
     if (!this.ws) return;
+    // WS-1/WS-2 fix: Stop cleanup timer on WebSocket close
+    this.stopCleanupTimer();
     this.ws = null;
     this.handleDisconnect(ev.code, ev.reason);
   };

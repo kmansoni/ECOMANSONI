@@ -1077,10 +1077,9 @@ wss.on("connection", (ws, req) => {
           ack(ws, frame.msgId, false, wsError("UNAUTHORIZED", "Not a room member", {}, false));
           return;
         }
-        if (!isPeerE2EEReadyForEpoch(room, conn.deviceId)) {
-          ack(ws, frame.msgId, false, wsError("E2EE_NOT_READY", "E2EE readiness required before media operations", { expectedEpoch: room.epoch }, true));
-          return;
-        }
+        // PRODUCE intentionally does not require E2EE_READY: the client must first create
+        // the mediasoup Producer/RTCRtpSender and attach the sender transform, then it can
+        // send E2EE_READY. CONSUME and media delivery remain fail-closed on E2EE readiness.
 
         const kind = frame.payload?.kind === "audio" ? "audio" : "video";
         if (mediaPlane.mode === "mediasoup" && !validateRtpParameters(frame.payload?.rtpParameters)) {
@@ -1094,13 +1093,16 @@ wss.on("connection", (ws, req) => {
         const source = rawAppData.source === "screen"
           ? "screen"
           : kind === "audio" ? "microphone" : "camera";
+        const clientProducerId = typeof rawAppData.clientProducerId === "string" && rawAppData.clientProducerId.length > 0
+          ? rawAppData.clientProducerId
+          : undefined;
         const produced = await mediaPlane.produce(
           room.roomId,
           conn.deviceId,
           frame.payload?.transportId,
           kind,
           frame.payload?.rtpParameters ?? {},
-          { peerDeviceId: conn.deviceId, userId: conn.userId, source, ...(trackId ? { trackId } : {}) }
+          { peerDeviceId: conn.deviceId, userId: conn.userId, source, ...(trackId ? { trackId } : {}), ...(clientProducerId ? { clientProducerId } : {}) }
         );
         const producerId = produced.id;
         const peer = room.peers.get(conn.deviceId);

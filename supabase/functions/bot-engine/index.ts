@@ -458,6 +458,23 @@ function buildResponse(response: Record<string, unknown>): BotOutboundMessage {
       params.is_personal = response.is_personal ?? false;
       break;
 
+    case 'sendGuestMessage':
+      params.guest_query_id = response.guest_query_id;
+      params.text = interpolate(response.text as string ?? '', sessionVariables);
+      if (response.media_url) params.media_url = response.media_url;
+      if (response.media_type) params.media_type = response.media_type;
+      break;
+
+    case 'sendBotToBotMessage':
+      params.to_bot_id = response.to_bot_id;
+      params.content = interpolate(response.content as string ?? '', sessionVariables);
+      params.type = response.type ?? 'direct';
+      params.session_id = response.session_id;
+      if (response.media_url) params.media_url = response.media_url;
+      if (response.media_type) params.media_type = response.media_type;
+      if (response.reply_to_message_id) params.reply_to_message_id = response.reply_to_message_id;
+      break;
+
     default:
       params.text = interpolate(response.text as string ?? '', sessionVariables);
   }
@@ -641,6 +658,12 @@ const newVars: Record<string, string> = {};
   if (deliveryMethods.includes(response.method)) {
     await deliverMessageWithRetry(event.chat_id, event.bot_id, response, event);
   }
+  if (response.method === 'sendGuestMessage') {
+    await deliverGuestMessageWithRetry(event.bot_id, response, event);
+  }
+  if (response.method === 'sendBotToBotMessage') {
+    await deliverBotToBotMessage(event.bot_id, response, event);
+  }
 
   return response;
 }
@@ -746,6 +769,100 @@ async function deliverMessage(chatId: string, botId: string, response: BotOutbou
     p_date: new Date().toISOString().split('T')[0],
     p_messages_sent: 1,
   }).catch(() => {});
+}
+
+async function deliverGuestMessage(botId: string, response: BotOutboundMessage): Promise<void> {
+  const params = response.params as Record<string, unknown>;
+  const guestQueryId = typeof params.guest_query_id === 'string' ? params.guest_query_id : '';
+  const text = typeof params.text === 'string' ? params.text : '';
+  const mediaUrl = typeof params.media_url === 'string' ? params.media_url : undefined;
+  const mediaType = typeof params.media_type === 'string' ? params.media_type : undefined;
+  if (!guestQueryId) throw new Error('sendGuestMessage requires guest_query_id');
+
+  const apiUrl = `${Deno.env.get('SUPABASE_URL')}/functions/v1/bot-api/bots/${botId}/guest-queries/${guestQueryId}/answer`;
+  const resp = await fetch(apiUrl, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')}`,
+      'X-Service-Role-Key': Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || '',
+    },
+    body: JSON.stringify({ text, media_url: mediaUrl, media_type: mediaType }),
+  });
+
+  if (!resp.ok) {
+    const payload = await resp.json().catch(() => null);
+    throw new Error(payload?.error || 'Guest message delivery failed');
+  }
+}
+
+async function deliverGuestMessageWithRetry(botId: string, response: BotOutboundMessage, event: BotInboundEvent, maxRetries: number = 3): Promise<void> {
+  let lastError: Error | null = null;
+
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      await deliverGuestMessage(botId, response);
+      return;
+    } catch (e: any) {
+      lastError = e;
+      console.error(`[bot-engine] deliverGuestMessage attempt ${attempt}/${maxRetries} failed:`, e.message);
+      if (attempt < maxRetries) {
+        await new Promise((resolve) => setTimeout(resolve, 1000 * Math.pow(2, attempt - 1)));
+      }
+    }
+  }
+
+  const guestQueryId = typeof response.params?.guest_query_id === 'string' ? response.params.guest_query_id : undefined;
+  if (guestQueryId) {
+    await supabase
+      .from('bot_guest_queries')
+      .update({ status: 'failed', response_payload: { error: lastError?.message || 'Guest message delivery failed' } })
+      .eq('id', guestQueryId);
+  }
+  await saveFailedEvent(botId, event, lastError?.message || 'Unknown guest delivery error');
+}
+
+async function deliverBotToBotMessage(fromBotId: string, response: BotOutboundMessage, event: BotInboundEvent): Promise<void> {
+  const params = response.params as Record<string, unknown>;
+  const toBotId = typeof params.to_bot_id === 'string' ? params.to_bot_id : '';
+  const content = typeof params.content === 'string' ? params.content : '';
+  const sessionId = typeof params.session_id === 'string' ? params.session_id : event.chat_id;
+  if (!toBotId || !content) throw new Error('sendBotToBotMessage requires to_bot_id and content');
+
+  const targetBot = await getBotById(toBotId);
+  if (!targetBot) throw new Error(`Target bot not found or inactive: ${toBotId}`);
+
+  const botEvent: BotInboundEvent = {
+    event_id: `bot2bot_${Date.now()}_${crypto.randomUUID()}`,
+    timestamp: new Date().toISOString(),
+    bot_id: toBotId,
+    user_id: fromBotId,
+    chat_id: sessionId,
+    type: 'message',
+    content: {
+      text: content,
+      media_url: typeof params.media_url === 'string' ? params.media_url : undefined,
+      media_type: typeof params.media_type === 'string' ? params.media_type : undefined,
+      reply_to_message_id: typeof params.reply_to_message_id === 'string' ? params.reply_to_message_id : undefined,
+      from_bot_id: fromBotId,
+    } as BotEventContent,
+    context: {
+      platform_user_id: fromBotId,
+      platform: 'bot',
+      session_variables: {},
+      session_state: 'idle',
+      bot_language: targetBot.language_code ?? 'ru',
+    },
+  };
+
+  await supabase.from('bot_messages').insert({
+    bot_id: fromBotId,
+    chat_id: sessionId,
+    direction: 'outgoing',
+    raw_update: { method: 'sendBotToBotMessage', params },
+  });
+
+  await routeEvent(botEvent);
 }
 
 /**
@@ -857,6 +974,12 @@ async function processHandlerMatch(handler: BotHandler, event: BotInboundEvent, 
   const deliveryMethods = ['sendMessage', 'sendPhoto', 'sendVideo', 'sendDocument', 'sendSticker', 'sendPoll', 'sendLocation', 'sendAction'];
   if (deliveryMethods.includes(response.method)) {
     await deliverMessageWithRetry(event.chat_id, event.bot_id, response, event);
+  }
+  if (response.method === 'sendGuestMessage') {
+    await deliverGuestMessageWithRetry(event.bot_id, response, event);
+  }
+  if (response.method === 'sendBotToBotMessage') {
+    await deliverBotToBotMessage(event.bot_id, response, event);
   }
 
   return response;

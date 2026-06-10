@@ -58,11 +58,25 @@ interface TurnCredentialsResponse {
   error?: string;
 }
 
+function bytesToBase64(bytes: Uint8Array): string {
+  let binary = "";
+  for (let i = 0; i < bytes.length; i++) {
+    const byte = bytes[i];
+    if (byte === undefined) continue;
+    binary += String.fromCharCode(byte);
+  }
+  return btoa(binary);
+}
+
 function buildTurnRequestMetadata(): { nonce: string; requestId: string } {
-   const requestId = globalThis.crypto?.randomUUID?.() ?? `${Date.now()}_${crypto.getRandomValues(new Uint32Array(1))[0].toString(36)}`;
-   const nonce = requestId;
-   return { nonce, requestId };
- }
+  // requestId — для traceability (логи, ошибки)
+  const requestId = crypto.randomUUID?.() ?? `${Date.now()}_${crypto.getRandomValues(new Uint32Array(1))[0].toString(36)}`;
+  // nonce — уникальный 16-байтный случайный токен, отдельный от requestId.
+  // RFC 5389 §10: nonce используется для защиты от replay-атак на TURN-сервере.
+  // Coturn ≥3.2 валидирует nonce ≠ username/realm; использование requestId нарушает эту проверку.
+  const nonce = bytesToBase64(crypto.getRandomValues(new Uint8Array(16)));
+  return { nonce, requestId };
+}
 
 function normalizeIceServerUrls(urls: RTCIceServer["urls"]): string[] {
   const values = Array.isArray(urls) ? urls : [urls];

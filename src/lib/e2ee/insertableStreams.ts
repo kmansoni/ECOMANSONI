@@ -36,6 +36,12 @@ export interface PipeBreakInfo {
   direction: 'encrypt' | 'decrypt';
   /** Для receiver — peerId отправителя (producerId). Для sender — undefined. */
   peerId?: string;
+  /** Причина (typed) — позволяет RecoveryPolicy выбрать стратегию */
+  reason: string;
+  /** Epoch ключа на момент поломки */
+  keyEpoch?: number;
+  /** Epoch трансформа на момент поломки — для ABA race prevention */
+  transformEpoch: number;
 }
 
 export interface InsertableStreamsConfig {
@@ -45,6 +51,11 @@ export interface InsertableStreamsConfig {
   onFrame?: (direction: 'encrypt' | 'decrypt', size: number) => void;
   /** Called when the transform pipe breaks — caller must re-create producer/consumer to recover */
   onPipeBreak?: (info: PipeBreakInfo) => void;
+  /**
+   * Typed crypto event emitter — заменяет onError.
+   * CallRuntime использует evaluateE2EERecovery() для принятия решения.
+   */
+  onCryptoEvent?: (event: import('./e2eeRecoveryPolicy').CryptoEvent) => void;
 }
 
 interface TransformEntry {
@@ -54,10 +65,14 @@ interface TransformEntry {
 
 interface ActiveTransformEntry extends TransformEntry {
   abortController: AbortController;
+  /** Epoch трансформа — защита от ABA race: old pipe catch не удалит newer transform */
+  transformEpoch: number;
 }
 
 interface ScriptTransformEntry {
   worker: Worker;
+  /** Epoch трансформа — защита от ABA race */
+  transformEpoch: number;
 }
 
 interface MediaEncryptorStats {
@@ -86,10 +101,38 @@ private currentEncryptionKey: { key: CryptoKey; keyId: number; epoch: number } |
     encryptionErrors: 0,
     decryptionErrors: 0,
   };
+  /** Transform epoch counter — инкрементируется при каждом createTransform. ABA race prevention. */
+  private transformEpochCounter = 0;
 
   constructor(config: InsertableStreamsConfig = {}) {
     this.config = config;
     this.sframeContext = new SFrameContext();
+  }
+
+  /**
+   * Emit typed CryptoEvent для CallRuntime RecoveryPolicy.
+   * Это единственный способ связи crypto layer → CallRuntime.
+   */
+  private emitCryptoEvent(
+    kind: import('./e2eeRecoveryPolicy').CryptoErrorKind,
+    trackId: string,
+    direction: 'encrypt' | 'decrypt',
+    extra?: { peerId?: string; epoch?: number; frameCounter?: number }
+  ): void {
+    this.config.onCryptoEvent?.({
+      kind,
+      trackId,
+      direction,
+      peerId: extra?.peerId,
+      epoch: extra?.epoch,
+      frameCounter: extra?.frameCounter,
+      timestamp: Date.now(),
+    });
+  }
+
+  /** Increment transform epoch counter и вернуть новое значение */
+  private nextTransformEpoch(): number {
+    return ++this.transformEpochCounter;
   }
 
 /**
@@ -383,12 +426,20 @@ private currentEncryptionKey: { key: CryptoKey; keyId: number; epoch: number } |
       if (data.type === 'pipe_error') {
         const direction = data.direction ?? 'encrypt';
         logger.error('[E2EE] ScriptTransform pipe failed — recovery needed', { error: data.message, trackId, direction, peerId: data.peerId });
-        this.removeTransform(trackId);
-        this.config.onPipeBreak?.({ trackId, direction, peerId: data.peerId });
+        // Epoch fence: stale worker не может удалить newer transform
+        const scriptEntry = this.scriptTransforms.get(trackId);
+        this.removeTransform(trackId, scriptEntry?.transformEpoch);
+        this.config.onPipeBreak?.({
+          trackId,
+          direction,
+          peerId: data.peerId,
+          reason: String(data.message ?? 'pipe_error'),
+          transformEpoch: scriptEntry?.transformEpoch ?? 0,
+        });
       }
     };
 
-    this.scriptTransforms.set(trackId, { worker });
+    this.scriptTransforms.set(trackId, { worker, transformEpoch: 0 });
     return worker;
   }
 
@@ -397,9 +448,10 @@ private currentEncryptionKey: { key: CryptoKey; keyId: number; epoch: number } |
    * Uses Insertable Streams (encoded transforms).
    */
   setupSenderTransform(sender: RTCRtpSender, trackId: string): void {
-    this.removeTransform(trackId);
+    const currentEpoch = this.nextTransformEpoch();
+    this.removeTransform(trackId, currentEpoch);
     const method = MediaEncryptor.getTransformMethod();
-    logger.debug('[E2EE] setupSenderTransform', { trackId, method });
+    logger.debug('[E2EE] setupSenderTransform', { trackId, method, transformEpoch: currentEpoch });
 
     // Method 1: RTCRtpScriptTransform (Chrome 118+, Firefox 117+, Safari 15.4+)
     // Приоритетный путь: не конфликтует с encodedInsertableStreams, нет timing-проблем
@@ -411,6 +463,8 @@ private currentEncryptionKey: { key: CryptoKey; keyId: number; epoch: number } |
         operation: 'encrypt',
         trackId,
       });
+
+      this.scriptTransforms.set(trackId, { worker, transformEpoch: currentEpoch });
 
       if (this.currentEncryptionKey) {
         worker.postMessage({
@@ -439,7 +493,19 @@ private currentEncryptionKey: { key: CryptoKey; keyId: number; epoch: number } |
               controller.enqueue(frame);
             } catch (error) {
               this.stats.encryptionErrors++;
-              this.config.onError?.(error as Error, 'encrypt');
+              const err = error as Error;
+              this.config.onError?.(err, 'encrypt');
+              // Emit typed crypto event для RecoveryPolicy
+              this.emitCryptoEvent(
+                err.message.includes('No encryption key set')
+                  ? 'ENCRYPT_TRANSIENT_FAILURE'
+                  : 'ENCRYPT_PERSISTENT_FAILURE',
+                trackId,
+                'encrypt',
+                { epoch: this.currentEncryptionKey?.epoch }
+              );
+              // Fail-closed: rethrow so pipe breaks, pipeTo.catch fires onPipeBreak → caller recovery
+              throw error;
             }
           },
         });
@@ -448,11 +514,17 @@ private currentEncryptionKey: { key: CryptoKey; keyId: number; epoch: number } |
         readable.pipeThrough(transformStream).pipeTo(writable, { signal: abortController.signal }).catch((err: unknown) => {
           if ((err as { name?: string } | null)?.name === 'AbortError') return;
           logger.error('[MediaEncryptor] Sender pipe error — recovery needed', { error: err, trackId });
-          this.removeTransform(trackId);
-          this.config.onPipeBreak?.({ trackId, direction: 'encrypt' });
+          this.removeTransform(trackId, currentEpoch);
+          this.config.onPipeBreak?.({
+            trackId,
+            direction: 'encrypt',
+            reason: String((err as Error)?.message ?? err),
+            keyEpoch: this.currentEncryptionKey?.epoch,
+            transformEpoch: currentEpoch,
+          });
         });
 
-        this.activeTransforms.set(trackId, { readable, writable, abortController });
+        this.activeTransforms.set(trackId, { readable, writable, abortController, transformEpoch: currentEpoch });
         return;
       } catch (e) {
         logger.warn('[MediaEncryptor] createEncodedStreams failed (sender)', e);
@@ -466,13 +538,14 @@ private currentEncryptionKey: { key: CryptoKey; keyId: number; epoch: number } |
     );
   }
 
-  /**
+/**
    * Apply decryption transform to an incoming RTCRtpReceiver.
    */
   setupReceiverTransform(receiver: RTCRtpReceiver, trackId: string, peerId: string): void {
-    this.removeTransform(trackId);
+    const currentEpoch = this.nextTransformEpoch();
+    this.removeTransform(trackId, currentEpoch);
     const method = MediaEncryptor.getTransformMethod();
-    logger.debug('[E2EE] setupReceiverTransform', { trackId, peerId, method });
+    logger.debug('[E2EE] setupReceiverTransform', { trackId, peerId, method, transformEpoch: currentEpoch });
 
     // Method 1: RTCRtpScriptTransform (Chrome 118+, Firefox 117+, Safari 15.4+)
     if ('RTCRtpScriptTransform' in globalThis) {
@@ -484,6 +557,8 @@ private currentEncryptionKey: { key: CryptoKey; keyId: number; epoch: number } |
         trackId,
         peerId,
       });
+
+      this.scriptTransforms.set(trackId, { worker, transformEpoch: currentEpoch });
 
       const keyState = this.currentDecryptionKeys.get(peerId);
       if (keyState) {
@@ -507,8 +582,8 @@ private currentEncryptionKey: { key: CryptoKey; keyId: number; epoch: number } |
           transform: async (frame: EncodedFrame, controller: TransformStreamDefaultController<EncodedFrame>) => {
             const ctx = this.decryptionContexts.get(peerId);
             if (!ctx) {
-              this.stats.decryptionErrors++;
-              this.config.onError?.(new Error('No decryption key for peer ' + peerId), 'decrypt');
+              // No key yet — frame will be dropped until caller calls setDecryptionKey.
+              // This is normal during call bootstrap; no error logged to avoid noise.
               return;
             }
             try {
@@ -519,7 +594,27 @@ private currentEncryptionKey: { key: CryptoKey; keyId: number; epoch: number } |
               controller.enqueue(frame);
             } catch (error) {
               this.stats.decryptionErrors++;
-              this.config.onError?.(error as Error, 'decrypt');
+              const err = error as Error;
+              this.config.onError?.(err, 'decrypt');
+
+              // Typed crypto events для RecoveryPolicy
+              if (err.message.includes('No decryption key set')) {
+                this.emitCryptoEvent('MISSING_KEY', trackId, 'decrypt', { peerId });
+              } else if (err.message.includes('Stale SFrame counter')) {
+                this.emitCryptoEvent('STALE_KEY_EPOCH', trackId, 'decrypt', {
+                  peerId,
+                  epoch: this.currentDecryptionKeys.get(peerId)?.epoch,
+                });
+              } else if (err.message.includes('AUTH') || err.message.includes('tag') || err.message.includes('decrypt')) {
+                this.emitCryptoEvent('AUTH_TAG_FAILED', trackId, 'decrypt', { peerId });
+              } else if (err.message.includes('Malformed')) {
+                this.emitCryptoEvent('MALFORMED_FRAME', trackId, 'decrypt', { peerId });
+              } else {
+                this.emitCryptoEvent('DECRYPT_TRANSIENT_FAILURE', trackId, 'decrypt', { peerId });
+              }
+
+              // Fail-closed: rethrow so pipe breaks → pipeTo.catch fires onPipeBreak → caller recovery
+              throw error;
             }
           },
         });
@@ -528,11 +623,18 @@ private currentEncryptionKey: { key: CryptoKey; keyId: number; epoch: number } |
         readable.pipeThrough(transformStream).pipeTo(writable, { signal: abortController.signal }).catch((err: unknown) => {
           if ((err as { name?: string } | null)?.name === 'AbortError') return;
           logger.error('[MediaEncryptor] Receiver pipe error — recovery needed', { error: err, trackId, peerId });
-          this.removeTransform(trackId);
-          this.config.onPipeBreak?.({ trackId, direction: 'decrypt', peerId });
+          this.removeTransform(trackId, currentEpoch);
+          this.config.onPipeBreak?.({
+            trackId,
+            direction: 'decrypt',
+            peerId,
+            reason: String((err as Error)?.message ?? err),
+            keyEpoch: this.currentDecryptionKeys.get(peerId)?.epoch,
+            transformEpoch: currentEpoch,
+          });
         });
 
-        this.activeTransforms.set(trackId, { readable, writable, abortController });
+        this.activeTransforms.set(trackId, { readable, writable, abortController, transformEpoch: currentEpoch });
         return;
       } catch (e) {
         logger.warn('[MediaEncryptor] createEncodedStreams failed (receiver)', e);
@@ -547,19 +649,46 @@ private currentEncryptionKey: { key: CryptoKey; keyId: number; epoch: number } |
   }
 
   /**
-   * Remove transform entry for a specific track (does not close streams).
+   * Remove transform entry for a specific track — idempotent, epoch-fenced.
+   *
+   * ABA race prevention: если old pipe catch пытается удалить transform,
+   * а newer transform уже создан с большим epoch — old removal игнорируется.
+   *
+   * @param trackId — ID трека
+   * @param transformEpoch — epoch трансформа который хочет удалить себя.
+   *                          Если текущий transform имеет больший epoch — removal блокируется.
    */
-  removeTransform(trackId: string): void {
+  removeTransform(trackId: string, transformEpoch?: number): void {
     const entry = this.activeTransforms.get(trackId);
     if (entry) {
+      // Epoch fence: stale transform не может удалить newer transform
+      if (transformEpoch !== undefined && entry.transformEpoch > transformEpoch) {
+        logger.debug('[MediaEncryptor] removeTransform blocked: stale epoch', {
+          trackId,
+          staleEpoch: transformEpoch,
+          currentEpoch: entry.transformEpoch,
+        });
+        return;
+      }
       entry.abortController.abort();
       this.activeTransforms.delete(trackId);
+      logger.debug('[MediaEncryptor] removeTransform: activeTransform removed', { trackId });
     }
 
     const scriptEntry = this.scriptTransforms.get(trackId);
     if (scriptEntry) {
+      // Epoch fence for script transforms
+      if (transformEpoch !== undefined && scriptEntry.transformEpoch > transformEpoch) {
+        logger.debug('[MediaEncryptor] removeTransform blocked: stale script epoch', {
+          trackId,
+          staleEpoch: transformEpoch,
+          currentEpoch: scriptEntry.transformEpoch,
+        });
+        return;
+      }
       scriptEntry.worker.terminate();
       this.scriptTransforms.delete(trackId);
+      logger.debug('[MediaEncryptor] removeTransform: scriptTransform removed', { trackId });
     }
   }
 

@@ -18,8 +18,8 @@ export function PremiumAuthLayout({
         <div
           className={`absolute inset-0 transition-colors duration-700 ${
             tokens.isDark
-              ? "bg-[radial-gradient(120%_80%_at_50%_0%,#0a1628_0%,#071420_60%,#020309_100%)]"
-              : "bg-[radial-gradient(120%_80%_at_50%_0%,#ccfbf1_0%,#a5f3fc_50%,#7dd3fc_100%)]"
+              ? "bg-[radial-gradient(circle_at_16%_8%,rgba(0,180,216,0.28)_0%,rgba(0,180,216,0)_38%),radial-gradient(circle_at_86%_12%,rgba(139,92,246,0.24)_0%,rgba(139,92,246,0)_40%),radial-gradient(circle_at_70%_86%,rgba(0,200,150,0.20)_0%,rgba(0,200,150,0)_44%),linear-gradient(180deg,#050816_0%,#07111f_48%,#030611_100%)]"
+              : "bg-[radial-gradient(circle_at_14%_4%,rgba(125,211,252,0.58)_0%,rgba(125,211,252,0)_34%),radial-gradient(circle_at_88%_12%,rgba(94,234,212,0.48)_0%,rgba(94,234,212,0)_36%),radial-gradient(circle_at_72%_88%,rgba(196,181,253,0.42)_0%,rgba(196,181,253,0)_42%),linear-gradient(135deg,#f8fbff_0%,#edf7ff_44%,#f7f4ff_100%)]"
           }`}
         />
         {/* Subtle grid pattern */}
@@ -56,7 +56,7 @@ export function PremiumGlassCard({
 }) {
   return (
     <div
-      className={`relative overflow-hidden rounded-none sm:rounded-3xl ${tokens.glassCardShadow} ${className}`}
+      className={`liquid-glass-surface relative overflow-hidden rounded-none sm:rounded-[2rem] ${tokens.glassCardShadow} ${className}`}
       style={{
         background: tokens.isDark
           ? "linear-gradient(135deg, rgba(255,255,255,0.08) 0%, rgba(255,255,255,0.02) 50%, rgba(255,255,255,0.04) 100%)"

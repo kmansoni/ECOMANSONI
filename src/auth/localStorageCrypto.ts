@@ -80,7 +80,7 @@ function bufToB64(buf: ArrayBuffer): string {
   let binary = "";
   // Обходим весь буфер побайтово — safe for any size
   for (let i = 0; i < bytes.length; i++) {
-    const byte = bytes.at(i);
+    const byte = bytes[i];
     if (byte === undefined) continue;
     binary += String.fromCharCode(byte);
   }

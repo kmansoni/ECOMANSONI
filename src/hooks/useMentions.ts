@@ -23,6 +23,9 @@ export interface MentionUser {
   display_name: string | null;
   username: string | null;
   avatar_url: string | null;
+  entity_type?: "user" | "bot";
+  bot_id?: string;
+  supports_guest_queries?: boolean;
 }
 
 // Matches @word (letters, digits, underscores, dots, hyphens — same as most platforms).
@@ -55,16 +58,27 @@ export function getMentionSuggestions(
   query: string,
   participants: MentionUser[]
 ): MentionUser[] {
-  if (!query) return participants.slice(0, 5);
-  const q = query.toLowerCase();
-  return participants
-    .filter((p) => {
-      const name = (p.display_name ?? "").toLowerCase();
-      const uname = (p.username ?? "").toLowerCase();
-      return name.startsWith(q) || uname.startsWith(q) ||
-             name.includes(q)   || uname.includes(q);
+  const q = query.trim().toLowerCase();
+  const scored = participants
+    .map((participant, index) => {
+      const name = (participant.display_name ?? "").toLowerCase();
+      const username = (participant.username ?? "").toLowerCase();
+      const botBoost = participant.entity_type === "bot" && participant.supports_guest_queries ? -1 : 0;
+
+      if (!q) return { participant, score: botBoost + index / 1000 };
+      if (username === q || name === q) return { participant, score: botBoost };
+      if (username.startsWith(q)) return { participant, score: botBoost + 1 };
+      if (name.startsWith(q)) return { participant, score: botBoost + 2 };
+      if (username.includes(q)) return { participant, score: botBoost + 3 };
+      if (name.includes(q)) return { participant, score: botBoost + 4 };
+      return null;
     })
-    .slice(0, 5);
+    .filter(Boolean) as Array<{ participant: MentionUser; score: number }>;
+
+  return scored
+    .sort((a, b) => a.score - b.score)
+    .slice(0, 8)
+    .map(({ participant }) => participant);
 }
 
 /**

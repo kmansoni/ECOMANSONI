@@ -9,6 +9,80 @@ import { createClient } from 'npm:@supabase/supabase-js@2';
 import { createErrorResponse, createSuccessResponse } from './utils.ts';
 import { handleCors, getCorsHeaders } from '../_shared/utils.ts';
 
+const UUID_V4_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const GUEST_BOT_SEARCH_PATTERN = /^[\p{L}\p{N}\s.@-]+$/u;
+const MAX_GUEST_BOT_SEARCH_LENGTH = 64;
+const MAX_GUEST_QUERY_TEXT_LENGTH = 1000;
+const MAX_GUEST_QUERIES_PER_MINUTE = 20;
+
+function isUuidV4(value: unknown): value is string {
+  return typeof value === 'string' && UUID_V4_PATTERN.test(value);
+}
+
+function normalizeGuestBotSearchQuery(rawQuery: string): { query: string; error?: string } {
+  const query = rawQuery.trim().toLowerCase().replace(/\s+/g, ' ');
+  if (!query) return { query: '' };
+  if (query.length > MAX_GUEST_BOT_SEARCH_LENGTH) {
+    return { query: '', error: `q must be at most ${MAX_GUEST_BOT_SEARCH_LENGTH} characters` };
+  }
+  if (!GUEST_BOT_SEARCH_PATTERN.test(query)) {
+    return { query: '', error: 'q contains unsupported search characters' };
+  }
+  return { query };
+}
+
+function normalizeGuestQueryText(value: unknown): { text: string; error?: string } {
+  if (typeof value !== 'string') return { text: '', error: 'query_text must be a string' };
+  const text = value.trim().replace(/[\u0000-\u001f\u007f]/g, '');
+  if (!text) return { text: '', error: 'query_text is required' };
+  if (text.length > MAX_GUEST_QUERY_TEXT_LENGTH) {
+    return { text: '', error: `query_text must be at most ${MAX_GUEST_QUERY_TEXT_LENGTH} characters` };
+  }
+  return { text };
+}
+
+function normalizePublicHttpsUrl(value: unknown, fieldName: string): { url?: string; error?: string } {
+  if (value === undefined || value === null || value === '') return {};
+  if (typeof value !== 'string') return { error: `${fieldName} must be a string` };
+  const raw = value.trim();
+  if (raw.length > 2048) return { error: `${fieldName} must be at most 2048 characters` };
+
+  let parsed: URL;
+  try {
+    parsed = new URL(raw);
+  } catch {
+    return { error: `${fieldName} must be a valid URL` };
+  }
+
+  if (parsed.protocol !== 'https:') return { error: `${fieldName} must use https` };
+  if (parsed.username || parsed.password) return { error: `${fieldName} must not contain credentials` };
+  const hostname = parsed.hostname.toLowerCase();
+  if (
+    hostname === 'localhost' ||
+    hostname.endsWith('.localhost') ||
+    hostname === '127.0.0.1' ||
+    hostname === '0.0.0.0' ||
+    hostname === '::1' ||
+    /^10\./.test(hostname) ||
+    /^192\.168\./.test(hostname) ||
+    /^172\.(1[6-9]|2\d|3[0-1])\./.test(hostname)
+  ) {
+    return { error: `${fieldName} must not point to a local/private host` };
+  }
+
+  return { url: parsed.toString() };
+}
+
+function normalizeGuestMediaType(value: unknown): { mediaType?: string; error?: string } {
+  if (value === undefined || value === null || value === '') return {};
+  if (typeof value !== 'string') return { error: 'media_type must be a string' };
+  const mediaType = value.trim();
+  if (!['image', 'video', 'voice', 'video_circle', 'media'].includes(mediaType)) {
+    return { error: 'media_type is unsupported' };
+  }
+  return { mediaType };
+}
+
 // ===================================================================
 // HANDLERS
 // ===================================================================
@@ -880,6 +954,34 @@ async function handleGetBotByUsername(req: Request, username: string) {
   return createSuccessResponse(bot);
 }
 
+async function handleListGuestBots(req: Request) {
+  const url = new URL(req.url);
+  const limit = Math.min(Math.max(parseInt(url.searchParams.get('limit') || '25'), 1), 50);
+  const { query, error: queryError } = normalizeGuestBotSearchQuery(url.searchParams.get('q') || '');
+
+  if (queryError) {
+    return createErrorResponse(queryError, 400);
+  }
+
+  let dbQuery = supabase
+    .from('bots')
+    .select('id, username, display_name, description, about, avatar_url, bot_chat_type, language_code, supports_guest_queries, status, owner_id, is_verified, can_join_groups, can_read_all_group_messages, is_private, created_at, updated_at')
+    .eq('status', 'active')
+    .eq('supports_guest_queries', true)
+    .eq('is_private', false)
+    .order('is_verified', { ascending: false })
+    .order('display_name', { ascending: true })
+    .limit(limit);
+
+  if (query) {
+    dbQuery = dbQuery.or(`username.ilike.%${query}%,display_name.ilike.%${query}%`);
+  }
+
+  const { data: bots, error } = await dbQuery;
+  if (error) return createErrorResponse(error.message, 500);
+  return createSuccessResponse({ bots: bots || [] });
+}
+
 // ============================================================================
 // GUEST MODE (Bot API 10.0)
 // ============================================================================
@@ -913,21 +1015,223 @@ async function handleSetGuestMode(req: Request, userId: string, botId: string) {
   return createSuccessResponse({ supports_guest_queries: updatedBot.supports_guest_queries });
 }
 
-async function handleAnswerGuestQuery(req: Request) {
+async function handleCreateGuestQuery(req: Request, userId: string, botId: string) {
   const body = await req.json();
-  const { guest_query_id, ok, error: errorMsg, result } = body;
+  const { conversation_id, source_message_id } = body;
+  const { text: queryText, error: queryTextError } = normalizeGuestQueryText(body.query_text);
+
+  if (!isUuidV4(conversation_id)) {
+    return createErrorResponse('conversation_id must be a UUID v4', 400);
+  }
+  if (source_message_id !== undefined && source_message_id !== null && source_message_id !== '' && !isUuidV4(source_message_id)) {
+    return createErrorResponse('source_message_id must be a UUID v4', 400);
+  }
+  if (queryTextError) {
+    return createErrorResponse(queryTextError, 400);
+  }
+
+  const { data: bot, error: botError } = await supabase
+    .from('bots')
+    .select('id, supports_guest_queries, status')
+    .eq('id', botId)
+    .eq('status', 'active')
+    .single();
+
+  if (botError || !bot) return createErrorResponse('Bot not found', 404);
+  if (!bot.supports_guest_queries) return createErrorResponse('Bot does not support guest queries', 403);
+
+  const { count: recentGuestQueryCount, error: rateLimitError } = await supabase
+    .from('bot_guest_queries')
+    .select('id', { count: 'exact', head: true })
+    .eq('requester_id', userId)
+    .gte('created_at', new Date(Date.now() - 60_000).toISOString());
+
+  if (rateLimitError) return createErrorResponse(rateLimitError.message, 500);
+  if ((recentGuestQueryCount || 0) >= MAX_GUEST_QUERIES_PER_MINUTE) {
+    return createErrorResponse('Guest query rate limit exceeded', 429);
+  }
+
+  const { data: membership } = await supabase
+    .from('conversation_participants')
+    .select('user_id')
+    .eq('conversation_id', conversation_id)
+    .eq('user_id', userId)
+    .single();
+
+  if (!membership) return createErrorResponse('Access denied', 403);
+
+  if (source_message_id) {
+    const { data: sourceMessage, error: sourceMessageError } = await supabase
+      .from('messages')
+      .select('id, conversation_id, sender_id')
+      .eq('id', source_message_id)
+      .eq('conversation_id', conversation_id)
+      .eq('sender_id', userId)
+      .single();
+
+    if (sourceMessageError || !sourceMessage) {
+      return createErrorResponse('source_message_id does not belong to this conversation and sender', 400);
+    }
+  }
+
+  const guestQueryId = crypto.randomUUID();
+
+  const { error: queryInsertError } = await supabase
+    .from('bot_guest_queries')
+    .insert({
+      id: guestQueryId,
+      bot_id: botId,
+      conversation_id,
+      requester_id: userId,
+      source_message_id: source_message_id || null,
+      query_text: queryText,
+      status: 'pending',
+    });
+
+  if (queryInsertError) return createErrorResponse(queryInsertError.message, 500);
+
+  const engineUrl = `${Deno.env.get('SUPABASE_URL')}/functions/v1/bot-engine/events`;
+  const engineResponse = await fetch(engineUrl, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')}`,
+    },
+    body: JSON.stringify({
+      event_id: guestQueryId,
+      timestamp: new Date().toISOString(),
+      bot_id: botId,
+      user_id: userId,
+      chat_id: conversation_id,
+      type: 'mention',
+      content: {
+        text: queryText,
+        message_id: source_message_id,
+        guest_query_id: guestQueryId,
+      },
+      context: {
+        platform_user_id: userId,
+        platform: 'web',
+        session_variables: {},
+        session_state: 'idle',
+        bot_language: 'ru',
+      },
+    }),
+  });
+
+  const enginePayload = await engineResponse.json().catch(() => null);
+  if (!engineResponse.ok) {
+    await supabase
+      .from('bot_guest_queries')
+      .update({ status: 'failed', response_payload: { error: enginePayload?.error || 'Guest query execution failed' } })
+      .eq('id', guestQueryId);
+    return createErrorResponse(enginePayload?.error || 'Guest query execution failed', engineResponse.status);
+  }
+
+  return createSuccessResponse({ guest_query_id: guestQueryId, response: enginePayload?.response ?? null });
+}
+
+async function handleAnswerGuestQuery(req: Request, userId?: string, botId?: string, guestQueryIdFromPath?: string) {
+  const body = await req.json();
+  const guest_query_id = guestQueryIdFromPath || body.guest_query_id;
+  const text = typeof body.text === 'string' ? body.text.trim().slice(0, 4000) : '';
+  const { url: media_url, error: mediaUrlError } = normalizePublicHttpsUrl(body.media_url, 'media_url');
+  const { mediaType: media_type, error: mediaTypeError } = normalizeGuestMediaType(body.media_type);
+
+  if (mediaUrlError) return createErrorResponse(mediaUrlError, 400);
+  if (mediaTypeError) return createErrorResponse(mediaTypeError, 400);
 
   if (!guest_query_id) {
     return createErrorResponse('guest_query_id is required', 400);
   }
+  if (!text && !media_url) {
+    return createErrorResponse('text or media_url is required', 400);
+  }
 
-  // This endpoint would be called by bots to answer guest queries
-  // Implementation would send response back to Telegram
-  // For now, just acknowledge
-  return createSuccessResponse({ 
-    ok, 
-    result,
-    message: 'Guest query response sent' 
+  const botServiceToken = req.headers.get('X-Service-Role-Key');
+  const isServiceRoleCall = Boolean(botServiceToken && botServiceToken === Deno.env.get('SUPABASE_SERVICE_ROLE_KEY'));
+
+  if (userId && botId) {
+    const { data: bot } = await supabase
+      .from('bots')
+      .select('owner_id')
+      .eq('id', botId)
+      .single();
+    if (!bot || (!isServiceRoleCall && bot.owner_id !== userId)) return createErrorResponse('Access denied', 403);
+  }
+
+  const { data: guestQuery, error: guestQueryError } = await supabase
+    .from('bot_guest_queries')
+    .select('id, bot_id, conversation_id, status, expires_at')
+    .eq('id', guest_query_id)
+    .single();
+
+  if (guestQueryError || !guestQuery) return createErrorResponse('Guest query not found', 404);
+  if (botId && guestQuery.bot_id !== botId) return createErrorResponse('Guest query does not belong to this bot', 403);
+  if (guestQuery.status !== 'pending') return createErrorResponse('Guest query is already closed', 409);
+  if (new Date(guestQuery.expires_at).getTime() < Date.now()) {
+    await supabase.from('bot_guest_queries').update({ status: 'expired' }).eq('id', guest_query_id);
+    return createErrorResponse('Guest query expired', 410);
+  }
+
+  const { data: bot } = await supabase
+    .from('bots')
+    .select('owner_id')
+    .eq('id', guestQuery.bot_id)
+    .single();
+
+  if (!bot?.owner_id) return createErrorResponse('Bot owner not found', 500);
+
+  const contentType = media_url ? (media_type || 'media') : 'text';
+  const content = media_url ? { media_url, media_type, caption: text } : { text };
+
+  const { data: message, error: messageError } = await supabase
+    .from('messages')
+    .insert({
+      conversation_id: guestQuery.conversation_id,
+      sender_id: bot.owner_id,
+      sender_type: 'bot',
+      bot_id: guestQuery.bot_id,
+      content: text || media_url,
+      content_type: contentType,
+      metadata: {
+        guest_query_id,
+        media_url,
+        media_type,
+      },
+    })
+    .select('id')
+    .single();
+
+  if (messageError) return createErrorResponse(messageError.message, 500);
+
+  await supabase.from('bot_messages').insert({
+    bot_id: guestQuery.bot_id,
+    chat_id: guestQuery.conversation_id,
+    message_id: message.id,
+    direction: 'outgoing',
+    raw_update: { method: 'sendGuestMessage', params: { guest_query_id, text, media_url, media_type, content } },
+    processed_at: new Date().toISOString(),
+  });
+
+  await supabase
+    .from('bot_guest_queries')
+    .update({
+      status: 'answered',
+      response_message_id: message.id,
+      response_payload: { text, media_url, media_type },
+      answered_at: new Date().toISOString(),
+    })
+    .eq('id', guest_query_id);
+
+  return createSuccessResponse({
+    ok: true,
+    guest_query_id,
+    message_id: message.id,
+    text,
+    media_url,
+    media_type,
+    message: 'Guest query response delivered',
   });
 }
 
@@ -1124,6 +1428,10 @@ Deno.serve(async (req) => {
     }
   }
 
+  if (segments[0] === 'guest-bots' && req.method === 'GET') {
+    return withCors(await handleListGuestBots(req));
+  }
+
   // Protected endpoints require auth
   if (!userId) {
     return withCors(createErrorResponse('Unauthorized', 401));
@@ -1219,6 +1527,15 @@ Deno.serve(async (req) => {
         // POST /bot-api/bots/:id/guest-mode
         if (req.method === 'POST') {
           return withCors(await handleSetGuestMode(req, userId, botId));
+        }
+      }
+
+      if (segments[2] === 'guest-queries') {
+        if (!segments[3] && req.method === 'POST') {
+          return withCors(await handleCreateGuestQuery(req, userId, botId));
+        }
+        if (segments[3] && segments[4] === 'answer' && req.method === 'POST') {
+          return withCors(await handleAnswerGuestQuery(req, userId, botId, segments[3]));
         }
       }
       

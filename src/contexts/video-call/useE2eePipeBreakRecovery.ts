@@ -70,7 +70,11 @@ export function useE2eePipeBreakRecovery(
         const previousSource = typeof previousAppData.source === 'string' ? previousAppData.source : null;
         const source = previousSource ?? (track.kind === 'audio' ? 'microphone' : 'camera');
         logger.info('[VideoCallContext] E2EE sender pipe recovery: re-producing', { trackId });
-        const newProducer = await sfuManager.produce(track, { ...previousAppData, trackId: track.id, source });
+        const newProducer = await sfuManager.produce(
+          track,
+          { ...previousAppData, trackId: track.id, source },
+          (sender, producerId) => encryption.setupSenderTransform(sender, producerId)
+        );
 
         if (sfuManagerRef.current !== sfuManager || sfuManager.closed) {
           logger.warn('[VideoCallContext] E2EE sender recovery aborted: stale or closed SFU manager', {
@@ -86,10 +90,6 @@ export function useE2eePipeBreakRecovery(
           return;
         }
 
-        const sender = sfuManager.getProducerSender(newProducer.id);
-        if (sender) {
-          encryption.setupSenderTransform(sender, newProducer.id);
-        }
         if (track.kind === 'audio' || track.kind === 'video') {
           if (localProducerIdsRef.current[track.kind] === trackId) {
             localProducerIdsRef.current[track.kind] = newProducer.id;

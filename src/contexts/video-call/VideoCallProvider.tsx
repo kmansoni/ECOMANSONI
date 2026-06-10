@@ -182,6 +182,8 @@ const startCallInFlightRef = useRef(false);
 const answerCallInFlightRef = useRef(false);
 const endCallInFlightRef = useRef(false);
 const mediaBootstrapCompletedRef = useRef<Map<string, boolean>>(new Map());
+/** VCP-14 fix: ref to track current callId, avoiding stale closure in retry timer */
+const mediaBootstrapRetryCallIdRef = useRef<string | null>(null);
 const unansweredCallTimerRef = useRef<number | null>(null);
 
 // E2EE pipe break recovery: stored consumer params for re-consume + debounce
@@ -199,31 +201,30 @@ const unansweredCallTimerRef = useRef<number | null>(null);
    const pendingReceiverTransformsRef = useRef<Map<string, PendingReceiverTransform>>(new Map());
    const missingSenderKeysRef = useRef<Set<string>>(new Set());
 
-   const getInboundE2eeReadiness = useCallback((): InboundE2eeReadiness => {
-     const mediaEncryption = callMediaEncryptionRef.current;
-     const pendingConsumers = Array.from(pendingReceiverTransformsRef.current.keys());
-     const activePeers = rekeyMachineRef.current?.getActivePeerIds() ?? new Set<string>();
-     const requiredPeerIds = new Set<string>(activePeers);
+     const getInboundE2eeReadiness = useCallback((): InboundE2eeReadiness => {
+      const mediaEncryption = callMediaEncryptionRef.current;
+      const pendingConsumers = Array.from(pendingReceiverTransformsRef.current.keys());
+      const requiredPeerIds = new Set<string>();
 
-     for (const pending of pendingReceiverTransformsRef.current.values()) {
-       requiredPeerIds.add(pending.peerKey);
-     }
+      for (const pending of pendingReceiverTransformsRef.current.values()) {
+        requiredPeerIds.add(pending.peerKey);
+      }
 
-     for (const peerKey of producerPeerKeyRef.current.values()) {
-       requiredPeerIds.add(peerKey);
-     }
+      for (const peerKey of producerPeerKeyRef.current.values()) {
+        requiredPeerIds.add(peerKey);
+      }
 
-     const missingDecryptionPeers = Array.from(requiredPeerIds).filter((peerId) => {
-       if (!peerId) return false;
-       return !mediaEncryption?.hasDecryptionKeyForPeer(peerId);
-     });
+      const missingDecryptionPeers = Array.from(requiredPeerIds).filter((peerId) => {
+        if (!peerId) return false;
+        return !mediaEncryption?.hasDecryptionKeyForPeer(peerId);
+      });
 
-     return {
-       ready: pendingConsumers.length === 0 && missingDecryptionPeers.length === 0,
-       missingDecryptionPeers,
-       pendingConsumers,
-      };
-    }, []);
+      return {
+        ready: pendingConsumers.length === 0 && missingDecryptionPeers.length === 0,
+        missingDecryptionPeers,
+        pendingConsumers,
+       };
+     }, []);
 
     const maybeSendE2eeReadyRef = useRef<(reason: string) => void>(() => undefined);
 
@@ -599,7 +600,8 @@ const unansweredCallTimerRef = useRef<number | null>(null);
     epochGuardRef.current?.markRoomLeft();
     epochGuardRef.current = null;
     if (callsWsRef.current) {
-      callsWsRef.current.close();
+      // WS-1/WS-2 fix: Use destroy() to clean up all resources including timers
+      callsWsRef.current.destroy();
       callsWsRef.current = null;
     }
     callsWsCallIdRef.current = null;
@@ -1623,6 +1625,11 @@ dispatchFsm,
     void bootstrapCallsV2Media(currentCall, localStream);
   }, [currentCall, localStream, bootstrapCallsV2Media, dispatchFsm]);
 
+  // VCP-14 fix: Sync ref with current callId to avoid stale closure
+  useEffect(() => {
+    mediaBootstrapRetryCallIdRef.current = currentCall?.id ?? null;
+  }, [currentCall?.id]);
+
    useEffect(() => {
      if (!currentCall || !localStream) return;
 
@@ -1631,17 +1638,20 @@ dispatchFsm,
      }
 
      const retryTimer = window.setInterval(() => {
-       const call = currentCall;
-       const stream = localStream;
-       if (!call || !stream) return;
+       // VCP-14 fix: Use ref instead of closure state for callId
+       const activeCallId = mediaBootstrapRetryCallIdRef.current;
+       if (!activeCallId) return;
 
-       if (callsWsCallIdRef.current !== call.id) return;
+       if (callsWsCallIdRef.current !== activeCallId) {
+         window.clearInterval(retryTimer);
+         return;
+       }
 
-       const currentAttempts = mediaBootstrapRetryAttemptsRef.current.get(call.id) ?? 0;
+       const currentAttempts = mediaBootstrapRetryAttemptsRef.current.get(activeCallId) ?? 0;
        if (currentAttempts >= MEDIA_BOOTSTRAP_MAX_RETRIES) {
          window.clearInterval(retryTimer);
          logger.error("[VideoCallContext] calls-v2 media-bootstrap retries exhausted", {
-           callId: call.id,
+           callId: activeCallId,
            maxRetries: MEDIA_BOOTSTRAP_MAX_RETRIES,
            wsCallId: callsWsCallIdRef.current,
            wsRoomId: callsWsRoomRef.current,
@@ -1661,13 +1671,18 @@ dispatchFsm,
        if (!callsWsRoomRef.current) return;
 
        // Check if media bootstrap has completed successfully instead of comparing room IDs
-       if (mediaBootstrapCompletedRef.current.get(call.id)) {
-         mediaBootstrapRetryAttemptsRef.current.delete(call.id);
+       if (mediaBootstrapCompletedRef.current.get(activeCallId)) {
+         mediaBootstrapRetryAttemptsRef.current.delete(activeCallId);
          window.clearInterval(retryTimer);
          return;
        }
 
-       mediaBootstrapRetryAttemptsRef.current.set(call.id, currentAttempts + 1);
+       // VCP-14 fix: Re-read currentCall and localStream at interval execution time
+       const call = currentCall;
+       const stream = localStream;
+       if (!call || !stream) return;
+
+       mediaBootstrapRetryAttemptsRef.current.set(activeCallId, currentAttempts + 1);
        void bootstrapCallsV2Media(call, stream);
      }, 2000);
 

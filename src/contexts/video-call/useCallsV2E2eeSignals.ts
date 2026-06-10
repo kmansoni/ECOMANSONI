@@ -293,15 +293,32 @@ export function useCallsV2E2eeSignals({
     };
 
     on("AUTH_FAIL", (frame) => {
-      logger.warn("[VideoCallContext] calls-v2 auth-fail", { payload: frame.payload });
+      // VCP-16 fix: AUTH_FAIL should be logged as error, not warning
+      const authPayload = frame.payload as { reason?: string } | undefined;
+      logger.error("[VideoCallContext] calls-v2 auth-fail", {
+        reason: authPayload?.reason,
+      });
+      // Note: The WS client will handle reconnection via its existing reconnect logic
+      // when the connection drops. For now, log as error for visibility in Sentry.
     });
 
     on("ERROR", (frame) => {
-      logger.warn("[VideoCallContext] calls-v2 server-error", {
-        type: frame.type,
+      // VCP-16 fix: ERROR frames should transition to ERROR state for critical errors
+      const errorPayload = frame.payload as { type?: string; message?: string } | undefined;
+      const errorType = errorPayload?.type;
+      logger.error("[VideoCallContext] calls-v2 server-error", {
+        type: errorType,
+        message: errorPayload?.message,
         payload: frame.payload,
-        ack: frame.ack,
       });
+
+      // Critical errors should trigger FSM error state
+      const criticalErrors = ['ROOM_NOT_FOUND', 'EPOCH_MISMATCH', 'SESSION_EXPIRED', 'INVALID_SIGNATURE'];
+      if (errorType && criticalErrors.includes(errorType)) {
+        logger.error("[VideoCallContext] critical error received, signaling error state", { errorType });
+        // The FSM error handling is done by the provider via rekeyMachineRef
+        rekeyMachineRef.current?.abortRekey?.(`server-error:${errorType}`);
+      }
     });
 
     on("MAILBOX_BATCH", (frame) => {
@@ -802,6 +819,14 @@ const pkgData: KeyPackageData = {
 
               void (async () => {
                 try {
+                  // VCP-4 fix: Validate room hasn't changed during async processing
+                  if (callsWsRoomRef.current !== roomId) {
+                    logger.warn("[VideoCallContext] KEY_PACKAGE: room changed during async processing, aborting", {
+                      expected: roomId,
+                      actual: callsWsRoomRef.current,
+                    });
+                    return;
+                  }
                   const kx = callKeyExchangeRef.current;
                   const enc = callMediaEncryptionRef.current;
                   if (!kx || !enc) {

@@ -3,6 +3,7 @@ import type { RefObject } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { fetchUserBriefMap, resolveUserBrief } from "@/lib/users/userBriefs";
 import { getOrCreateUserQuickReaction, listQuickReactionCatalog } from "@/lib/stickers-reactions";
+import { botApi } from "@/lib/bots/api";
 import { useMentions, type MentionUser } from "@/hooks/useMentions";
 import { parseEncryptedPayload } from "@/components/chat/chatConversationHelpers";
 import { logger } from "@/lib/logger";
@@ -175,17 +176,43 @@ export function useChatDataLoading({
           .select("user_id")
           .eq("conversation_id", conversationId);
         const ids = (partRows ?? []).map((r) => r.user_id as string).filter(Boolean);
-        if (!ids.length) return;
+        if (!ids.length) {
+          const { bots } = await botApi.listMentionableGuestBots({ limit: 25 });
+          if (!cancelled) {
+            setMentionParticipants(bots.map((bot) => ({
+              user_id: `bot:${bot.id}`,
+              bot_id: bot.id,
+              display_name: bot.display_name,
+              username: bot.username,
+              avatar_url: bot.avatar_url ?? null,
+              entity_type: "bot" as const,
+              supports_guest_queries: bot.supports_guest_queries,
+            })));
+          }
+          return;
+        }
         const briefMap = await fetchUserBriefMap(ids);
         if (cancelled) return;
         const participants = ids
           .map((pid) => {
             const brief = resolveUserBrief(pid, briefMap);
             if (!brief) return null;
-            return { user_id: pid, display_name: brief.display_name, username: brief.username, avatar_url: brief.avatar_url } as MentionUser;
+            return { user_id: pid, display_name: brief.display_name, username: brief.username, avatar_url: brief.avatar_url, entity_type: "user" } as MentionUser;
           })
           .filter(Boolean) as MentionUser[];
-        setMentionParticipants(participants);
+
+        const { bots } = await botApi.listMentionableGuestBots({ limit: 25 });
+        const botParticipants = bots.map((bot) => ({
+          user_id: `bot:${bot.id}`,
+          bot_id: bot.id,
+          display_name: bot.display_name,
+          username: bot.username,
+          avatar_url: bot.avatar_url ?? null,
+          entity_type: "bot" as const,
+          supports_guest_queries: bot.supports_guest_queries,
+        }));
+
+        setMentionParticipants([...participants, ...botParticipants]);
       } catch (error) {
         logger.warn("chat: failed to load mention participants", { conversationId, error });
       }

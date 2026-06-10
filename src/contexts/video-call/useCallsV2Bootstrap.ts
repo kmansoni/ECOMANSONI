@@ -699,11 +699,15 @@ export function useCallsV2Bootstrap({
         });
 
           const startRekey = (force: boolean, reason: string) => {
+            // VCP-2 fix: Validate connection state before initiating rekey
             const activeClient = callsWsRef.current;
+            if (!activeClient || activeClient.connectionState !== 'connected') {
+              return;
+            }
             const activeRoomId = callsWsRoomRef.current;
             const machine = rekeyMachineRef.current;
             const keyExchange = callKeyExchangeRef.current;
-            if (!activeClient || !activeRoomId || !machine || !keyExchange) return;
+            if (!activeRoomId || !machine || !keyExchange) return;
 
             const newEpoch = machine.initiateRekey({ force });
             if (newEpoch === null) return;

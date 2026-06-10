@@ -13,16 +13,26 @@ const DEFAULT_MEDIA_CODECS = [
   {
     kind: "audio",
     mimeType: "audio/opus",
+    preferredPayloadType: 111,
     clockRate: 48000,
     channels: 2,
+    parameters: {},
+    rtcpFeedback: [],
   },
   {
     kind: "video",
     mimeType: "video/VP8",
+    preferredPayloadType: 96,
     clockRate: 90000,
     parameters: {
       "x-google-start-bitrate": 1000,
     },
+    rtcpFeedback: [
+      { type: "nack" },
+      { type: "nack", parameter: "pli" },
+      { type: "ccm", parameter: "fir" },
+      { type: "goog-remb" },
+    ],
   },
 ];
 
@@ -105,7 +115,11 @@ async function createFallbackController() {
       if (!room) throw new Error("ROOM_NOT_FOUND");
       if (!room.transports.has(transportId)) throw new Error("TRANSPORT_NOT_FOUND");
 
-      const producerId = uuid("pr");
+      const requestedProducerId = typeof appData.clientProducerId === "string" && appData.clientProducerId.length > 0
+        ? appData.clientProducerId
+        : null;
+      const producerId = requestedProducerId ?? uuid("pr");
+      if (room.producers.has(producerId)) throw new Error("PRODUCER_ID_EXISTS");
       room.producers.set(producerId, {
         id: producerId,
         peerDeviceId,
@@ -375,7 +389,15 @@ async function createMediasoupController() {
       const transport = room.transports.get(transportId);
       if (!transport) throw new Error("TRANSPORT_NOT_FOUND");
 
-      const producer = await transport.produce({ kind, rtpParameters, appData });
+      const requestedProducerId = typeof appData.clientProducerId === "string" && appData.clientProducerId.length > 0
+        ? appData.clientProducerId
+        : undefined;
+      const producer = await transport.produce({
+        ...(requestedProducerId ? { id: requestedProducerId } : {}),
+        kind,
+        rtpParameters,
+        appData,
+      });
       room.producers.set(producer.id, producer);
 
       const peerSet = room.peerToProducerIds.get(peerDeviceId) ?? new Set();

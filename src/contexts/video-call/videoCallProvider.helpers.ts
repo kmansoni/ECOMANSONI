@@ -252,10 +252,14 @@ export function canSendE2eeReady({
   requireQuorum = false,
 }: E2eeReadyCheckParams): E2eeReadyCheckResult {
   const activePeers = rekeyMachine?.getActivePeerIds() ?? new Set<string>();
-  const mediaMissingPeers = Array.from(activePeers).filter((peerId) => {
-    if (!peerId) return false;
-    return !mediaEncryption?.hasDecryptionKeyForPeer(peerId);
-  });
+  // E2EE_READY is a local media-readiness signal, not proof that every active
+  // peer has already delivered a decrypt key. Requiring keys for all active
+  // peers creates a bootstrap deadlock for outgoing calls: the caller has no
+  // inbound consumers yet, so there is no remote sender to decrypt, but the
+  // server will not unlock media until E2EE_READY. Inbound readiness below is
+  // still fail-closed: pending consumers and known remote producers must have
+  // receiver transforms/decryption keys before we mark ready.
+  const mediaMissingPeers: string[] = [];
   const inboundMissingPeers = inbound?.missingDecryptionPeers ?? [];
   const missingDecryptionPeers: string[] = Array.from(new Set<string>([...mediaMissingPeers, ...inboundMissingPeers]));
   const pendingReceiverTransforms = inbound?.pendingConsumers ?? [];

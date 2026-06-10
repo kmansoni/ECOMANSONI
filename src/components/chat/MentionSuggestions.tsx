@@ -68,8 +68,9 @@ export function MentionSuggestions({
         >
           <div ref={listRef} className="py-1.5">
             {suggestions.map((user, i) => {
-              const name = user.display_name ?? user.username ?? "Пользователь";
+                  const name = user.display_name ?? user.username ?? (user.entity_type === "bot" ? "Бот" : "Пользователь");
               const sub = user.username ? `@${user.username}` : null;
+              const isBot = user.entity_type === "bot";
               return (
                 <button
                   key={user.user_id}
@@ -98,10 +99,15 @@ export function MentionSuggestions({
                   <div className="flex flex-col min-w-0">
                     <span className="text-[14px] font-medium text-white truncate">
                       {name}
+                      {isBot && (
+                        <span className="ml-2 rounded-full bg-cyan-400/15 px-1.5 py-0.5 text-[10px] font-semibold text-cyan-200">
+                          AI bot
+                        </span>
+                      )}
                     </span>
                     {sub && (
                       <span className="text-[12px] text-white/50 truncate">
-                        {sub}
+                        {sub}{isBot && user.supports_guest_queries ? " · можно вызвать в чат" : ""}
                       </span>
                     )}
                   </div>

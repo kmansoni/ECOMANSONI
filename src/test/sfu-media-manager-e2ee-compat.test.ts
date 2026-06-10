@@ -93,7 +93,9 @@ describe("SfuMediaManager E2EE compatibility", () => {
     transportState.recvTransport.close.mockReset();
     transportState.sendTransport._handler = {};
     transportState.recvTransport._handler = {};
-    transportState.sendTransport.produce.mockImplementation(async () => transportState.makeProducer());
+    transportState.sendTransport.produce.mockImplementation(async (options?: { appData?: Record<string, unknown> }) => (
+      transportState.makeProducer({ id: String(options?.appData?.clientProducerId ?? "producer-1"), appData: options?.appData })
+    ));
     transportState.recvTransport.consume.mockImplementation(async () => transportState.makeConsumer());
   });
 
@@ -120,9 +122,9 @@ describe("SfuMediaManager E2EE compatibility", () => {
       rtpParameters: {} as never,
     });
 
-    expect(producer.id).toBe("producer-1");
+    expect(producer.id).toMatch(/^pr_/);
     expect(consumer.id).toBe("consumer-1");
-    expect(manager.getProducerSender("producer-1")).toBeNull();
+    expect(manager.getProducerSender(producer.id)).toBeNull();
     expect(manager.getConsumerReceiver("consumer-1")).toBeNull();
   });
 
@@ -146,10 +148,10 @@ describe("SfuMediaManager E2EE compatibility", () => {
     const sender = { id: "sender-1" } as unknown as RTCRtpSender;
     const receiver = { id: "receiver-1" } as unknown as RTCRtpReceiver;
 
-    transportState.sendTransport.produce.mockImplementationOnce(async (options?: { onRtpSender?: (rtpSender: RTCRtpSender) => void }) => {
+    transportState.sendTransport.produce.mockImplementationOnce(async (options?: { onRtpSender?: (rtpSender: RTCRtpSender) => void; appData?: Record<string, unknown> }) => {
       options?.onRtpSender?.(sender);
       return {
-        ...transportState.makeProducer(),
+        ...transportState.makeProducer({ id: String(options?.appData?.clientProducerId ?? "producer-1") }),
         rtpSender: undefined,
       };
     });
@@ -184,9 +186,9 @@ describe("SfuMediaManager E2EE compatibility", () => {
       rtpParameters: {} as never,
     });
 
-    expect(producer.id).toBe("producer-1");
+    expect(producer.id).toMatch(/^pr_/);
     expect(consumer.id).toBe("consumer-1");
-    expect(manager.getProducerSender("producer-1")).toBe(sender);
+    expect(manager.getProducerSender(producer.id)).toBe(sender);
     expect(manager.getConsumerReceiver("consumer-1")).toBe(receiver);
   });
 
@@ -259,7 +261,7 @@ describe("SfuMediaManager E2EE compatibility", () => {
 
   it("exposes producer appData copy for recovery", async () => {
     transportState.sendTransport.produce.mockImplementationOnce(async (options?: { appData?: Record<string, unknown> }) => (
-      transportState.makeProducer({ id: "producer-screen", appData: options?.appData })
+      transportState.makeProducer({ id: String(options?.appData?.clientProducerId ?? "producer-screen"), appData: options?.appData })
     ));
 
     const { SfuMediaManager } = await import("@/calls-v2/sfuMediaManager");
@@ -286,7 +288,12 @@ describe("SfuMediaManager E2EE compatibility", () => {
 
   it("rejects replaceProducerTrack for dead tracks and kind mismatches", async () => {
     const producer = transportState.makeProducer({ id: "producer-video" });
-    transportState.sendTransport.produce.mockResolvedValueOnce(producer);
+    transportState.sendTransport.produce.mockImplementationOnce(async (options?: { appData?: Record<string, unknown> }) => (
+      transportState.makeProducer({
+        id: String(options?.appData?.clientProducerId ?? "producer-video"),
+        replaceTrack: producer.replaceTrack,
+      })
+    ));
 
     const { SfuMediaManager } = await import("@/calls-v2/sfuMediaManager");
     const manager = new SfuMediaManager({ requireSenderReceiverAccessForE2ee: false });
@@ -298,17 +305,17 @@ describe("SfuMediaManager E2EE compatibility", () => {
       async () => "producer-video",
     );
 
-    await manager.produce(transportState.makeTrack("camera-1", "video") as unknown as MediaStreamTrack);
+    const createdProducer = await manager.produce(transportState.makeTrack("camera-1", "video") as unknown as MediaStreamTrack);
 
     await expect(
-      manager.replaceProducerTrack("producer-video", transportState.makeTrack("camera-ended", "video", "ended") as unknown as MediaStreamTrack),
+      manager.replaceProducerTrack(createdProducer.id, transportState.makeTrack("camera-ended", "video", "ended") as unknown as MediaStreamTrack),
     ).rejects.toThrow(/expected live/);
     await expect(
-      manager.replaceProducerTrack("producer-video", transportState.makeTrack("mic-1", "audio") as unknown as MediaStreamTrack),
+      manager.replaceProducerTrack(createdProducer.id, transportState.makeTrack("mic-1", "audio") as unknown as MediaStreamTrack),
     ).rejects.toThrow(/cannot replace video producer with audio track/);
 
     const nextTrack = transportState.makeTrack("camera-2", "video") as unknown as MediaStreamTrack;
-    await manager.replaceProducerTrack("producer-video", nextTrack);
+    await manager.replaceProducerTrack(createdProducer.id, nextTrack);
 
     expect(producer.replaceTrack).toHaveBeenCalledTimes(1);
     expect(producer.replaceTrack).toHaveBeenCalledWith({ track: nextTrack });

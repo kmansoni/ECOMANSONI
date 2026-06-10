@@ -392,44 +392,41 @@ textarea:focus-visible,
 
 @layer base {
   :root {
-    /* Brand-glass light mode (matches auth/welcome screen style) */
-    --background: 211 56% 11%;
-    --foreground: 0 0% 96%;
+    /* Unified liquid-glass light mode */
+    --background: 218 58% 96%;
+    --foreground: 222 46% 12%;
 
-    /* Frosted glass cards over dark brand background */
-    --card: 208 29% 29%;
-    --card-foreground: 0 0% 96%;
+    --card: 0 0% 100% / 0.62;
+    --card-foreground: 222 46% 12%;
 
-    --popover: 208 31% 20%;
-    --popover-foreground: 0 0% 96%;
+    --popover: 0 0% 100% / 0.78;
+    --popover-foreground: 222 46% 12%;
 
-    /* Auth screen brand accents */
-    --primary: 198 100% 45%;
+    --primary: 188 100% 42%;
     --primary-foreground: 0 0% 100%;
 
-    --secondary: 206 33% 31%;
-    --secondary-foreground: 0 0% 96%;
+    --secondary: 206 64% 92%;
+    --secondary-foreground: 222 46% 16%;
 
-    --muted: 206 28% 25%;
-    --muted-foreground: 0 0% 78%;
+    --muted: 210 48% 90%;
+    --muted-foreground: 218 18% 42%;
 
-    --accent: 161 100% 39%;
-    --accent-foreground: 0 0% 100%;
+    --accent: 161 76% 44%;
+    --accent-foreground: 222 46% 12%;
 
     --destructive: 0 84% 60%;
     --destructive-foreground: 0 0% 100%;
 
-    /* Glass borders/inputs tuned for dark-brand light mode */
-    --border: 0 0% 100% / 0.22;
-    --input: 0 0% 100% / 0.20;
-    --ring: 198 100% 45%;
+    --border: 218 40% 72% / 0.34;
+    --input: 0 0% 100% / 0.66;
+    --ring: 188 100% 42%;
 
-    --radius: 0.75rem;
+    --radius: 1.15rem;
 
-    /* Glass effect tokens */
-    --glass-bg: 0 0% 100% / 0.10;
-    --glass-border: 0 0% 100% / 0.25;
-    --glass-shadow: 187 100% 45% / 0.20;
+    /* Liquid glass tokens shared by pages, modals and primitives */
+    --glass-bg: 0 0% 100% / 0.48;
+    --glass-border: 0 0% 100% / 0.72;
+    --glass-shadow: 214 70% 45% / 0.18;
 
     /* Custom tokens for app */
     --success: 142 76% 36%;
@@ -466,42 +463,34 @@ textarea:focus-visible,
   }
 
   .dark {
-    /* Pure black background like Instagram */
-    --background: 0 0% 0%;
-    --foreground: 0 0% 98%;
+    /* Liquid-glass dark mode */
+    --background: 222 58% 5%;
+    --foreground: 220 35% 98%;
 
-    /* Cards slightly lighter for contrast */
-    --card: 0 0% 7%;
-    --card-foreground: 0 0% 98%;
+    --card: 222 42% 12% / 0.64;
+    --card-foreground: 220 35% 98%;
 
-    /* Popovers/modals */
-    --popover: 0 0% 7%;
-    --popover-foreground: 0 0% 98%;
+    --popover: 222 42% 12% / 0.82;
+    --popover-foreground: 220 35% 98%;
 
-    /* Primary stays blue accent */
-    --primary: 217 91% 60%;
-    --primary-foreground: 0 0% 100%;
+    --primary: 188 100% 48%;
+    --primary-foreground: 222 58% 5%;
 
-    /* Secondary elements */
-    --secondary: 0 0% 12%;
-    --secondary-foreground: 0 0% 98%;
+    --secondary: 221 34% 17%;
+    --secondary-foreground: 220 35% 96%;
 
-    /* Muted elements */
-    --muted: 0 0% 12%;
-    --muted-foreground: 0 0% 60%;
+    --muted: 221 30% 16%;
+    --muted-foreground: 218 18% 70%;
 
-    /* Accent */
-    --accent: 0 0% 12%;
-    --accent-foreground: 0 0% 98%;
+    --accent: 160 78% 46%;
+    --accent-foreground: 222 58% 5%;
 
-    /* Destructive */
-    --destructive: 0 62% 30%;
+    --destructive: 0 62% 36%;
     --destructive-foreground: 0 0% 98%;
 
-    /* Borders and inputs - subtle gray lines */
-    --border: 0 0% 15%;
-    --input: 0 0% 15%;
-    --ring: 217 91% 60%;
+    --border: 0 0% 100% / 0.14;
+    --input: 0 0% 100% / 0.10;
+    --ring: 188 100% 48%;
 
     /* Sidebar */
     --sidebar-background: 0 0% 0%;
@@ -550,17 +539,12 @@ textarea:focus-visible,
   html:not(.dark),
   html:not(.dark) body {
     background:
-      radial-gradient(circle at 25% 8%, rgba(0,102,204,0.46) 0%, rgba(0,102,204,0) 40%),
-      radial-gradient(circle at 94% 58%, rgba(0,163,180,0.40) 0%, rgba(0,163,180,0) 42%),
-      radial-gradient(circle at 88% 82%, rgba(0,200,150,0.34) 0%, rgba(0,200,150,0) 45%),
-      radial-gradient(circle at 8% 78%, rgba(79,208,128,0.26) 0%, rgba(79,208,128,0) 44%),
-      radial-gradient(at 30% 20%, hsla(200,100%,40%,0.25) 0px, transparent 50%),
-      radial-gradient(at 70% 10%, hsla(175,80%,45%,0.2) 0px, transparent 50%),
-      radial-gradient(at 10% 60%, hsla(160,70%,50%,0.2) 0px, transparent 50%),
-      radial-gradient(at 90% 70%, hsla(140,60%,50%,0.15) 0px, transparent 50%),
-      radial-gradient(at 50% 90%, hsla(185,90%,40%,0.2) 0px, transparent 50%),
-      linear-gradient(135deg, #0a1628 0%, #0d2035 52%, #071420 100%);
-    background-size: auto, auto, auto, auto, 200% 200%, 200% 200%, 200% 200%, 200% 200%, 200% 200%, auto;
+      radial-gradient(circle at 14% 4%, rgba(125, 211, 252, 0.58) 0%, rgba(125, 211, 252, 0) 34%),
+      radial-gradient(circle at 88% 12%, rgba(94, 234, 212, 0.48) 0%, rgba(94, 234, 212, 0) 36%),
+      radial-gradient(circle at 72% 88%, rgba(196, 181, 253, 0.42) 0%, rgba(196, 181, 253, 0) 42%),
+      radial-gradient(circle at 8% 78%, rgba(134, 239, 172, 0.32) 0%, rgba(134, 239, 172, 0) 38%),
+      linear-gradient(135deg, #f8fbff 0%, #edf7ff 44%, #f7f4ff 100%);
+    background-size: 140% 140%, 140% 140%, 160% 160%, 160% 160%, auto;
     animation: shimmer-gradient 14s ease-in-out infinite;
     background-attachment: fixed;
   }
@@ -568,9 +552,10 @@ textarea:focus-visible,
   html.dark,
   html.dark body {
     background:
-      radial-gradient(circle at 50% 30%, rgba(15,69,255,0.08) 0%, rgba(106,54,255,0.06) 18%, transparent 40%),
-      radial-gradient(circle at 50% 85%, rgba(15,69,255,0.28) 0%, rgba(106,54,255,0.22) 22%, transparent 60%),
-      linear-gradient(180deg, #05050A 0%, #0C0C14 100%);
+      radial-gradient(circle at 16% 8%, rgba(0, 180, 216, 0.28) 0%, rgba(0, 180, 216, 0) 38%),
+      radial-gradient(circle at 86% 12%, rgba(139, 92, 246, 0.26) 0%, rgba(139, 92, 246, 0) 40%),
+      radial-gradient(circle at 70% 86%, rgba(0, 200, 150, 0.22) 0%, rgba(0, 200, 150, 0) 44%),
+      linear-gradient(180deg, #050816 0%, #07111f 48%, #030611 100%);
     background-attachment: fixed;
   }
 
@@ -614,6 +599,28 @@ textarea:focus-visible,
     overflow-x: hidden;
     position: relative;
     z-index: 1;
+  }
+
+  body::after {
+    content: "";
+    position: fixed;
+    left: var(--liquid-pointer-x, 72vw);
+    top: var(--liquid-pointer-y, 18vh);
+    width: 34rem;
+    height: 34rem;
+    transform: translate(-50%, -50%);
+    border-radius: 9999px;
+    pointer-events: none;
+    z-index: 0;
+    opacity: 0.26;
+    background: radial-gradient(circle, rgba(255, 255, 255, 0.42), rgba(0, 180, 216, 0.18) 34%, rgba(0, 180, 216, 0) 68%);
+    filter: blur(18px);
+    transition: opacity 180ms ease;
+  }
+
+  html.dark body::after {
+    opacity: 0.18;
+    background: radial-gradient(circle, rgba(139, 125, 255, 0.42), rgba(0, 180, 216, 0.16) 36%, rgba(0, 180, 216, 0) 70%);
   }
 
   /* Allow text selection in inputs */
@@ -791,16 +798,75 @@ html.appearance-no-sticker-anim .emoji-picker-ios .EmojiPickerReact .epr-emoji i
 /* Unified glass design primitives */
 .glass-backdrop {
   background: hsl(var(--glass-overlay));
-  backdrop-filter: blur(16px);
+  backdrop-filter: blur(18px) saturate(1.22);
+  -webkit-backdrop-filter: blur(18px) saturate(1.22);
 }
 
 .glass-window {
+  position: relative;
+  overflow: hidden;
   background: hsl(var(--glass-surface));
   color: hsl(var(--glass-ink));
   border: 1px solid hsl(var(--glass-border));
+  border-radius: calc(var(--radius) + 0.55rem);
   box-shadow:
-    0 20px 56px hsl(var(--glass-shadow)),
-    inset 0 1px 0 hsl(0 0% 100% / 0.24);
+    0 24px 70px hsl(var(--glass-shadow)),
+    inset 0 1px 0 hsl(0 0% 100% / 0.28),
+    inset 0 -1px 0 hsl(222 46% 8% / 0.08);
+  backdrop-filter: blur(26px) saturate(1.35);
+  -webkit-backdrop-filter: blur(26px) saturate(1.35);
+}
+
+.glass-window::before,
+.liquid-glass-surface::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  border-radius: inherit;
+  background:
+    linear-gradient(135deg, rgba(255,255,255,0.42), rgba(255,255,255,0.04) 42%, rgba(0,180,216,0.10) 100%);
+  opacity: 0.72;
+}
+
+.liquid-glass-surface {
+  position: relative;
+  overflow: hidden;
+  background: hsl(var(--glass-surface));
+  color: hsl(var(--glass-ink));
+  border: 1px solid hsl(var(--glass-border));
+  border-radius: calc(var(--radius) + 0.35rem);
+  box-shadow:
+    0 18px 50px hsl(var(--glass-shadow)),
+    inset 0 1px 0 hsl(0 0% 100% / 0.22);
+  backdrop-filter: blur(22px) saturate(1.28);
+  -webkit-backdrop-filter: blur(22px) saturate(1.28);
+}
+
+.liquid-glass-interactive {
+  transition:
+    transform 180ms cubic-bezier(0.22, 1, 0.36, 1),
+    box-shadow 220ms ease,
+    border-color 180ms ease,
+    background 180ms ease,
+    filter 180ms ease;
+}
+
+.liquid-glass-interactive:hover {
+  transform: translateY(-1px);
+  border-color: hsl(var(--ring) / 0.38);
+  box-shadow:
+    0 24px 68px hsl(var(--glass-shadow)),
+    0 0 0 1px hsl(var(--ring) / 0.10),
+    inset 0 1px 0 hsl(0 0% 100% / 0.32);
+}
+
+.liquid-glass-interactive:active {
+  transform: translateY(0) scale(0.985);
+}
+
+.liquid-motion-enter {
+  animation: auth-enter 320ms cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
 .glass-title {
@@ -827,11 +893,10 @@ html.appearance-no-sticker-anim .emoji-picker-ios .EmojiPickerReact .epr-emoji i
 .glass-input:focus-within {
   outline: none;
   outline-offset: 0;
-  border-color: hsl(var(--glass-border));
-  box-shadow: none;
-  --tw-ring-shadow: 0 0 #0000;
-  --tw-ring-offset-shadow: 0 0 #0000;
-  --tw-ring-offset-width: 0px;
+  border-color: hsl(var(--ring) / 0.42);
+  box-shadow:
+    0 0 0 3px hsl(var(--ring) / 0.18),
+    inset 0 1px 0 hsl(0 0% 100% / 0.20);
 }
 
 .glass-popover {
@@ -1145,12 +1210,18 @@ html:not(.dark) .chats-page-scope .chats-header {
 
 .app-shell-unified-bg {
   background:
-    radial-gradient(120% 80% at 50% 0%, #0a1628 0%, #071420 60%, #020309 100%);
+    radial-gradient(circle at 18% 8%, rgba(0, 180, 216, 0.22) 0%, rgba(0, 180, 216, 0) 38%),
+    radial-gradient(circle at 88% 18%, rgba(139, 92, 246, 0.20) 0%, rgba(139, 92, 246, 0) 40%),
+    radial-gradient(circle at 78% 88%, rgba(0, 200, 150, 0.18) 0%, rgba(0, 200, 150, 0) 42%),
+    linear-gradient(145deg, #050816 0%, #07111f 46%, #030611 100%);
 }
 
 html:not(.dark) .app-shell-unified-bg {
   background:
-    radial-gradient(120% 80% at 50% 0%, #ccfbf1 0%, #a5f3fc 50%, #7dd3fc 100%);
+    radial-gradient(circle at 14% 4%, rgba(125, 211, 252, 0.54) 0%, rgba(125, 211, 252, 0) 34%),
+    radial-gradient(circle at 88% 12%, rgba(94, 234, 212, 0.44) 0%, rgba(94, 234, 212, 0) 36%),
+    radial-gradient(circle at 72% 88%, rgba(196, 181, 253, 0.38) 0%, rgba(196, 181, 253, 0) 42%),
+    linear-gradient(135deg, #f8fbff 0%, #edf7ff 44%, #f7f4ff 100%);
 }
 
 .app-main-unified-surface {

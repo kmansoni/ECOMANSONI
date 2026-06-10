@@ -10,12 +10,38 @@ import { diagnoseDmSendReadiness } from "@/lib/chat/readiness";
 import { isChatProtocolV11EnabledForUser } from "@/lib/chat/protocolV11";
 import { toCompactErrorDetails } from "@/components/chat/chatConversationHelpers";
 import { detectInlineBotTrigger } from "@/components/chat/inlineBotTrigger";
-import { detectMentionTrigger } from "@/hooks/useMentions";
+import { detectMentionTrigger, parseMentions } from "@/hooks/useMentions";
+import { botApi } from "@/lib/bots/api";
 import { supabase } from "@/integrations/supabase/client";
 import type { EncryptedPayload } from "@/lib/e2ee/crypto";
 import type { MessageEffectType } from "@/components/chat/MessageEffectOverlay";
 
 const MAX_MESSAGE_CHARS = 4096;
+
+async function dispatchGuestBotMentions(params: {
+  text: string;
+  conversationId: string;
+  userId: string;
+  messageId?: string;
+}): Promise<void> {
+  const uniqueUsernames = Array.from(new Set(parseMentions(params.text).map((mention) => mention.username.toLowerCase())));
+  if (!uniqueUsernames.length) return;
+
+  await Promise.all(uniqueUsernames.map(async (username) => {
+    try {
+      const bot = await botApi.getBotByUsername(username);
+      if (!bot.supports_guest_queries) return;
+      await botApi.createGuestQuery(bot.id, {
+        conversation_id: params.conversationId,
+        user_id: params.userId,
+        query_text: params.text,
+        source_message_id: params.messageId,
+      });
+    } catch (error) {
+      logger.warn("chat: guest bot mention dispatch skipped", { username, error });
+    }
+  }));
+}
 
 interface UseChatSendParams {
   conversationId: string;
@@ -155,11 +181,22 @@ export function useChatSend({
         });
       }
 
-      await sendMessage(contentToSend, {
+      const sendResult = await sendMessage(contentToSend, {
         clientMsgId,
         ...(silent ? { is_silent: true } : {}),
         ...enrichMessageWithDisappear(extraFields),
       });
+
+      if (!encryptionEnabled && user?.id) {
+        const resultRecord = sendResult && typeof sendResult === "object" ? sendResult as Record<string, unknown> : null;
+        const messageId = typeof resultRecord?.id === "string" ? resultRecord.id : undefined;
+        void dispatchGuestBotMentions({
+          text: withReply,
+          conversationId,
+          userId: user.id,
+          messageId,
+        });
+      }
       if (isSingleEmoji(trimmed)) {
         setLastSentEmoji(trimmed);
       }

@@ -599,6 +599,39 @@ export const botApi = {
     },
 
     /**
+     * Public list of guest-query capable bots for @mention suggestions.
+     */
+    async listMentionableGuestBots(options?: { limit?: number; query?: string }): Promise<{ bots: Bot[] }> {
+      const params = new URLSearchParams();
+      if (options?.limit) params.set('limit', String(options.limit));
+      if (options?.query) params.set('q', options.query);
+      const response = await fetch(`${BOT_API_URL}/guest-bots?${params.toString()}`);
+      return handleResponse<{ bots: Bot[] }>(response);
+    },
+
+    /**
+     * Create a guest query from a chat @mention.
+     */
+    async createGuestQuery(botId: string, data: { conversation_id: string; user_id: string; query_text: string; source_message_id?: string }): Promise<{ guest_query_id: string; response: BotOutboundMessage | null }> {
+      const safeBotId = requireNonEmptyString(botId, 'botId');
+      const safeConversationId = requireNonEmptyString(data.conversation_id, 'conversation_id');
+      const safeUserId = requireNonEmptyString(data.user_id, 'user_id');
+      const safeQueryText = requireNonEmptyString(data.query_text, 'query_text');
+      const headers = await getAuthHeaders();
+      const response = await fetch(`${BOT_API_URL}/bots/${safeBotId}/guest-queries`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          conversation_id: safeConversationId,
+          user_id: safeUserId,
+          query_text: safeQueryText,
+          source_message_id: data.source_message_id,
+        }),
+      });
+      return handleResponse<{ guest_query_id: string; response: BotOutboundMessage | null }>(response);
+    },
+
+    /**
      * Send response to a guest query
      */
     async answerGuestQuery(botId: string, guestQueryId: string, data: { text: string; media_url?: string; media_type?: string }): Promise<{ ok: boolean; message_id?: string }> {

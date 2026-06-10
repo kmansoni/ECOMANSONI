@@ -1,4 +1,4 @@
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import {
   ScrollText, UserCheck, Ban, FileText, CreditCard, ShieldCheck,
   AlertTriangle, RefreshCw, Scale, Database, Eye, Lock, Globe,
@@ -196,9 +196,12 @@ export function LegalModal({ type, onClose }: LegalModalProps) {
 
   return (
     <Dialog open={type !== null} onOpenChange={(open) => { if (!open) onClose(); }}>
-      <DialogContent className="max-w-lg max-h-[85vh] flex flex-col bg-[#0d1117] border-white/10 text-white p-0 gap-0">
+      <DialogContent className="max-w-lg max-h-[85vh] flex flex-col p-0 gap-0">
         <DialogHeader className="px-5 pt-5 pb-4 border-b border-white/10 flex-shrink-0">
           <DialogTitle className="text-base font-semibold text-white">{title}</DialogTitle>
+          <DialogDescription className="sr-only">
+            Юридический текст документа Mansoni с разделами, условиями и правилами обработки данных.
+          </DialogDescription>
         </DialogHeader>
         <div className="overflow-y-auto flex-1 px-5 py-4 space-y-3">
           {sections.map((s, i) => {

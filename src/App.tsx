@@ -153,6 +153,36 @@ function AnalyticsRouteTracker() {
 }
 
 function AppActivityTracker() {
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    let frame = 0;
+    const applyPointer = (clientX: number, clientY: number) => {
+      if (frame) window.cancelAnimationFrame(frame);
+      frame = window.requestAnimationFrame(() => {
+        const root = document.documentElement;
+        root.style.setProperty("--liquid-pointer-x", `${Math.round(clientX)}px`);
+        root.style.setProperty("--liquid-pointer-y", `${Math.round(clientY)}px`);
+      });
+    };
+
+    const onPointerMove = (event: PointerEvent) => applyPointer(event.clientX, event.clientY);
+    const onTouchMove = (event: TouchEvent) => {
+      const touch = event.touches[0];
+      if (touch) applyPointer(touch.clientX, touch.clientY);
+    };
+
+    applyPointer(window.innerWidth * 0.72, window.innerHeight * 0.18);
+    window.addEventListener("pointermove", onPointerMove, { passive: true });
+    window.addEventListener("touchmove", onTouchMove, { passive: true });
+
+    return () => {
+      if (frame) window.cancelAnimationFrame(frame);
+      window.removeEventListener("pointermove", onPointerMove);
+      window.removeEventListener("touchmove", onTouchMove);
+    };
+  }, []);
+
   return null;
 }
 
@@ -203,11 +233,26 @@ const App = () => {
 <UnifiedCounterProvider>
 <AppearanceRuntimeProvider>
   <ReelsProvider>
-  <VideoCallProvider>
-    <ChatOpenProvider>
-      <TooltipProvider>
-        <SkipToContent />
-        <ColorFilterSVG />
+            {/* ErrorBoundary for calls: isolates call crashes from rest of app */}
+            <ErrorBoundary section="Звонки" fallback={
+              <div className="fixed inset-0 z-[300] flex items-center justify-center bg-black/80">
+                <div className="text-center p-6">
+                  <p className="text-white text-lg font-medium">Звонок временно недоступен</p>
+                  <p className="text-white/70 text-sm mt-2">Произошла ошибка. Попробуйте перезагрузить приложение.</p>
+                  <button
+                    onClick={() => window.location.reload()}
+                    className="mt-4 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
+                  >
+                    Перезагрузить
+                  </button>
+                </div>
+              </div>
+            }>
+              <VideoCallProvider>
+                <ChatOpenProvider>
+                  <TooltipProvider>
+                    <SkipToContent />
+                    <ColorFilterSVG />
         {/* aria-live region для screen reader */}
         <div
           id="a11y-live-region"
@@ -708,7 +753,8 @@ const App = () => {
                   </TooltipProvider>
                 </ChatOpenProvider>
               </VideoCallProvider>
-            </ReelsProvider>
+            </ErrorBoundary>
+          </ReelsProvider>
             </AppearanceRuntimeProvider>
           </UnifiedCounterProvider>
           </UserSettingsProvider>

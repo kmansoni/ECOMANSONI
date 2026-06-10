@@ -142,58 +142,66 @@ export class SfuMediaManager {
     this.iceRestartTimers.set(transportId, timer);
   }
 
-  /**
-   * C-1 fix: Attempt ICE restart with exponential backoff.
-   * Max 3 attempts at 1s, 2s, 4s. If all fail — close transport.
-   */
-  private scheduleIceRestart(
-    transport: mediasoupTypes.Transport,
-    transportId: string,
-    direction: 'send' | 'recv',
-    attempt = 0,
-  ): void {
-    if (transport.closed) {
-      this.clearIceRestartTimer(transportId);
-      return;
-    }
+/**
+    * C-1 fix: Attempt ICE restart with exponential backoff.
+    * Max 3 attempts at 1s, 2s, 4s. If all fail — close transport.
+    * CRITICAL FIX: Call transport.restartIce() which triggers the 'connect' event
+    * with fresh DTLS parameters. The existing onConnect callback will handle sending
+    * them to the server via transportConnect.
+    */
+   private async scheduleIceRestart(
+     transport: mediasoupTypes.Transport,
+     transportId: string,
+     direction: 'send' | 'recv',
+     attempt = 0,
+   ): Promise<void> {
+     if (transport.closed) {
+       this.clearIceRestartTimer(transportId);
+       return;
+     }
 
-    const MAX_ATTEMPTS = 3;
-    if (attempt >= MAX_ATTEMPTS) {
-      logger.warn(`[SfuMediaManager] ICE restart exhausted after ${MAX_ATTEMPTS} attempts for ${direction} transport ${transportId}`);
-      if (!transport.closed) transport.close();
-      this.clearIceRestartTimer(transportId);
-      // P0-3 fix: notify caller so FSM can transition to ERROR
-      this.onTransportClosed?.(transportId, direction);
-      return;
-    }
+     const MAX_ATTEMPTS = 3;
+     if (attempt >= MAX_ATTEMPTS) {
+       logger.warn(`[SfuMediaManager] ICE restart exhausted after ${MAX_ATTEMPTS} attempts for ${direction} transport ${transportId}`);
+       if (!transport.closed) transport.close();
+       this.clearIceRestartTimer(transportId);
+       // P0-3 fix: notify caller so FSM can transition to ERROR
+       this.onTransportClosed?.(transportId, direction);
+       return;
+     }
 
-    const delay = Math.min(4000, 1000 * Math.pow(2, attempt));
-    logger.info(`[SfuMediaManager] ICE restart attempt ${attempt + 1}/${MAX_ATTEMPTS} for ${direction} transport in ${delay}ms`);
+     const delay = Math.min(4000, 1000 * Math.pow(2, attempt));
+     logger.info(`[SfuMediaManager] ICE restart attempt ${attempt + 1}/${MAX_ATTEMPTS} for ${direction} transport in ${delay}ms`);
 
-    const timer = window.setTimeout(async () => {
-      this.clearIceRestartTimer(transportId);
-      if (transport.closed) {
-        return;
-      }
+     const timer = window.setTimeout(async () => {
+       this.clearIceRestartTimer(transportId);
+       if (transport.closed) {
+         return;
+       }
 
-      if (!this.onIceRestartNeeded) {
-        logger.warn('[SfuMediaManager] No ICE restart callback registered — closing transport');
-        if (!transport.closed) transport.close();
-        return;
-      }
-      try {
-        await this.onIceRestartNeeded(transportId, direction);
-        logger.info(`[SfuMediaManager] ICE restart signaled successfully for ${direction} transport ${transportId}`);
-      } catch (err) {
-        logger.warn(`[SfuMediaManager] ICE restart signaling failed (attempt ${attempt + 1})`, err);
-        if (transport.closed) {
-          return;
-        }
-        this.scheduleIceRestart(transport, transportId, direction, attempt + 1);
-      }
-    }, delay);
+       if (!this.onIceRestartNeeded) {
+         logger.warn('[SfuMediaManager] No ICE restart callback registered — closing transport');
+         if (!transport.closed) transport.close();
+         return;
+       }
+       try {
+         // CRITICAL: restartIce() triggers the 'connect' event with fresh DTLS parameters.
+         // The existing onConnect callback (set in createSendTransport/createRecvTransport)
+         // will automatically send the new DTLS parameters to the server.
+         await transport.restartIce();
+         logger.info(`[SfuMediaManager] ICE restart initiated for ${direction} transport ${transportId}`);
+         // Notify the callback that ICE restart was triggered (for server-side ice restart ack)
+         await this.onIceRestartNeeded(transportId, direction);
+       } catch (err) {
+         logger.warn(`[SfuMediaManager] ICE restart signaling failed (attempt ${attempt + 1})`, err);
+         if (transport.closed) {
+           return;
+         }
+         this.scheduleIceRestart(transport, transportId, direction, attempt + 1);
+       }
+     }, delay);
 
-    this.replaceIceRestartTimer(transportId, timer);
+this.replaceIceRestartTimer(transportId, timer);
   }
 
   private async collectRelaySampleFromTransport(
@@ -478,7 +486,8 @@ export class SfuMediaManager {
    */
   async produce(
     track: MediaStreamTrack,
-    appData?: Record<string, unknown>
+    appData?: Record<string, unknown>,
+    onSenderReady?: (sender: RTCRtpSender, producerId: string) => void
   ): Promise<mediasoupTypes.Producer> {
     if (this._closed) throw new Error('SfuMediaManager is closed');
     if (!this.sendTransport) {
@@ -486,14 +495,43 @@ export class SfuMediaManager {
     }
 
     let senderFromCallback: RTCRtpSender | null = null;
+    let senderReadyError: unknown = null;
+    const clientProducerId = `pr_${crypto.randomUUID()}`;
 
     const producer = await this.sendTransport.produce({
       track,
-      appData: appData || {},
+      appData: { ...(appData || {}), clientProducerId },
       onRtpSender: (rtpSender) => {
         senderFromCallback = rtpSender;
+        if (onSenderReady) {
+          try {
+            onSenderReady(rtpSender, clientProducerId);
+          } catch (error) {
+            senderReadyError = error;
+            throw error;
+          }
+        }
       },
     });
+
+    if (producer.id !== clientProducerId) {
+      if (!this.requireSenderReceiverAccessForE2ee && !onSenderReady) {
+        logger.warn(
+          `[SfuMediaManager] Server returned producer id ${producer.id}, expected client pre-announced id ${clientProducerId}; ` +
+          `continuing because strict E2EE sender binding is disabled.`
+        );
+      } else {
+        if (!producer.closed) producer.close();
+        throw new Error(
+          `[SfuMediaManager] Server returned producer id ${producer.id}, expected client pre-announced id ${clientProducerId}. ` +
+          `Cannot prove sender transform is bound before PRODUCE completes.`
+        );
+      }
+    }
+    if (senderReadyError) {
+      if (!producer.closed) producer.close();
+      throw senderReadyError;
+    }
 
     this.producers.set(producer.id, producer);
 
@@ -511,6 +549,16 @@ export class SfuMediaManager {
         return producer;
       }
       this.producerSenders.set(producer.id, sender);
+      if (onSenderReady && sender !== senderFromCallback) {
+        try {
+          onSenderReady(sender, producer.id);
+        } catch (error) {
+          if (!producer.closed) producer.close();
+          this.producers.delete(producer.id);
+          this.producerSenders.delete(producer.id);
+          throw error;
+        }
+      }
     } catch (e) {
       // Close producer immediately only in strict E2EE mode.
       if (!this.requireSenderReceiverAccessForE2ee) {
@@ -741,7 +789,9 @@ export class SfuMediaManager {
 
   getProducerAppData(producerId: string): Record<string, unknown> | null {
     const producer = this.producers.get(producerId);
-    return producer?.appData ? { ...producer.appData } : null;
+    if (!producer?.appData) return null;
+    const { clientProducerId: _clientProducerId, ...publicAppData } = producer.appData as Record<string, unknown>;
+    return { ...publicAppData };
   }
 
   /**
