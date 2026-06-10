@@ -1,0 +1,48 @@
+# Coturn TURN/STUN Server - Systemd Unit
+# For production deployment on VPS
+#
+# Installation:
+# 1. Copy this file to /etc/systemd/system/coturn.service
+# 2. Edit the ExecStart path and WorkingDirectory as needed
+# 3. Run: sudo systemctl daemon-reload
+# 4. Run: sudo systemctl enable coturn
+# 5. Run: sudo systemctl start coturn
+
+[Unit]
+Description=Coturn TURN/STUN Server
+Documentation=https://github.com/coturn/coturn
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=coturn
+Group=coturn
+
+# Path to coturn binary (check with: which coturn)
+ExecStart=/usr/bin/coturn --config /etc/coturn/coturn.conf -v
+
+# Restart policy
+Restart=on-failure
+RestartSec=5
+
+# Security hardening
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/log/coturn /var/lib/coturn /etc/coturn
+
+# Resource limits
+LimitNOFILE=65536
+
+# Environment
+EnvironmentFile=/etc/default/coturn
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=coturn
+
+[Install]
+WantedBy=multi-user.target

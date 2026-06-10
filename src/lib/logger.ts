@@ -91,13 +91,18 @@ function trySentryCapture(level: "warn" | "error", message: string, context?: un
     // Dynamic require to avoid hard Sentry dependency at bundle time
     const Sentry = (globalThis as unknown as { __SENTRY__?: SentryHub }).__SENTRY__;
     if (!Sentry) return;
+
+    // Import call context lazily to avoid circular deps
+    const callContext = (globalThis as unknown as { __CALL_CONTEXT__?: { getSentryExtra(): Record<string, unknown> } }).__CALL_CONTEXT__;
+    const callExtra = callContext?.getSentryExtra?.() ?? {};
+
     if (level === "error") {
       const err = context instanceof Error ? context : new Error(message);
       Sentry.captureException(err, {
-        extra: context instanceof Error ? undefined : { context },
+        extra: context instanceof Error ? callExtra : { context, ...callExtra },
       });
     } else {
-      Sentry.captureMessage(message, { level: "warning", extra: { context } });
+      Sentry.captureMessage(message, { level: "warning", extra: { context, ...callExtra } });
     }
   } catch {
     // Best-effort; Sentry errors must never crash the app

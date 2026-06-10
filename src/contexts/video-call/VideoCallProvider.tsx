@@ -36,6 +36,7 @@ import { useIncomingCalls } from "@/hooks/useIncomingCalls";
 import { useAuth } from "@/hooks/useAuth";
 import { toast } from "sonner";
 import { logger } from "@/lib/logger";
+import { setCallContext, clearCallContext } from "@/lib/callContext";
 import { onNativeCallAction } from "@/lib/native/callBridge";
 import { supabase } from "@/integrations/supabase/client";
 import { getSupabaseRuntimeConfig } from "@/lib/supabaseRuntimeConfig";
@@ -633,6 +634,8 @@ const unansweredCallTimerRef = useRef<number | null>(null);
     peerUserIdByDeviceIdRef.current.clear();
     pipeBreakRetryAtRef.current.clear();
     pipeBreakRecoveryInFlightRef.current.clear();
+    // Clear call context for Sentry attribution
+    clearCallContext();
   }, [setRemoteMediaStream]);
 
   /**
@@ -1244,6 +1247,12 @@ dispatchFsm,
       await answerVideoCall(call);
       activeCallsV2BootstrapCallIdRef.current = call.id;
       dispatchFsm("CALLEE_ACCEPT");
+      // Set call context for Sentry error attribution
+      setCallContext({
+        callId: call.id,
+        engine: 'sfu',
+        callType: call.call_type as 'audio' | 'video' | undefined
+      });
 
       // Refresh call row to pick up caller-persisted calls-v2 room metadata.
       let resolvedCall = call as VideoCall & {
@@ -1516,6 +1525,8 @@ dispatchFsm,
       }, 60_000);
 
       dispatchFsm("BOOTSTRAP_START");
+      // Set call context for Sentry error attribution
+      setCallContext({ callId: result.id, engine: 'sfu', callType });
       const roomBootstrapOk = await bootstrapCallsV2RoomWithRetry(result, "caller");
       if (roomBootstrapOk && callStateRef.current === "bootstrapping") dispatchFsm("BOOTSTRAP_OK");
       if (!roomBootstrapOk) {

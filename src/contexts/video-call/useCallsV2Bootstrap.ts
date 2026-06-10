@@ -1,5 +1,6 @@
 import { useCallback, type Dispatch, type MutableRefObject, type SetStateAction } from "react";
 import { logger } from "@/lib/logger";
+import { setCallContext } from "@/lib/callContext";
 import { supabase } from "@/integrations/supabase/client";
 import { getStableCallsDeviceId } from "@/lib/platform/device";
 import { CallsWsClient } from "@/calls-v2/wsClient";
@@ -652,6 +653,8 @@ export function useCallsV2Bootstrap({
         callsWsRoomRef.current = roomId;
         logger.info("[VideoCallContext] calls-v2 room-bootstrap:done", { callId, roomId });
         lastCallsBootstrapErrorRef.current = null;
+        // Update call context with roomId for Sentry attribution
+        setCallContext({ callId, roomId });
 
         if (rekeyTimerRef.current) {
           window.clearInterval(rekeyTimerRef.current);

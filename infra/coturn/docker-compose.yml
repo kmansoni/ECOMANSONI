@@ -1,0 +1,88 @@
+# Docker Compose for Coturn TURN Server
+# Usage: docker-compose -f infra/coturn/docker-compose.yml up -d
+
+version: '3.8'
+
+services:
+  coturn:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: mansoni-coturn
+    ports:
+      # TURN/STUN ports
+      - "3478:3478/tcp"
+      - "3478:3478/udp"
+      # TURN over TLS
+      - "5349:5349/tcp"
+    environment:
+      # External IP - REQUIRED for NAT traversal
+      # Replace with your server's public IP address
+      - COTURN_EXTERNAL_IP=${COTURN_EXTERNAL_IP:-YOUR_PUBLIC_IP}
+
+      # Realm
+      - COTURN_REALM=${COTURN_REALM:-mansoni.ru}
+
+      # Metrics (optional)
+      - COTURN_PROMETHEUS=${COTURN_PROMETHEUS:-false}
+    volumes:
+      # Persist logs
+      - coturn-logs:/var/log/coturn
+      # Persist state
+      - coturn-state:/var/lib/coturn
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "coturnctl", "health-check"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    networks:
+      - coturn-network
+
+  # Optional: Coturn Exporter for Prometheus
+  coturn-exporter:
+    image: prom/coturn-exporter:latest
+    container_name: mansoni-coturn-exporter
+    ports:
+      - "9641:9641"
+    environment:
+      - COTURN_METRICS_PORT=9641
+    restart: unless-stopped
+    networks:
+      - coturn-network
+
+volumes:
+  coturn-logs:
+    driver: local
+  coturn-state:
+    driver: local
+
+networks:
+  coturn-network:
+    driver: bridge
+
+# ===========================================
+# IMPORTANT: Configuration Steps
+# ===========================================
+#
+# 1. Set your public IP:
+#    export COTURN_EXTERNAL_IP=YOUR_SERVER_PUBLIC_IP
+#
+# 2. Configure firewall (iptables/nftables):
+#    # Allow TURN ports
+#    iptables -A INPUT -p udp --dport 3478 -j ACCEPT
+#    iptables -A INPUT -p tcp --dport 3478 -j ACCEPT
+#    iptables -A INPUT -p tcp --dport 5349 -j ACCEPT
+#    # Allow ephemeral UDP relay ports
+#    iptables -A INPUT -p udp --dport 49152:65535 -j ACCEPT
+#
+# 3. Update nginx.conf or load balancer to:
+#    - Forward STUN requests to coturn
+#    - NOT proxy TURN ports (direct access required)
+#
+# 4. Test TURN connectivity:
+#    Use https://webrtc.github.ioICE candidate:
+#    curl https://network問題解決.com/api/v1/ice/check
+#
+# ===========================================
