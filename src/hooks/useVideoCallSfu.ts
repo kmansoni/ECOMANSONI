@@ -22,6 +22,26 @@ import { logger } from "@/lib/logger";
 import { acquireScreenStream } from "@/lib/calls/screenShare";
 import { SmartNoiseSuppressor } from "@/lib/audio/smartNoiseSuppression";
 import { VideoBlurProcessor } from "@/lib/calls/videoBlurProcessor";
+import type { VideoQualitySettings } from "@/hooks/useBatterySaver";
+
+// Default quality settings
+const DEFAULT_QUALITY_HD: VideoQualitySettings = {
+  videoEnabled: true,
+  videoResolution: "hd",
+  videoFrameRate: 30,
+};
+
+const DEFAULT_QUALITY_SD: VideoQualitySettings = {
+  videoEnabled: true,
+  videoResolution: "sd",
+  videoFrameRate: 15,
+};
+
+const DEFAULT_QUALITY_AUDIO: VideoQualitySettings = {
+  videoEnabled: false,
+  videoResolution: "audio-only",
+  videoFrameRate: 0,
+};
 
 // Re-use the canonical VideoCall / VideoCallStatus types to stay DB-schema-aligned
 // and remain compatible with the rest of the codebase (VideoCallContext, useIncomingCalls, etc.)
@@ -59,8 +79,14 @@ function toSafeEndStatus(reason: string): EndCallStatus {
  * Acquire local MediaStream with fail-safe video→audio fallback.
  * Constraints tuned for production quality while allowing degradation
  * under hardware/permission constraints.
+ *
+ * @param isVideo - whether to request video track
+ * @param quality - video quality settings (for battery saver integration)
  */
-async function acquireLocalMedia(isVideo: boolean): Promise<{ stream: MediaStream; isAudioOnly: boolean }> {
+async function acquireLocalMedia(
+  isVideo: boolean,
+  quality: VideoQualitySettings = DEFAULT_QUALITY_HD
+): Promise<{ stream: MediaStream; isAudioOnly: boolean }> {
   if (!navigator.mediaDevices?.getUserMedia) {
     const unsupported = new Error("MediaDevices API unavailable");
     unsupported.name = "NotSupportedError";
@@ -143,20 +169,42 @@ async function acquireLocalMedia(isVideo: boolean): Promise<{ stream: MediaStrea
   };
 
   try {
+    // Respect battery saver: audio-only mode
+    if (!quality.videoEnabled) {
+      logger.info("video_call_sfu.battery_saver_audio_only", { quality: quality.videoResolution });
+      const stream = await request({ audio: audioConstraintsWithLatency, video: false }, "audio-only (battery saver)");
+      await tuneAudioTrack(stream, "audio-only (battery saver)");
+      return { stream, isAudioOnly: true };
+    }
+
     if (isVideo) {
+      // Use quality settings for video constraints
+      const videoConstraints: MediaTrackConstraints = quality.videoResolution === "sd"
+        ? safeVideo
+        : hdVideo;
+
+      // Apply frame rate from quality settings
+      if (quality.videoFrameRate > 0) {
+        videoConstraints.frameRate = { ideal: quality.videoFrameRate, max: quality.videoFrameRate };
+      }
+
       try {
-        const stream = await request({ audio: audioConstraintsWithLatency, video: hdVideo }, "video+audio(hd)");
-        await tuneAudioTrack(stream, "video+audio(hd)");
+        const stream = await request(
+          { audio: audioConstraintsWithLatency, video: videoConstraints },
+          `video+audio(${quality.videoResolution})`
+        );
+        await tuneAudioTrack(stream, `video+audio(${quality.videoResolution})`);
         return { stream, isAudioOnly: false };
       } catch (error) {
-        logger.warn("video_call_sfu.acquire_media_hd_failed", { error });
+        logger.warn("video_call_sfu.acquire_media_quality_failed", { error, quality: quality.videoResolution });
+        // Fallback: try safe video
         try {
           const stream = await request({ audio: audioConstraintsWithLatency, video: safeVideo }, "video+audio(safe)");
           await tuneAudioTrack(stream, "video+audio(safe)");
           return { stream, isAudioOnly: false };
         } catch (safeError) {
           logger.warn("video_call_sfu.acquire_media_safe_failed", { error: safeError });
-          // Graceful degradation: keep the call alive in audio-only mode.
+          // Graceful degradation: audio-only
           const stream = await request({ audio: audioConstraintsWithLatency, video: false }, "audio-only fallback");
           await tuneAudioTrack(stream, "audio-only fallback");
           return { stream, isAudioOnly: true };
@@ -391,6 +439,57 @@ export function useVideoCallSfu(options: UseVideoCallSfuOptions = {}): UseVideoC
   const blurProcessorRef = useRef<VideoBlurProcessor | null>(null);
   const originalVideoTrackRef = useRef<MediaStreamTrack | null>(null);
 
+  // Battery saver: current quality setting (defaults to HD)
+  const videoQualityRef = useRef<VideoQualitySettings>(DEFAULT_QUALITY_HD);
+  const [batterySaverActive, setBatterySaverActive] = useState(false);
+
+  // Battery status monitoring
+  useEffect(() => {
+    const navigator = globalThis.navigator as typeof globalThis.navigator & {
+      getBattery?: () => Promise<{ charging: boolean; level: number; addEventListener: (type: string, cb: () => void) => void; removeEventListener: (type: string, cb: () => void) => void }>;
+    };
+
+    if (!navigator.getBattery) return;
+
+    let battery: { charging: boolean; level: number; addEventListener: (type: string, cb: () => void) => void; removeEventListener: (type: string, cb: () => void) => void } | null = null;
+
+    const updateBatterySaver = (level: number, charging: boolean) => {
+      const isLow = level <= 0.2 && !charging;
+      const isCritical = level <= 0.1 && !charging;
+      const shouldActivate = isCritical || isLow;
+
+      if (shouldActivate !== batterySaverActive) {
+        setBatterySaverActive(shouldActivate);
+        if (shouldActivate) {
+          // Battery saver: force audio-only
+          videoQualityRef.current = DEFAULT_QUALITY_AUDIO;
+          logger.info("video_call_sfu.battery_saver_activated", { level, isCritical });
+        } else {
+          // Restore HD quality
+          videoQualityRef.current = DEFAULT_QUALITY_HD;
+          logger.info("video_call_sfu.battery_saver_deactivated", { level });
+        }
+      }
+    };
+
+    navigator.getBattery?.().then((b) => {
+      battery = b;
+      updateBatterySaver(b.level, b.charging);
+
+      const onChange = () => updateBatterySaver(battery!.level, battery!.charging);
+      b.addEventListener("levelchange", onChange);
+      b.addEventListener("chargingchange", onChange);
+    });
+
+    return () => {
+      if (battery) {
+        const onChange = () => updateBatterySaver(battery!.level, battery!.charging);
+        battery.removeEventListener("levelchange", onChange);
+        battery.removeEventListener("chargingchange", onChange);
+      }
+    };
+  }, [batterySaverActive]);
+
   const statusRef = useRef<VideoCallStatus>("idle");
   const connectionStateRef = useRef<string>("unknown");
   const localStreamRef = useRef<MediaStream | null>(null);
@@ -574,10 +673,11 @@ export function useVideoCallSfu(options: UseVideoCallSfuOptions = {}): UseVideoC
     const isVideo = callType === "video";
 
     // Acquire media BEFORE writing to DB — fail fast if permissions denied
+    // Uses battery saver quality settings if active
     let stream: MediaStream;
     let audioOnly: boolean;
     try {
-      const result = await acquireLocalMedia(isVideo);
+      const result = await acquireLocalMedia(isVideo, videoQualityRef.current);
       stream = result.stream;
       audioOnly = result.isAudioOnly;
     } catch (err) {
