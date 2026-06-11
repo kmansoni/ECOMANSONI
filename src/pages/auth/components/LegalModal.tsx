@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import {
   ScrollText, UserCheck, Ban, FileText, CreditCard, ShieldCheck,
@@ -191,11 +192,23 @@ const PRIVACY_SECTIONS = [
 ];
 
 export function LegalModal({ type, onClose }: LegalModalProps) {
+  const [isOpen, setIsOpen] = useState(false);
   const sections = type === "terms" ? TERMS_SECTIONS : PRIVACY_SECTIONS;
   const title = type === "terms" ? "Условия использования" : "Политика конфиденциальности";
 
+  useEffect(() => {
+    if (type) {
+      setIsOpen(true);
+    }
+  }, [type]);
+
+  const close = () => {
+    setIsOpen(false);
+    onClose();
+  };
+
   return (
-    <Dialog open={type !== null} onOpenChange={(open) => { if (!open) onClose(); }}>
+    <Dialog key={type ?? "closed"} open={isOpen} onOpenChange={(open) => { if (!open) close(); }}>
       <DialogContent className="max-w-lg max-h-[85vh] flex flex-col p-0 gap-0">
         <DialogHeader className="px-5 pt-5 pb-4 border-b border-white/10 flex-shrink-0">
           <DialogTitle className="text-base font-semibold text-white">{title}</DialogTitle>
