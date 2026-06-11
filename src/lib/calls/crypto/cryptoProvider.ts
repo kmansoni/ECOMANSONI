@@ -12,8 +12,10 @@ export interface CryptoProvider {
   setDecryptionKey(peerId: string, epochKey: EpochKeyMaterial): Promise<void>;
   updateKeys(ownEpochKey: EpochKeyMaterial, peerKeys?: Map<string, EpochKeyMaterial>): Promise<void>;
   destroy(): Promise<void>;
-  /** Возвращает текущий эпохальный ключ материал (может быть null) */
+  /** @deprecated Use getActiveEpochKey() / getStagedEpochKey(). Returns active only. */
   getCurrentEpochKey(): EpochKeyMaterial | null;
+  getActiveEpochKey(): EpochKeyMaterial | null;
+  getStagedEpochKey(): EpochKeyMaterial | null;
   /** Возвращает идентичность этого провайдера (userId, deviceId, sessionId) */
   getIdentity(): CallIdentity;
 }

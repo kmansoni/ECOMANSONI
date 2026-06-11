@@ -1,0 +1,26 @@
+{
+  "initialized": true,
+  "topology": "hierarchical",
+  "workers": [
+    "mansoni-architect",
+    "mansoni-debugger",
+    "mansoni-reviewer",
+    "mansoni-security",
+    "mansoni-tester",
+    "mansoni-performance",
+    "mansoni-e2ee"
+  ],
+  "consensus": {
+    "pending": [],
+    "history": []
+  },
+  "sharedMemory": {},
+  "createdAt": "2026-06-11T20:40:03.212Z",
+  "updatedAt": "2026-06-11T20:44:24.041Z",
+  "consensusStrategy": "raft",
+  "queen": {
+    "agentId": "mansoni-queen",
+    "electedAt": "2026-06-11T20:40:03.212Z",
+    "term": 1
+  }
+}

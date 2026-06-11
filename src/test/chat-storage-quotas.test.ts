@@ -14,6 +14,7 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { StorageQuotaManager } from '@/test/utils/storageQuotaManager';
 import { useChatCache } from '@/hooks/useChatCache';
 import { OutboxQueue } from '@/lib/chat/messageOutbox';
+import { supabase } from '@/integrations/supabase/client';
 
 describe('Chat Storage Quotas', () => {
   let quotaManager: StorageQuotaManager;
@@ -116,7 +117,7 @@ describe('Chat Storage Quotas', () => {
       }
 
       expect(outbox.size()).toBe(1000);
-      expect(outbox.peek().id).toBe('msg-100'); // dropped first 100 (FIFO)
+      expect(outbox.peek()?.id).toBe('msg-100'); // dropped first 100 (FIFO)
     });
 
     it('should persist offline queue across reloads (IndexedDB)', async () => {
@@ -149,13 +150,13 @@ describe('Chat Storage Quotas', () => {
     it('should schedule auto-delete for attachments', async () => {
       const scheduleSpy = vi.fn();
 
-      vi.spyOn(supabase, 'rpc').mockImplementation((fn: string) => {
+      vi.spyOn(supabase, 'rpc').mockImplementation(((fn: string) => {
         if (fn === 'schedule_attachment_ttl') {
           scheduleSpy();
           return Promise.resolve({ data: null, error: null });
         }
         return Promise.resolve({ data: null, error: null });
-      });
+      }) as any);
 
       const { scheduleAttachmentTTL } = await import('@/lib/chat/attachments');
       await scheduleAttachmentTTL('attachment-id-123', { ttlDays: 30 });
@@ -221,13 +222,13 @@ describe('Chat Storage Quotas', () => {
     it('should vacuum messages table when > 1GB', async () => {
       const vacuumSpy = vi.fn().mockResolvedValue({});
 
-      vi.spyOn(supabase, 'rpc').mockImplementation((fn: string) => {
+      vi.spyOn(supabase, 'rpc').mockImplementation(((fn: string) => {
         if (fn === 'vacuum_chat_messages') {
           vacuumSpy();
           return Promise.resolve({ data: null, error: null });
         }
         return Promise.resolve({ data: null, error: null });
-      });
+      }) as any);
 
       const { checkAndVacuumIfNeeded } = await import('@/lib/chat/maintenance');
       await checkAndVacuumIfNeeded();
@@ -238,13 +239,13 @@ describe('Chat Storage Quotas', () => {
     it('should archive old messages to cold storage', async () => {
       const archiveSpy = vi.fn().mockResolvedValue({});
 
-      vi.spyOn(supabase, 'rpc').mockImplementation((fn: string) => {
+      vi.spyOn(supabase, 'rpc').mockImplementation(((fn: string) => {
         if (fn === 'archive_old_messages') {
           archiveSpy();
           return Promise.resolve({ data: null, error: null });
         }
         return Promise.resolve({ data: null, error: null });
-      });
+      }) as any);
 
       // Archive messages older than 1 year
       await supabase.rpc('archive_old_messages', {

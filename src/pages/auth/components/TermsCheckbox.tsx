@@ -1,5 +1,7 @@
+import { useState } from "react";
 import { motion } from "framer-motion";
 import type { ThemeTokens } from "../types";
+import { LegalModal } from "./LegalModal";
 
 export function TermsCheckbox({
   checked,
@@ -10,7 +12,10 @@ export function TermsCheckbox({
   onChange: (checked: boolean) => void;
   tokens: ThemeTokens;
 }) {
+  const [legalModal, setLegalModal] = useState<"terms" | "privacy" | null>(null);
+
   return (
+    <>
     <motion.div
       initial={{ opacity: 0, y: 8 }}
       animate={{ opacity: 1, y: 0 }}
@@ -55,7 +60,7 @@ export function TermsCheckbox({
         <button
           type="button"
           className={`underline underline-offset-2 hover:opacity-80 ${tokens.textPrimary} font-medium`}
-          onClick={(e) => { e.stopPropagation(); }}
+          onClick={(e) => { e.stopPropagation(); setLegalModal("terms"); }}
         >
           Условиями использования
         </button>
@@ -63,11 +68,13 @@ export function TermsCheckbox({
         <button
           type="button"
           className={`underline underline-offset-2 hover:opacity-80 ${tokens.textPrimary} font-medium`}
-          onClick={(e) => { e.stopPropagation(); }}
+          onClick={(e) => { e.stopPropagation(); setLegalModal("privacy"); }}
         >
           Политикой конфиденциальности
         </button>
       </p>
     </motion.div>
+    <LegalModal type={legalModal} onClose={() => setLegalModal(null)} />
+    </>
   );
 }

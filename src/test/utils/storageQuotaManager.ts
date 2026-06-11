@@ -136,9 +136,8 @@ export class StorageQuotaManager {
 
   /** === Media Cache simulation === */
 
-  addMediaCache(key: string, blob: Blob): void {
+  addMediaCache(key: string, blob: Blob, ttl?: number): void {
     const size = blob.size;
-    this.ensureMediaCacheCapacity(size);
 
     const item: StorageItem = {
       key,
@@ -243,7 +242,7 @@ export class StorageQuotaManager {
     }
   }
 
-  private purgeExpiredMedia(): void {
+  purgeExpiredMedia(): void {
     const now = Date.now();
     for (const [key, item] of this.mediaCacheItems.entries()) {
       if (item.ttl && now - item.timestamp > item.ttl) {

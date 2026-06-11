@@ -7,7 +7,7 @@
 export interface OutboxMessage {
   id: string;
   content: string;
-  timestamp: number;
+  timestamp?: number;
 }
 
 export interface OutboxEntry {
@@ -60,6 +60,7 @@ export const subscribeOutbox = (_callback: () => void): (() => void) => {
 };
 
 export class OutboxQueue {
+  private static persistedQueue: OutboxMessage[] = [];
   private queue: OutboxMessage[] = [];
   private maxSize: number;
   private autoSend: boolean;
@@ -99,12 +100,18 @@ export class OutboxQueue {
     this.queue = [];
   }
 
+  async send(_message: OutboxMessage): Promise<unknown> {
+    return undefined;
+  }
+
   async flushToIndexedDB(): Promise<void> {
-    // stub
+    OutboxQueue.persistedQueue = [...this.queue];
   }
 
   static async loadFromIndexedDB(): Promise<OutboxQueue> {
-    return new OutboxQueue();
+    const outbox = new OutboxQueue();
+    outbox.queue = [...OutboxQueue.persistedQueue];
+    return outbox;
   }
 }
 

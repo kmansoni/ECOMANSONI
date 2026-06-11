@@ -91,6 +91,14 @@ export class OpenMlsCryptoProvider implements CryptoProvider {
     return null;
   }
 
+  getActiveEpochKey(): EpochKeyMaterial | null {
+    return null;
+  }
+
+  getStagedEpochKey(): EpochKeyMaterial | null {
+    return null;
+  }
+
   getIdentity(): CallIdentity {
     return this.identity;
   }

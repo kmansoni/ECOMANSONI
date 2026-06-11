@@ -37,12 +37,18 @@ export const useTeenMode = () => {
     return profile.content_rating_limit || 'G';
   }, [profile]);
 
+  const contentFilter = useMemo(() => ({
+    maxRating: effectiveRatingLimit,
+    strictMode: parentalSettings?.strictLimitedContent ?? false,
+  }), [effectiveRatingLimit, parentalSettings?.strictLimitedContent]);
+
   return {
     isTeen,
     isChild,
     isAdult,
     parentalSettings,
     effectiveRatingLimit,
+    contentFilter,
     profile,
   };
 };

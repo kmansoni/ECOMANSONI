@@ -5,12 +5,8 @@ tools:
   - execute
   - read
   - edit
-  - write
-  - glob
-  - grep
-  - ls
-  - bash
-user-invocable: true
+  - search
+user-invocable: false
 skills:
   - .github/skills/superdesign/SKILL.md
 ---

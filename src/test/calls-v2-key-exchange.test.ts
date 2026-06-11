@@ -100,12 +100,14 @@ describe('CallKeyExchange', () => {
     expect(recovered.key.extractable).toBe(false);
   });
 
-  it('Epoch key rotation — createEpochKey(2) после createEpochKey(1), оба доступны', async () => {
+  it('Epoch key rotation — createEpochKey(1) then createEpochKey(2), both staged until activate', async () => {
     await alice.initialize();
     const e1 = await alice.createEpochKey(1);
     const e2 = await alice.createEpochKey(2);
 
-    expect(alice.getCurrentEpochKey()!.epoch).toBe(2);
+    // Staged/active split: neither key is active until explicit activation.
+    // getCurrentEpochKey() returns active only (null here).
+    expect(alice.getCurrentEpochKey()).toBeNull();
     expect(alice.getEpochKey(1)).toBeTruthy();
     expect(alice.getEpochKey(2)).toBeTruthy();
     // H-2: ключи разные — проверяем что это разные CryptoKey объекты

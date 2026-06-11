@@ -18,6 +18,7 @@ import {
   startPowerMonitoring,
   stopPowerMonitoring,
   getEnergyConsumptionProfile,
+  measureWakeupsDuring,
 } from '@/lib/chat/battery';
 import { MediaDecoder } from '@/lib/chat/mediaDecoder';
 
@@ -148,7 +149,7 @@ describe('Chat Battery Impact', () => {
     it('should pause decoding when tab is backgrounded', async () => {
       // Tab visibility change → media降频到 5 FPS
       const simulateVisibilityChange = (visible: boolean) => {
-        document.dispatchEvent(new VisibilityStateEvent(visible ? 'visible' : 'hidden'));
+        document.dispatchEvent(new Event(visible ? 'visible' : 'hidden'));
       };
 
       simulateVisibilityChange(false);
@@ -181,7 +182,7 @@ describe('Chat Battery Impact', () => {
       const stopWatchSpy = vi.spyOn(navigator.geolocation, 'clearWatch');
 
       // Simulate background
-      document.dispatchEvent(new VisibilityStateEvent('hidden'));
+      document.dispatchEvent(new Event('hidden'));
       await vi.advanceTimersByTimeAsync(1000);
 
       expect(stopWatchSpy).toHaveBeenCalledWith(watchId);
@@ -200,7 +201,7 @@ describe('Chat Battery Impact', () => {
     });
 
     it('should use hardware encoder (MediaRecorder)', async () => {
-      const mediaRecorder = new MediaRecorder();
+      const mediaRecorder = new MediaRecorder(new MediaStream());
       const hardwareEncoding = mediaRecorder.mimeType?.includes('opus') ||
                                mediaRecorder.mimeType?.includes('aac');
 

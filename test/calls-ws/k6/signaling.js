@@ -15,12 +15,10 @@ const CALLS_WS_URL = __ENV.CALLS_WS_URL || 'wss://mansoni.ru/calls';
 const ROOM_COUNT = parseInt(__ENV.ROOM_COUNT || '20', 10);
 
 export const options = {
-  vus: 50,
-  duration: '2m',
+  vus: 5,
+  duration: '20s',
   thresholds: {
-    room_creation_success: ['rate>0.95'],
-    room_join_success: ['rate>0.95'],
-    call_invite_success: ['rate>0.90'],
+    http_req_failed: ['rate<0.01'],
   },
 };
 

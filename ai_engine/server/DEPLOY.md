@@ -13,7 +13,7 @@ ARIA_API_KEY=<SET_STRONG_RANDOM_KEY> python -m uvicorn ai_engine.server.main:app
 curl https://api.mansoni.ru/health
 ```
 
-## Деплой на Timeweb (mansoni.ru)
+## Деплой (mansoni.ru)
 
 ### 1. Подключиться к серверу
 ```bash

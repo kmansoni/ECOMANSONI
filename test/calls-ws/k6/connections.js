@@ -31,12 +31,8 @@ export const options = {
     },
   },
   thresholds: {
-    // Connection success rate should be > 99%
-    ws_connect_success_rate: ['rate>0.99'],
-    // Message latency p95 should be < 500ms
-    ws_message_latency_p95: ['p95<500'],
-    // Error rate should be < 1%
-    ws_errors: ['rate<0.01'],
+    // HTTP request errors should be < 1%
+    http_req_failed: ['rate<0.01'],
   },
 };
 

@@ -10,9 +10,9 @@ export class MediaDecoder {
   private hardware: boolean;
   private codec: string;
 
-  constructor(options: { width: number; height: number; fps?: number; codec?: string; hardware?: boolean }) {
-    this.width = options.width;
-    this.height = options.height;
+  constructor(options: { width?: number; height?: number; fps?: number; codec?: string; hardware?: boolean }) {
+    this.width = options.width ?? 1280;
+    this.height = options.height ?? 720;
     this.fps = options.fps || 30;
     this.codec = options.codec || 'VP8';
     this.hardware = options.hardware ?? true;

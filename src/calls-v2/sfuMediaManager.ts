@@ -64,6 +64,9 @@ export class SfuMediaManager {
    private relayStatsCollector = new RelayStatsCollector({ maxHistorySize: 120 });
    private lastRelayRoute: "none" | "p2p" | "relay" = "none";
    private _watchdogTimer: number | null = null;
+   /** last iceParameters supplied to createTransport — reused for ICE restart */
+   private sendIceParameters: mediasoupTypes.IceParameters | null = null;
+   private recvIceParameters: mediasoupTypes.IceParameters | null = null;
 
   private resolveProducerSender(
     producer: mediasoupTypes.Producer,
@@ -170,36 +173,46 @@ export class SfuMediaManager {
        return;
      }
 
-     const delay = Math.min(4000, 1000 * Math.pow(2, attempt));
-     logger.info(`[SfuMediaManager] ICE restart attempt ${attempt + 1}/${MAX_ATTEMPTS} for ${direction} transport in ${delay}ms`);
+    const delay = Math.min(4000, 1000 * Math.pow(2, attempt));
+    const iceParams = direction === 'send'
+      ? this.sendIceParameters
+      : this.recvIceParameters;
 
-     const timer = window.setTimeout(async () => {
-       this.clearIceRestartTimer(transportId);
-       if (transport.closed) {
-         return;
-       }
+    if (!iceParams) {
+      logger.warn(`[SfuMediaManager] ICE restart blocked: no cached iceParameters for ${direction} transport ${transportId}`);
+      if (!transport.closed) transport.close();
+      this.clearIceRestartTimer(transportId);
+      this.onTransportClosed?.(transportId, direction);
+      return;
+    }
 
-       if (!this.onIceRestartNeeded) {
-         logger.warn('[SfuMediaManager] No ICE restart callback registered — closing transport');
-         if (!transport.closed) transport.close();
-         return;
-       }
-       try {
-         // CRITICAL: restartIce() triggers the 'connect' event with fresh DTLS parameters.
-         // The existing onConnect callback (set in createSendTransport/createRecvTransport)
-         // will automatically send the new DTLS parameters to the server.
-         await transport.restartIce();
-         logger.info(`[SfuMediaManager] ICE restart initiated for ${direction} transport ${transportId}`);
-         // Notify the callback that ICE restart was triggered (for server-side ice restart ack)
-         await this.onIceRestartNeeded(transportId, direction);
-       } catch (err) {
-         logger.warn(`[SfuMediaManager] ICE restart signaling failed (attempt ${attempt + 1})`, err);
-         if (transport.closed) {
-           return;
-         }
-         this.scheduleIceRestart(transport, transportId, direction, attempt + 1);
-       }
-     }, delay);
+    logger.info(
+      `[SfuMediaManager] ICE restart attempt ${attempt + 1}/${MAX_ATTEMPTS} for ${direction} transport ${transportId} in ${delay}ms`
+    );
+
+    const timer = window.setTimeout(async () => {
+      this.clearIceRestartTimer(transportId);
+      if (transport.closed) {
+        return;
+      }
+
+      if (!this.onIceRestartNeeded) {
+        logger.warn('[SfuMediaManager] No ICE restart callback registered — closing transport');
+        if (!transport.closed) transport.close();
+        return;
+      }
+      try {
+        await transport.restartIce({ iceParameters: iceParams });
+        logger.info(`[SfuMediaManager] ICE restart initiated for ${direction} transport ${transportId}`);
+        await this.onIceRestartNeeded(transportId, direction);
+      } catch (err) {
+        logger.warn(`[SfuMediaManager] ICE restart signaling failed (attempt ${attempt + 1}) for ${direction} transport`, err);
+        if (transport.closed) {
+          return;
+        }
+        this.scheduleIceRestart(transport, transportId, direction, attempt + 1);
+      }
+    }, delay);
 
 this.replaceIceRestartTimer(transportId, timer);
   }
@@ -298,6 +311,8 @@ this.replaceIceRestartTimer(transportId, timer);
       // encodedInsertableStreams конфликтует с RTCRtpScriptTransform — включаем только для legacy Chrome
       ...(!('RTCRtpScriptTransform' in globalThis) ? { additionalSettings: { encodedInsertableStreams: true } as Partial<RTCConfigE2EE> } : {}),
     });
+
+    this.sendIceParameters = options.iceParameters;
 
     this.sendTransport.on('connect', ({ dtlsParameters }, callback, errback) => {
       onConnect(dtlsParameters)

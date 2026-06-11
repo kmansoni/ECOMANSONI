@@ -128,9 +128,9 @@ export function MessageContextMenu({
     }
 
     const windowHeight = window.innerHeight;
-    const menuHeight = 320;
+    const menuHeight = 340;
     const reactionsHeight = 48;
-    const messageHeight = 60;
+    const messageHeight = 72;
     const totalHeight = reactionsHeight + messageHeight + menuHeight + 24;
 
     let top = position.top;
@@ -201,7 +201,7 @@ export function MessageContextMenu({
                   isOwn ? "bg-[#2b5278] text-white rounded-br-sm" : "bg-[#182533] text-white rounded-bl-sm"
                 }`}
               >
-                <p className="text-[15px] leading-[1.4] whitespace-pre-wrap line-clamp-4">
+                <p className="text-[15px] leading-[1.4] whitespace-pre-wrap line-clamp-5">
                   {messageContent}
                 </p>
               </div>

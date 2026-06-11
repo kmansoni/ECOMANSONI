@@ -3,7 +3,7 @@
  * Вкладки: Основное / Обработчики / Клавиатуры / Состояния / Аналитика / Webhook
  */
 
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import {
   ArrowLeft,
@@ -23,6 +23,7 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { botApi } from '@/lib/bots/api';
+import { cn } from '@/lib/utils';
 import { StarsV2 } from '@/lib/stars/v2/payments';
 import type { BotCommand, BotToken, BotWebhook, BotHandler, BotKeyboard, BotConversationState, BotSession, BotAnalytics, BotWithOwner } from '@/lib/bots/types';
 import { FSMVisualEditor } from '@/components/bots/FSMVisualEditor';
@@ -38,6 +39,42 @@ const TABS: { id: Tab; label: string; icon?: React.ReactNode }[] = [
   { id: 'payments',  label: 'Платежи',      icon: <Coins size={16} /> },
   { id: 'webhook',   label: 'Webhook',      icon: <Webhook size={16} /> },
 ];
+
+function Field({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <label className="block space-y-1.5">
+      <span className="text-sm font-medium">{label}</span>
+      {children}
+    </label>
+  );
+}
+
+function Toggle({
+  checked,
+  onChange,
+  label,
+  description,
+}: {
+  checked: boolean;
+  onChange: (value: boolean) => void;
+  label: string;
+  description?: string;
+}) {
+  return (
+    <label className="flex items-start gap-3">
+      <input
+        type="checkbox"
+        checked={checked}
+        onChange={(event) => onChange(event.target.checked)}
+        className="mt-1"
+      />
+      <span className="min-w-0">
+        <span className="block text-sm font-medium">{label}</span>
+        {description && <span className="block text-xs text-muted-foreground">{description}</span>}
+      </span>
+    </label>
+  );
+}
 
 // ---------------------------------------------------------------------------
 // BotSettingsPage
@@ -704,6 +741,7 @@ function HandlersTab({ botId }: HandlersTabProps) {
     setCreating(true);
     try {
       const created = await botApi.createBotHandler(botId, {
+        bot_id: botId,
         name: newHandler.name!,
         trigger_type: newHandler.trigger_type!,
         trigger_value: newHandler.trigger_value ?? '',
@@ -858,16 +896,18 @@ function KeyboardsTab({ botId }: KeyboardsTabProps) {
   }, [botId]);
 
   const handleCreate = async () => {
-    if (!newKeyboard.name || !newKeyboard.buttons.length) {
+    const buttons = newKeyboard.buttons ?? [];
+    if (!newKeyboard.name || !buttons.length) {
       toast.error('Укажите название и хотя бы одну кнопку');
       return;
     }
     setCreating(true);
     try {
       await botApi.createBotKeyboard(botId, {
+        bot_id: botId,
         name: newKeyboard.name!,
         keyboard_type: newKeyboard.keyboard_type || 'inline',
-        buttons: newKeyboard.buttons,
+        buttons,
         is_persistent: newKeyboard.is_persistent ?? false,
         is_active: newKeyboard.is_active ?? true,
       });
@@ -877,6 +917,16 @@ function KeyboardsTab({ botId }: KeyboardsTabProps) {
       toast.error(err instanceof Error ? err.message : 'Не удалось создать');
     } finally {
       setCreating(false);
+    }
+  };
+
+  const handleDelete = async (keyboardId: string) => {
+    try {
+      await botApi.deleteBotKeyboard(botId, keyboardId);
+      setKeyboards((prev) => prev.filter((keyboard) => keyboard.id !== keyboardId));
+      toast.success('Клавиатура удалена');
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Не удалось удалить');
     }
   };
 
@@ -976,6 +1026,7 @@ function StatesTab({ botId }: StatesTabProps) {
     setCreating(true);
     try {
       const created = await botApi.createBotState(botId, {
+        bot_id: botId,
         name: newStateName.trim(),
         flow: { nodes: [], transitions: [] },
         initial_state: '',

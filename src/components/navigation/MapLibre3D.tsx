@@ -10,6 +10,7 @@
  */
 import { useEffect, useRef, useState, memo, useCallback } from 'react';
 import maplibregl from 'maplibre-gl';
+import type { ExpressionSpecification } from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import type { LatLng } from '@/types/taxi';
 import type { Maneuver, RouteSegment, SpeedCamera, NavRoute, TrafficLevel, MultiModalRoute } from '@/types/navigation';
@@ -280,7 +281,7 @@ export const MapLibre3D = memo(function MapLibre3D({
 
       const features = surveyScans
         .filter(s => s.footprint_geometry)
-        .map(scan => {
+        .map<GeoJSON.Feature<GeoJSON.Polygon> | null>(scan => {
           const geometry = surveyService.helpers.parseWktPolygonToGeoJSON(scan.footprint_geometry);
           if (!geometry) {
             return null;
@@ -300,14 +301,14 @@ export const MapLibre3D = memo(function MapLibre3D({
             }
           };
         })
-        .filter((feature): feature is GeoJSON.Feature => feature !== null);
+        .filter((feature): feature is GeoJSON.Feature<GeoJSON.Polygon> => feature !== null);
 
       const geojson: GeoJSON.FeatureCollection = {
         type: 'FeatureCollection',
-        features: features as GeoJSON.Feature[]
+        features
       };
 
-const fillPaint: mapboxgl.FillPaint = {
+const fillPaint: maplibregl.FillLayerSpecification['paint'] = {
             'fill-color': [
               'case',
               ['==', ['get', 'status'], 'approved'], 'rgba(34, 197, 94, 0.6)',
@@ -565,11 +566,11 @@ const fillPaint: mapboxgl.FillPaint = {
       if (isNavigating || routeSegments.length === 0) return;
 
        // Helper function to convert width in meters to zoom-dependent pixel width
-       const metersToPixels = (meters: number) => [
-         '/',
-         ['*', meters, 156543.033928], // meters per pixel at equator zoom 0
-         ['^', 2, ['zoom']],
-       ];
+       const metersToPixels = (meters: number): ExpressionSpecification => [
+          '/',
+          ['*', meters, 156543.033928], // meters per pixel at equator zoom 0
+          ['^', 2, ['zoom']],
+        ];
 
        routeSegments.forEach((segment, i) => {
          if (segment.points.length < 2) return;

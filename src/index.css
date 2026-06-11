@@ -5,6 +5,11 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Emoji country flags — Segoe UI Emoji fallback для Windows/Linux */
+.emoji-flag {
+  font-family: 'Noto Color Emoji', 'Apple Color Emoji', 'Segoe UI Emoji', 'EmojiOne Color', sans-serif;
+}
+
 /* Kill browser autofill background globally */
 input:-webkit-autofill,
 input:-webkit-autofill:hover,

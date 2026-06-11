@@ -1533,7 +1533,7 @@ vacation
 
 ```
 □ 1. Арендовать VPS (2+ vCPU, 4+ GB RAM, SSD)
-     Рекомендую: Selectel, TimeWeb Cloud, Yandex Cloud (РФ)
+     Рекомендую: Selectel, Yandex Cloud (РФ)
      ИЛИ: Hetzner, DigitalOcean (для не-РФ данных)
 
 □ 2. Проверить чистоту IP адреса:

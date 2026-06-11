@@ -38,6 +38,7 @@ export function useAdCampaigns() {
     }
 
     let cancelled = false;
+    const userId = user.id;
     setLoading(true);
 
     async function load() {
@@ -46,7 +47,7 @@ export function useAdCampaigns() {
         const { data: campaignsData, error: campErr } = await supabase
           .from('ad_campaigns')
           .select('*')
-          .eq('advertiser_id', user.id)
+          .eq('advertiser_id', userId)
           .order('created_at', { ascending: false })
           .limit(100);
 
@@ -328,7 +329,8 @@ export function useAdCampaigns() {
         else if (row.action === 'conversion') stats[row.creative_id].conversions++;
       });
 
-      const total = Object.values(stats).reduce(
+      const statValues = Object.values(stats) as Array<{ impressions: number; clicks: number; conversions: number }>;
+      const total = statValues.reduce(
         (a, b) => ({
           impressions: a.impressions + b.impressions,
           clicks: a.clicks + b.clicks,

@@ -6,13 +6,14 @@
  */
 
 export interface BatteryProfile {
-  scenario: 'active-chat' | 'chat-idle' | 'background-sync' | 'geolocation' | 'voice-recording' | 'media-decoding';
+  scenario: 'active-chat' | 'chat-idle' | 'background-sync' | 'batch-sync' | 'geolocation' | 'voice-recording' | 'media-decoding';
   batteryDrainPercent: number;
   cpuUsage: number;
-  wakeupsPerHour?: number;
-  targetFPS?: number;
-  radioWakeups?: number;
+  wakeupsPerHour: number;
+  targetFPS: number;
+  radioWakeups: number;
   breakdown?: Record<string, number>;
+  recommendations?: string[];
 }
 
 let monitoring = false;
@@ -31,6 +32,10 @@ export async function measureBatteryDrain(options: {
   initialBattery?: number;
   enableHighAccuracy?: boolean;
   batterySaverEnabled?: boolean;
+  syncInterval?: number;
+  requestsCount?: number;
+  batched?: boolean;
+  watch?: boolean;
 }): Promise<BatteryProfile> {
   // Simulate measurement
   const baseDrain = 1.5; // % per hour baseline
@@ -38,6 +43,7 @@ export async function measureBatteryDrain(options: {
     'active-chat': 2.0,
     'chat-idle': 0.5,
     'background-sync': 0.2,
+    'batch-sync': options.batched ? 0.4 : 1.2,
     'geolocation': 1.8,
     'voice-recording': 1.0,
     'media-decoding': 3.5,
@@ -63,11 +69,14 @@ export async function measureBatteryDrain(options: {
   };
 }
 
-export async function getEnergyConsumptionProfile(): Promise<BatteryProfile & { breakdown: Record<string, number> }> {
+export async function getEnergyConsumptionProfile(): Promise<BatteryProfile & { breakdown: Record<string, number>; recommendations: string[] }> {
   return {
     scenario: 'active-chat',
     batteryDrainPercent: 2.0,
     cpuUsage: 4,
+    wakeupsPerHour: 2,
+    targetFPS: 60,
+    radioWakeups: 1,
     breakdown: {
       chat: 40,
       calls: 30,

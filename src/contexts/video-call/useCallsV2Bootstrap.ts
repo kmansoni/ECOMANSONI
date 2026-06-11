@@ -720,8 +720,9 @@ export function useCallsV2Bootstrap({
 
             void (async () => {
               try {
-                const epochKey = await keyExchange.createEpochKey(newEpoch);
-                if (mediaEncryption) await mediaEncryption.setEncryptionKey(epochKey);
+                // Staged/active contract: leader stages the key, does NOT activate outbound yet.
+                // Outbound switch happens only after REKEY_COMMIT + quorum.
+                const epochKey = await keyExchange.createStagedEpochKey(newEpoch);
 
                 await activeClient.rekeyBegin({ roomId: activeRoomId, epoch: newEpoch });
                 machine.onRekeyBeginAcked(newEpoch);
@@ -729,6 +730,7 @@ export function useCallsV2Bootstrap({
               } catch (err) {
                 logger.error("[VideoCallContext] calls-v2 rekey:begin failed, aborting", err);
                 machine.abortRekey(String(err));
+                keyExchange.abortStagedEpoch(newEpoch);
                 epochGuardRef.current?.rollbackFailedEpoch(e2eeEpochRef.current);
               }
             })();

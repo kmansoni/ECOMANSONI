@@ -96,6 +96,14 @@ export class SealedSenderCryptoProvider implements CryptoProvider {
     return this.base.getCurrentEpochKey();
   }
 
+  getActiveEpochKey(): EpochKeyMaterial | null {
+    return this.base.getActiveEpochKey();
+  }
+
+  getStagedEpochKey(): EpochKeyMaterial | null {
+    return this.base.getStagedEpochKey();
+  }
+
   getIdentity(): CallIdentity {
     return this.identity;
   }

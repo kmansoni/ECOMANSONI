@@ -528,9 +528,12 @@ sfuManager.createRecvTransport(
         const enc = callMediaEncryptionRef.current;
         if (kx && enc) {
           const epoch = e2eeEpochRef.current ?? 0;
-          let epochKey = kx.getCurrentEpochKey();
+          let epochKey = kx.getActiveEpochKey();
           if (!epochKey || epochKey.epoch !== epoch) {
-            epochKey = await kx.createEpochKey(epoch);
+            // Bootstrap path: fast-track stage → activate.
+            // Normal path activates only after REKEY_COMMIT quorum.
+            epochKey = await kx.createStagedEpochKey(epoch);
+            kx.activateEpochKey(epoch);
           }
           await enc.setEncryptionKey(epochKey);
           const decryptionKeysBefore = enc.getDecryptionPeerIds().length;

@@ -23,12 +23,7 @@ export interface CallIdentity {
 }
 
 import { logger } from '@/lib/logger';
-
-const UUID_V4_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-
-function isUuidV4(value: string): boolean {
-  return UUID_V4_RE.test(value);
-}
+import { bytesToBase64, base64ToBytes, isUuidV4, decodeRequiredBase64Bytes } from './callKeyExchange.crypto';
 
 /**
  * epoch → non-extractable AES-128-GCM CryptoKey для SFrame.
@@ -54,7 +49,12 @@ export class CallKeyExchange {
   private identity: CallIdentity;
   private ephemeralKeyPair: CryptoKeyPair | null = null;
   private signingKeyPair: CryptoKeyPair | null = null;
-  private currentEpochKey: EpochKeyMaterial | null = null;
+  // ── Staged/Active split ──────────────────────────────────────────────
+  /** Текущий коммитанный epoch key — единственный источник истины для outbound encryption. */
+  private activeEpochKey: EpochKeyMaterial | null = null;
+  /** Pending epoch key, ожидающий commit через rekeyStateMachine.activateEpoch(). */
+  private stagedEpochKey: EpochKeyMaterial | null = null;
+  // ──────────────────────────────────────────────────────────────────────
   /** peerId (userId:deviceId composite) → их ECDH CryptoKey */
   private peerPublicKeys: Map<string, CryptoKey> = new Map();
   /** epoch → EpochKeyMaterial (кольцевой буфер — последние 3 epoch) */
@@ -126,12 +126,22 @@ export class CallKeyExchange {
   }
 
   /**
-   * Создать новый epoch key (AES-128-GCM, 128 бит).
-   * Raw bytes сразу зачищаются после importKey и хранятся только в epochRawBytes.
+   * Создать staged epoch key (без активации).
+   * Ключ попадает в staged slot, НЕ трогает active.
+   * Invariant: activeEpochKey не трогается.
+   *
+   * Для backward-compat: вызывается из deprecated createEpochKey().
    */
-  async createEpochKey(epoch: number): Promise<EpochKeyMaterial> {
-    const rawKeyBytes = crypto.getRandomValues(new Uint8Array(16));
+  async createStagedEpochKey(epoch: number): Promise<EpochKeyMaterial> {
+    const existing = this.epochKeys.get(epoch);
+    if (existing) {
+      if (this.activeEpochKey && this.activeEpochKey.epoch === epoch) return this.activeEpochKey;
+      if (this.stagedEpochKey && this.stagedEpochKey.epoch === epoch) return this.stagedEpochKey;
+      this.stagedEpochKey = existing;
+      return existing;
+    }
 
+    const rawKeyBytes = crypto.getRandomValues(new Uint8Array(16));
     const key = await crypto.subtle.importKey(
       'raw',
       rawKeyBytes,
@@ -139,28 +149,69 @@ export class CallKeyExchange {
       false,
       ['encrypt', 'decrypt']
     );
-
-    // Сохраняем копию raw bytes ТОЛЬКО в приватном поле класса
     const rawBytesCopy = new Uint8Array(rawKeyBytes);
-    rawKeyBytes.fill(0); // немедленно зачищаем стековый оригинал
+    rawKeyBytes.fill(0);
 
-    const epochKey: EpochKeyMaterial = {
-      epoch,
-      key,
-    };
+    const epochKey: EpochKeyMaterial = { epoch, key };
 
-    this.currentEpochKey = epochKey;
+    if (this.activeEpochKey && this.activeEpochKey.epoch === epoch) return this.activeEpochKey;
+
+    this.stagedEpochKey = epochKey;
     this.epochKeys.set(epoch, epochKey);
     this.epochRawBytes.set(epoch, rawBytesCopy);
 
-    // Rotation: очищаем epoch старше текущего-3 для forward secrecy
-    for (const storedEpoch of Array.from(this.epochKeys.keys())) {
-      if (storedEpoch < epoch - 2) {
-        this.evictEpoch(storedEpoch);
-      }
-    }
+    this.rotateOldEpochKeys(epoch);
 
     return epochKey;
+  }
+
+  /**
+   * @deprecated Use createStagedEpochKey(); activation is explicit via activateEpochKey().
+   */
+  async createEpochKey(epoch: number): Promise<EpochKeyMaterial> {
+    return this.createStagedEpochKey(epoch);
+  }
+
+  /**
+   * Переместить staged key в active (идемпотентный commit).
+   * Вовзращает true только если staged совпал с запрошенным epoch.
+   */
+  activateEpochKey(epoch: number): boolean {
+    if (!this.stagedEpochKey || this.stagedEpochKey.epoch !== epoch) {
+      return false;
+    }
+    if (this.activeEpochKey && this.activeEpochKey.epoch === epoch) {
+      this.stagedEpochKey = null;
+      return true;
+    }
+    this.activeEpochKey = this.stagedEpochKey;
+    this.stagedEpochKey = null;
+    return true;
+  }
+
+  /**
+   * Отбросить staged key (при abort). Active НЕ трогается.
+   * Raw bytes остаются в epochRawBytes для возможного retry.
+   */
+  abortStagedEpoch(epoch?: number): void {
+    if (!this.stagedEpochKey) return;
+    if (epoch !== undefined && this.stagedEpochKey.epoch !== epoch) return;
+    this.stagedEpochKey = null;
+  }
+
+  getActiveEpochKey(): EpochKeyMaterial | null {
+    return this.activeEpochKey;
+  }
+
+  getStagedEpochKey(): EpochKeyMaterial | null {
+    return this.stagedEpochKey;
+  }
+
+  /**
+   * @deprecated Use getActiveEpochKey() for outbound, getStagedEpochKey() for pending.
+   */
+  getCurrentEpochKey(): EpochKeyMaterial | null {
+    return this.activeEpochKey;
   }
 
   /**
@@ -172,9 +223,12 @@ export class CallKeyExchange {
     if (!this.ephemeralKeyPair || !this.signingKeyPair) {
       throw new Error('[CallKeyExchange] Not initialized');
     }
-    if (!this.currentEpochKey) {
-      throw new Error('[CallKeyExchange] No epoch key — call createEpochKey() first');
+    const activeKey = this.getActiveEpochKey();
+    const stagedKey = this.getStagedEpochKey();
+    if (!activeKey && !stagedKey) {
+      throw new Error('[CallKeyExchange] No epoch key — call createStagedEpochKey() first');
     }
+    const effectiveKey = activeKey ?? stagedKey;
 
     // H-1: Random salt для HKDF
     const saltBytes = crypto.getRandomValues(new Uint8Array(32));
@@ -218,7 +272,7 @@ export class CallKeyExchange {
     // 4. Читаем raw bytes из приватного поля (не из EpochKeyMaterial.public!)
     const rawBytes = this.epochRawBytes.get(epoch);
     if (!rawBytes) {
-      throw new Error(`[CallKeyExchange] No raw bytes for epoch ${epoch} — cannot create KEY_PACKAGE. Call createEpochKey() first.`);
+      throw new Error(`[CallKeyExchange] No raw bytes for epoch ${epoch} — cannot create KEY_PACKAGE. Call createStagedEpochKey() first.`);
     }
 
     // Создаём одноразовый extractable alias ТОЛЬКО для wrap-операции.
@@ -329,9 +383,10 @@ export class CallKeyExchange {
         `[CallKeyExchange] Epoch rollback REJECTED: received epoch=${pkg.epoch} <= highest processed for ${senderId}=${highestPeerEpoch} (replay/rollback)`
       );
     }
-    if (this.currentEpochKey && pkg.epoch < this.currentEpochKey.epoch) {
+    const currentActive = this.activeEpochKey;
+    if (currentActive && pkg.epoch < currentActive.epoch) {
       throw new Error(
-        `[CallKeyExchange] Epoch rollback REJECTED: received epoch=${pkg.epoch} < current=${this.currentEpochKey.epoch}`
+        `[CallKeyExchange] Epoch rollback REJECTED: received epoch=${pkg.epoch} < current=${currentActive.epoch}`
       );
     }
 
@@ -389,28 +444,26 @@ export class CallKeyExchange {
     };
 
     this.epochKeys.set(pkg.epoch, epochKey);
-    this.currentEpochKey = epochKey;
+    this.stagedEpochKey = epochKey;
     this.seenKeyPackageMessageIds.add(pkg.messageId);
     this.highestProcessedEpochBySender.set(senderId, pkg.epoch);
 
-    // ── H-5: Evict old epoch keys for forward secrecy ──
-    for (const storedEpoch of Array.from(this.epochKeys.keys())) {
-      if (storedEpoch < pkg.epoch - 2) {
-        this.evictEpoch(storedEpoch);
-      }
-    }
+    this.rotateOldEpochKeys(pkg.epoch);
 
     return epochKey;
+  }
+
+  /**
+   * @deprecated processKeyPackage() now stages inbound keys and never activates implicitly.
+   */
+  async processStagedKeyPackage(pkg: KeyPackageData): Promise<EpochKeyMaterial> {
+    return this.processKeyPackage(pkg);
   }
 
   getPeerPublicKeyBase64(peerKey: string): Promise<string | null> {
     const key = this.peerPublicKeys.get(peerKey);
     if (!key) return Promise.resolve(null);
     return crypto.subtle.exportKey('raw', key).then((raw) => bytesToBase64(new Uint8Array(raw)));
-  }
-
-  getCurrentEpochKey(): EpochKeyMaterial | null {
-    return this.currentEpochKey;
   }
 
   getEpochKey(epoch: number): EpochKeyMaterial | null {
@@ -421,12 +474,14 @@ export class CallKeyExchange {
     logger.debug('[CallKeyExchange] destroy() called', {
       hasEphemeralKeyPair: !!this.ephemeralKeyPair,
       hasSigningKeyPair: !!this.signingKeyPair,
-      hasCurrentEpochKey: !!this.currentEpochKey,
+      hasActiveEpochKey: !!this.activeEpochKey,
+      hasStagedEpochKey: !!this.stagedEpochKey,
       epochKeysCount: this.epochKeys.size,
       epochRawBytesCount: this.epochRawBytes.size,
       peerPublicKeysCount: this.peerPublicKeys.size,
       peerSigningKeysCount: this.peerSigningKeys.size,
-      currentEpoch: this.currentEpochKey?.epoch ?? 0,
+      activeEpoch: this.activeEpochKey?.epoch ?? 0,
+      stagedEpoch: this.stagedEpochKey?.epoch ?? 0,
       timestamp: Date.now(),
     });
 
@@ -438,13 +493,6 @@ export class CallKeyExchange {
         clearedKeysCount++;
       }
     }
-    if (this.currentEpochKey) {
-      const currentRaw = this.epochRawBytes.get(this.currentEpochKey.epoch);
-      if (currentRaw) {
-        currentRaw.fill(0);
-      }
-    }
-
     logger.debug('[CallKeyExchange] destroy() keys cleared', {
       epochRawBytesCleared: clearedKeysCount,
       timestamp: Date.now(),
@@ -452,7 +500,8 @@ export class CallKeyExchange {
 
     this.ephemeralKeyPair = null;
     this.signingKeyPair = null;
-    this.currentEpochKey = null;
+    this.activeEpochKey = null;
+    this.stagedEpochKey = null;
     this.peerPublicKeys.clear();
     this.epochKeys.clear();
     this.epochRawBytes.clear();
@@ -461,49 +510,31 @@ export class CallKeyExchange {
     this.highestProcessedEpochBySender.clear();
   }
 
-  // ─── Private ────────────────────────────────────────────────────────────────
-
-  /**
-   * Удалить конкретную epoch-запись с зачисткой raw bytes.
-   */
-  private evictEpoch(epoch: number): void {
-    const rawBytes = this.epochRawBytes.get(epoch);
-    if (rawBytes && rawBytes.length > 0) {
-      rawBytes.fill(0);
+  private rotateOldEpochKeys(epoch: number): void {
+    const threshold = epoch - 2;
+    for (const storedEpoch of Array.from(this.epochKeys.keys())) {
+      if (storedEpoch < threshold) {
+        this.evictEpoch(storedEpoch);
+      }
     }
-    this.epochRawBytes.delete(epoch);
+  }
+
+  private evictEpoch(epoch: number): void {
+    if (this.activeEpochKey?.epoch === epoch) {
+      throw new Error(`[CallKeyExchange] evictEpoch blocked: epoch ${epoch} is active`);
+    }
+    if (this.stagedEpochKey?.epoch === epoch) {
+      this.stagedEpochKey = null;
+    }
+    const rawBytes = this.epochRawBytes.get(epoch);
+    if (rawBytes) {
+      rawBytes.fill(0);
+      this.epochRawBytes.delete(epoch);
+    }
     this.epochKeys.delete(epoch);
   }
 }
 
 // ---------------------------------------------------------------------------
-// Helpers
+// Helpers (re-exported from callKeyExchange.crypto)
 // ---------------------------------------------------------------------------
-
-function bytesToBase64(bytes: Uint8Array): string {
-  let binary = '';
-  for (let i = 0; i < bytes.length; i++) {
-    const byte = bytes[i];
-    if (byte === undefined) continue;
-    binary += String.fromCharCode(byte);
-  }
-  return btoa(binary);
-}
-
-function base64ToBytes(b64: string): Uint8Array<ArrayBuffer> {
-  const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
-  return new Uint8Array(bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer);
-}
-
-function decodeRequiredBase64Bytes(b64: string, expectedLength: number, field: string): Uint8Array<ArrayBuffer> {
-  let bytes: Uint8Array<ArrayBuffer>;
-  try {
-    bytes = base64ToBytes(b64);
-  } catch {
-    throw new Error(`[CallKeyExchange] processKeyPackage: ${field} must be valid base64.`);
-  }
-  if (bytes.length !== expectedLength) {
-    throw new Error(`[CallKeyExchange] processKeyPackage: ${field} must decode to ${expectedLength} bytes, got ${bytes.length}.`);
-  }
-  return bytes;
-}

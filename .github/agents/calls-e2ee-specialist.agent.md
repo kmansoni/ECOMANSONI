@@ -5,12 +5,11 @@ tools:
   - read
   - search
   - edit
-  - grep
   - web
   - todo
   - agent
   - claude-flow/*
-user-invocable: true
+user-invocable: false
 skills:
   - .github/skills/e2ee-audit-specialist/SKILL.md
   - .github/skills/e2ee-audit/SKILL.md

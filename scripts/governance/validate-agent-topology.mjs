@@ -11,6 +11,7 @@ const expectedUserInvocable = new Map([
   ['mansoni-core.agent.md', true],
   ['ruflo.agent.md', true],
   // Specialist agents (user-invocable: false)
+  ['calls-e2ee-specialist.agent.md', false],
   ['calls-tester.agent.md', false],
   ['instagram-tester.agent.md', false],
   ['insurance-tester.agent.md', false],
@@ -20,6 +21,7 @@ const expectedUserInvocable = new Map([
   ['mansoni-performance-engineer.agent.md', false],
   ['mansoni-reviewer.agent.md', false],
   ['mansoni-security-engineer.agent.md', false],
+  ['mansoni-superdesign.agent.md', false],
   ['mansoni-tester.agent.md', false],
   ['map-display.agent.md', false],
   ['messenger-tester.agent.md', false],

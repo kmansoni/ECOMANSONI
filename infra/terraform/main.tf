@@ -15,7 +15,7 @@ terraform {
     bucket   = "mansoni-terraform-state"
     key      = "prod/terraform.tfstate"
     region   = "us-east-1"
-    endpoint = "https://s3.timeweb.cloud"
+    endpoint = "https://s3.amazonaws.com"
   }
 }
 

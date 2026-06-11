@@ -92,7 +92,6 @@ probe_out.json
 # CI/CD temp artifacts
 .tmp_*
 *.env.local.snapshot
-TIMEWEB_PASTE_TO_CONSOLE.txt
 
 # Test artifacts
 test-results/

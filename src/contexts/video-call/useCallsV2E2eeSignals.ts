@@ -276,8 +276,9 @@ export function useCallsV2E2eeSignals({
       epochGuardRef.current?.markEpochAdvanced(newEpoch);
       void (async () => {
         try {
-          const epochKey = await keyExchange.createEpochKey(newEpoch);
-          await mediaEncryption.setEncryptionKey(epochKey);
+          // Staged/active contract: leader stages the key, does NOT activate outbound yet.
+          // Outbound switch happens only after REKEY_COMMIT + quorum.
+          const epochKey = await keyExchange.createStagedEpochKey(newEpoch);
           await client.rekeyBegin({ roomId: activeRoomId, epoch: newEpoch });
           machine.onRekeyBeginAcked(newEpoch);
           logger.info("[VideoCallContext] forced rekey started", { reason, epoch: newEpoch, roomId: activeRoomId });
@@ -287,6 +288,7 @@ export function useCallsV2E2eeSignals({
             error: err instanceof Error ? err.message : String(err),
           });
           machine.abortRekey(String(err));
+          keyExchange.abortStagedEpoch(newEpoch);
           epochGuardRef.current?.rollbackFailedEpoch(e2eeEpochRef.current);
         }
       })();
@@ -546,22 +548,29 @@ export function useCallsV2E2eeSignals({
        // ниже в async блоке. Реф может стать null между этой проверкой и доступом к sessionId
        // (например, при размонтировании компонента во время обработки события из WebSocket-потока).
        // Повторное чтение рефа без null-guard на строке getSessionId() — race-condition.
-       void (async () => {
-         try {
+        void (async () => {
+          try {
             const kx = callKeyExchangeRef.current;
             const enc = callMediaEncryptionRef.current;
             if (!kx || !enc) {
               logger.warn("[VideoCallContext] REKEY_BEGIN: key exchange or encryption not ready, skipping");
               return;
             }
-            const existingKey = kx.getCurrentEpochKey();
-            if (existingKey && existingKey.epoch === epoch) {
-              return; // уже есть ключ для этого epoch, не пересоздаём
-            }
-            const epochKey = await kx.createEpochKey(epoch);
-           await enc.setEncryptionKey(epochKey);
 
-           const senderPublicKey = await kx.getPublicKeyBase64();
+            // Staged/active contract:
+            // - active key stays unchanged (outbound encryption continues on current epoch)
+            // - new epoch key is staged for inbound decryption only
+            const existingActive = kx.getActiveEpochKey();
+            if (existingActive && existingActive.epoch === epoch) {
+              return; // этот epoch уже active — не нужен staged
+            }
+
+            const epochKey = await kx.createStagedEpochKey(epoch);
+            // Follower получает REKEY_BEGIN → stage inbound key.
+            // Outbound ключ НЕ меняется — ждём REKEY_COMMIT от leader.
+            // Decryption key будет установлен позже, когда пришлют KEY_PACKAGE.
+
+            const senderPublicKey = await kx.getPublicKeyBase64();
            const senderKeyId = await deriveSenderKeyId(senderPublicKey);
            const sessionIdForDiscovery = kx.getSessionId();
            if (!sessionIdForDiscovery) {
@@ -833,9 +842,9 @@ const pkgData: KeyPackageData = {
                     logger.warn("[VideoCallContext] KEY_PACKAGE discovery: crypto not ready, skipping");
                     return;
                   }
-                  const current = kx.getCurrentEpochKey();
-                  const epochKey = current?.epoch === epoch ? current : await kx.createEpochKey(epoch);
-                  await enc.setEncryptionKey(epochKey);
+                   const current = kx.getActiveEpochKey();
+                   const epochKey = current?.epoch === epoch ? current : await kx.createStagedEpochKey(epoch);
+                   // Discovery response: just stage the key. Media encryption unchanged.
 
                   const pkg = await kx.createKeyPackage(senderPublicKeyB64, epoch);
                   const senderKeyId = await deriveSenderKeyId(pkg.senderPublicKey);
@@ -975,7 +984,7 @@ const identitySig = btoa(String.fromCharCode(...new Uint8Array(identitySigRaw)))
             let keyExchangeSuccess = false;
 
             try {
-              const peerEpochKey = await keyExchange.processKeyPackage(pkgData);
+              const peerEpochKey = await keyExchange.processStagedKeyPackage(pkgData);
               const peerKey = senderIdentity?.peerId ?? senderUserId;
               logger.debug("[VideoCallContext] KEY_PACKAGE: about to call setDecryptionKey", {
                 epoch: peerEpochKey.epoch,
@@ -1028,7 +1037,7 @@ const identitySig = btoa(String.fromCharCode(...new Uint8Array(identitySigRaw)))
       })();
     });
 
-    on("REKEY_COMMIT", (frame) => {
+    on("REKEY_COMMIT", async (frame) => {
       const commitPayload = frame.payload as { epoch?: number | string } | undefined;
       const epochRaw = commitPayload?.epoch;
       const nextEpoch = typeof epochRaw === "number" ? epochRaw : Number(epochRaw);
@@ -1051,8 +1060,30 @@ const identitySig = btoa(String.fromCharCode(...new Uint8Array(identitySigRaw)))
           return;
         }
 
+        // Staged/active contract: activation order is strict.
+        // 1. State machine confirms commit
+        // 2. KeyExchange promotes staged → active
+        // 3. Media gets outbound key from active
+        // 4. Only THEN update e2eeEpochRef
+        const activated = rekeyMachineRef.current?.activateEpoch(nextEpoch);
+        if (!activated) {
+          logger.warn("[VideoCallContext] REKEY_COMMIT: state machine rejected activation", { epoch: nextEpoch });
+          return;
+        }
+
+        const keyExchange = callKeyExchangeRef.current;
+        const keyActivated = keyExchange?.activateEpochKey(nextEpoch) ?? false;
+        if (!keyActivated) {
+          logger.error("[VideoCallContext] REKEY_COMMIT: staged key missing for epoch", { epoch: nextEpoch });
+          return;
+        }
+
+        const activeKey = keyExchange.getActiveEpochKey();
+        if (activeKey && callMediaEncryptionRef.current) {
+          await callMediaEncryptionRef.current.setEncryptionKey(activeKey);
+        }
+
         e2eeEpochRef.current = nextEpoch;
-        rekeyMachineRef.current?.activateEpoch(nextEpoch);
         epochGuardRef.current?.markE2eeReady(nextEpoch);
         onE2eeActivated?.();
         const activeRoomId = callsWsRoomRef.current;

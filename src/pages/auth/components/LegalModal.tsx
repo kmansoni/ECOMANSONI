@@ -1,4 +1,3 @@
-import { useEffect, useState } from "react";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import {
   ScrollText, UserCheck, Ban, FileText, CreditCard, ShieldCheck,
@@ -192,31 +191,19 @@ const PRIVACY_SECTIONS = [
 ];
 
 export function LegalModal({ type, onClose }: LegalModalProps) {
-  const [isOpen, setIsOpen] = useState(false);
   const sections = type === "terms" ? TERMS_SECTIONS : PRIVACY_SECTIONS;
   const title = type === "terms" ? "Условия использования" : "Политика конфиденциальности";
 
-  useEffect(() => {
-    if (type) {
-      setIsOpen(true);
-    }
-  }, [type]);
-
-  const close = () => {
-    setIsOpen(false);
-    onClose();
-  };
-
   return (
-    <Dialog key={type ?? "closed"} open={isOpen} onOpenChange={(open) => { if (!open) close(); }}>
-      <DialogContent className="max-w-lg max-h-[85vh] flex flex-col p-0 gap-0">
-        <DialogHeader className="px-5 pt-5 pb-4 border-b border-white/10 flex-shrink-0">
+    <Dialog open={type !== null} onOpenChange={(open) => { if (!open) onClose(); }}>
+      <DialogContent className="!fixed max-w-lg max-h-[85vh] overflow-hidden flex flex-col p-0 gap-0 !border !border-white/15 !bg-[#0f172a] !text-white shadow-2xl [&::before]:hidden">
+        <DialogHeader className="relative z-10 px-5 pt-5 pb-4 border-b border-white/10 flex-shrink-0 bg-white/[0.03]">
           <DialogTitle className="text-base font-semibold text-white">{title}</DialogTitle>
           <DialogDescription className="sr-only">
             Юридический текст документа Mansoni с разделами, условиями и правилами обработки данных.
           </DialogDescription>
         </DialogHeader>
-        <div className="overflow-y-auto flex-1 px-5 py-4 space-y-3">
+        <div className="relative z-10 overflow-y-auto flex-1 px-5 py-4 space-y-3">
           {sections.map((s, i) => {
             const Icon = s.icon;
             return (

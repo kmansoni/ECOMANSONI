@@ -6,7 +6,18 @@
  */
 
 import { lazy } from "react";
+import { Navigate } from "react-router-dom";
 import type { RouteObject } from "react-router-dom";
+import { adsRoutes } from "../features/ads/adsRoutes";
+import { chatRoutes } from "../features/chat/chatRoutes";
+import { crmRoutes } from "../features/crm/crmRoutes";
+import { editorRoutes } from "../features/editor/editorRoutes";
+import { insuranceRoutes } from "../features/insurance/insuranceRoutes";
+import { livestreamRoutes } from "../features/livestream/livestreamRoutes";
+import { marketplaceRoutes } from "../features/marketplace/marketplaceRoutes";
+import { navigationRoutes } from "../features/navigation/navigationRoutes";
+import { socialRoutes } from "../features/social/socialRoutes";
+import { taxiRoutes } from "../features/taxi/taxiRoutes";
 
 // ─── Lazy-loaded page factories ───────────────────────────────────────────────
 const lazyPage = (importFn: () => Promise<{ default: React.ComponentType<any> }>) => 
@@ -20,11 +31,11 @@ const lazyNamedPage = <T extends Record<string, React.ComponentType<any>>>(
 // ─── Public Routes ───────────────────────────────────────────────────────────
 export const publicRoutes = (): RouteObject[] => [
   { path: "/auth", lazy: async () => ({ Component: (await import("@/pages/AuthPage")).AuthPage }) },
-  { path: "/legal/terms", lazy: async () => ({ Component: (await import("@/pages/TermsOfServicePage")).TermsOfServicePage }) },
-  { path: "/legal/privacy", lazy: async () => ({ Component: (await import("@/pages/PrivacyPolicyPage")).PrivacyPolicyPage }) },
+  { path: "/legal/terms", lazy: async () => ({ Component: (await import("@/pages/TermsOfServicePage")).default }) },
+  { path: "/legal/privacy", lazy: async () => ({ Component: (await import("@/pages/PrivacyPolicyPage")).default }) },
   { path: "/auth/web-login", lazy: async () => ({ Component: (await import("@/pages/WebLoginCallbackPage")).WebLoginCallbackPage }) },
-  { path: "/preview/icons", lazy: async () => ({ Component: (await import("@/pages/IconPreviewPage")).IconPreviewPage }) },
-  { path: "/preview/design", lazy: async () => ({ Component: (await import("@/pages/DesignSystemPage")).DesignSystemPage }) },
+  { path: "/preview/icons", lazy: async () => ({ Component: (await import("@/pages/IconPreviewPage")).default }) },
+  { path: "/preview/design", lazy: async () => ({ Component: (await import("@/pages/DesignSystemPage")).default }) },
   { path: "/demo/video-call", lazy: async () => ({ Component: (await import("@/pages/VideoCallDemoPage")).VideoCallDemoPage }) },
   { path: "/admin/login", lazy: async () => ({ Component: (await import("@/pages/admin/AdminLoginPage")).AdminLoginPage }) },
   { path: "/godmode", lazy: async () => ({ Component: (await import("@/pages/GodmodePage")).GodmodePage }) },
@@ -52,34 +63,34 @@ export const adminRoutes = (): RouteObject[] => [
 // ─── Protected Routes (main app) ─────────────────────────────────────────────
 export const protectedRoutes = (): RouteObject[] => [
   { path: "/", lazy: async () => ({ Component: (await import("@/pages/HomePage")).HomePage }) },
-  { path: "/feed", lazy: async () => ({ Component: () => (await import("react-router-dom")).Navigate({ to: "/", replace: true }) }) },
+  { path: "/feed", lazy: async () => ({ Component: () => <Navigate to="/" replace /> }) },
   { path: "/search", lazy: async () => ({ Component: (await import("@/pages/SearchPage")).SearchPage }) },
   { path: "/hashtag/:tag", lazy: async () => ({ Component: (await import("@/pages/HashtagPage")).HashtagPage }) },
-  { path: "/explore", lazy: async () => ({ Component: (await import("@/pages/ExplorePage")).ExplorePage }) },
+  { path: "/explore", lazy: async () => ({ Component: (await import("@/pages/ExplorePage")).default }) },
   { path: "/notifications", lazy: async () => ({ Component: (await import("@/pages/NotificationsPage")).NotificationsPage }) },
   { path: "/chats", lazy: async () => ({ Component: (await import("@/pages/ChatsPage")).ChatsPage }) },
   { path: "/profile", lazy: async () => ({ Component: (await import("@/pages/ProfilePage")).ProfilePage }) },
   { path: "/settings", lazy: async () => ({ Component: (await import("@/pages/SettingsPage")).SettingsPage }) },
   { path: "/reels", lazy: async () => ({ Component: (await import("@/pages/ReelsPage")).default }) },
-  { path: "/dev", lazy: async () => ({ Component: (await import("@/pages/DevPanelPage")).DevPanelPage }) },
-  { path: "/crisis-mesh", lazy: async () => ({ Component: (await import("@/pages/CrisisMeshPage")).CrisisMeshPage }) },
+  { path: "/dev", lazy: async () => ({ Component: (await import("@/pages/DevPanelPage")).default }) },
+  { path: "/crisis-mesh", lazy: async () => ({ Component: (await import("@/pages/CrisisMeshPage")).default }) },
   // Real estate
   { path: "/realestate", lazy: async () => ({ Component: (await import("@/pages/RealEstatePage")).default }) },
   { path: "/realestate/:id", lazy: async () => ({ Component: (await import("@/pages/PropertyDetailPage")).default }) },
-  { path: "/location/:id", lazy: async () => ({ Component: (await import("@/pages/LocationPage")).LocationPage }) },
-  { path: "/professional-dashboard", lazy: async () => ({ Component: (await import("@/pages/ProfessionalDashboard")).ProfessionalDashboard }) },
-  { path: "/guides/:id", lazy: async () => ({ Component: (await import("@/pages/GuidePage")).GuidePage }) },
+  { path: "/location/:id", lazy: async () => ({ Component: (await import("@/pages/LocationPage")).default }) },
+  { path: "/professional-dashboard", lazy: async () => ({ Component: (await import("@/pages/ProfessionalDashboard")).default }) },
+  { path: "/guides/:id", lazy: async () => ({ Component: (await import("@/pages/GuidePage")).default }) },
   { path: "/create-surface", lazy: async () => ({ Component: (await import("@/pages/CreateSurfacePage")).CreateSurfacePage }) },
   // Shop core
-  { path: "/shop", lazy: async () => ({ Component: (await import("@/pages/ShopPage")).ShopPage }) },
-  { path: "/shop/:shopId", lazy: async () => ({ Component: (await import("@/pages/ShopPage")).ShopPage }) },
-  { path: "/checkout", lazy: async () => ({ Component: (await import("@/pages/CheckoutPage")).CheckoutPage }) },
-  { path: "/shop/orders", lazy: async () => ({ Component: (await import("@/pages/ShopOrdersPage")).ShopOrdersPage }) },
-  { path: "/shop/returns", lazy: async () => ({ Component: (await import("@/pages/ShopReturnsPage")).ShopReturnsPage }) },
-  { path: "/shop/discover", lazy: async () => ({ Component: (await import("@/pages/ShopDiscoveryPage")).ShopDiscoveryPage }) },
-  { path: "/orders/:id", lazy: async () => ({ Component: (await import("@/pages/OrderDetailPage")).OrderDetailPage }) },
-  { path: "/content-preferences", lazy: async () => ({ Component: (await import("@/pages/ContentPreferencesPage")).ContentPreferencesPage }) },
-  { path: "/ar/gallery", lazy: async () => ({ Component: (await import("@/pages/ARFilterGalleryPage")).ARFilterGalleryPage }) },
+  { path: "/shop", lazy: async () => ({ Component: (await import("@/pages/ShopPage")).default }) },
+  { path: "/shop/:shopId", lazy: async () => ({ Component: (await import("@/pages/ShopPage")).default }) },
+  { path: "/checkout", lazy: async () => ({ Component: (await import("@/pages/CheckoutPage")).default }) },
+  { path: "/shop/orders", lazy: async () => ({ Component: (await import("@/pages/ShopOrdersPage")).default }) },
+  { path: "/shop/returns", lazy: async () => ({ Component: (await import("@/pages/ShopReturnsPage")).default }) },
+  { path: "/shop/discover", lazy: async () => ({ Component: (await import("@/pages/ShopDiscoveryPage")).default }) },
+  { path: "/orders/:id", lazy: async () => ({ Component: (await import("@/pages/OrderDetailPage")).default }) },
+  { path: "/content-preferences", lazy: async () => ({ Component: (await import("@/pages/ContentPreferencesPage")).default }) },
+  { path: "/ar/gallery", lazy: async () => ({ Component: (await import("@/pages/ARFilterGalleryPage")).default }) },
 ];
 
 // ─── Feature Module Route Groups ─────────────────────────────────────
@@ -109,5 +120,5 @@ export const allAppRoutes = (): RouteObject[] => [
   ...crmRoutes(),
   ...socialRoutes(),
   ...adsRoutes(),
-  { path: "*", lazy: async () => ({ Component: (await import("@/pages/NotFound")).NotFound }) },
+  { path: "*", lazy: async () => ({ Component: (await import("@/pages/NotFound")).default }) },
 ];

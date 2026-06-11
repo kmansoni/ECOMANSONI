@@ -29,7 +29,7 @@ fi
 
 if [[ -z "${SMS_KEY:-}" ]]; then
   if [[ -t 0 ]]; then
-    read -s -p "Timeweb SMS API Key: " SMS_KEY; echo
+    read -s -p "SMS API Key: " SMS_KEY; echo
   else
     echo "SMS_KEY is not set and no TTY available."
     exit 1
@@ -42,23 +42,23 @@ if [[ ! -f "$ENV_FILE" ]]; then
   JWT_SECRET="$(openssl rand -base64 48)"
   cat > "$ENV_FILE" <<EOF
 JWT_SECRET=${JWT_SECRET}
-TIMEWEB_SMS_API_KEY=${SMS_KEY}
+SMS_API_KEY=${SMS_KEY}
 EOF
   chmod 600 "$ENV_FILE"
 else
   echo "$ENV_FILE exists: keeping existing JWT_SECRET (no silent rotation)."
   # update sms key only if provided (optional)
-  if grep -q '^TIMEWEB_SMS_API_KEY=' "$ENV_FILE"; then
-    sed -i "s|^TIMEWEB_SMS_API_KEY=.*|TIMEWEB_SMS_API_KEY=${SMS_KEY}|" "$ENV_FILE"
+  if grep -q '^SMS_API_KEY=' "$ENV_FILE"; then
+    sed -i "s|^SMS_API_KEY=.*|SMS_API_KEY=${SMS_KEY}|" "$ENV_FILE"
   else
-    echo "TIMEWEB_SMS_API_KEY=${SMS_KEY}" >> "$ENV_FILE"
+    echo "SMS_API_KEY=${SMS_KEY}" >> "$ENV_FILE"
   fi
 fi
 
 # --- App env file (non-secret values) ---
 cat > "${APP_DIR}/.env.local" <<EOF
 DATABASE_URL=postgresql://mansoni_user:${DB_PASS}@postgres.mansoni.ru:5432/mansoni
-SMS_PROVIDER=timeweb
+SMS_PROVIDER=
 CORS_ALLOWED_ORIGINS=["https://mansoni.ru","https://www.mansoni.ru","https://api.mansoni.ru"]
 NODE_ENV=production
 PHONE_AUTH_PORT=${PORT}

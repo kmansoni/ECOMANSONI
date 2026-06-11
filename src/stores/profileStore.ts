@@ -6,6 +6,12 @@ type Profile = Database['public']['Tables']['profiles']['Row'];
 
 interface ExtendedProfile extends Profile {
   age_verified_at?: string | null;
+  age_tier?: 'adult' | 'teen' | 'child_supervised' | null;
+  strict_limited_content?: boolean | null;
+  content_rating_limit?: 'G' | 'PG' | 'PG-13' | 'T' | 'MA' | null;
+  parental_guardian_id?: string | null;
+  teen_mode_enforced_by?: string | null;
+  is_teen_mode_locked?: boolean | null;
 }
 
 interface ProfileState {

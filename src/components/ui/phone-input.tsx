@@ -127,7 +127,6 @@ export function PhoneInput({
     setSearch('');
     setDisplayValue('+' + country.dialCode + ' ');
     onChangeRef.current('+' + country.dialCode);
-    inputRef.current?.focus();
   };
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -145,9 +144,9 @@ export function PhoneInput({
       setSelectedCountry(country);
     }
 
+    const countryToUse = country || selectedCountry;
     const limitedDigits = digits.slice(0, 15);
-    const dialCodeLen = selectedCountry.dialCode.length;
-    const formatted = formatPhone(limitedDigits, selectedCountry.dialCode);
+    const formatted = formatPhone(limitedDigits, countryToUse.dialCode);
 
     setDisplayValue(formatted);
     onChangeRef.current('+' + limitedDigits);
@@ -169,9 +168,11 @@ export function PhoneInput({
     onChangeRef.current('+' + fallback.dialCode);
   }, []);
 
-  // Закрытие дропдауна
+  // Закрытие дропдауна (mousedown, чтобы сработать ДО button.onClick)
   useEffect(() => {
     const handler = (e: MouseEvent) => {
+      const btn = document.querySelector('[aria-label="Выбрать страну"]');
+      if (btn?.contains(e.target as Node)) return;
       if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
         setShowDropdown(false);
         setSearch('');
@@ -192,7 +193,7 @@ export function PhoneInput({
             if (!showDropdown) inputRef.current?.focus();
           }}
           className={cn(
-            "absolute left-1 z-20 flex items-center gap-1.5 h-12 px-2.5 sm:px-3 rounded-2xl backdrop-blur-xl transition-all cursor-pointer",
+            "absolute left-1 z-20 flex items-center h-12 px-2.5 sm:px-3 rounded-2xl backdrop-blur-xl transition-all cursor-pointer",
             "hover:brightness-110 active:scale-95",
             isLight
               ? "bg-white/60 border border-slate-300"
@@ -200,17 +201,11 @@ export function PhoneInput({
           )}
           aria-label="Выбрать страну"
         >
-          <span className="text-xl leading-none flex-shrink-0" aria-hidden="true">
+          <span className="text-xl leading-none flex-shrink-0 emoji-flag" aria-hidden="true">
             {selectedCountry.flag}
           </span>
-          <span className={cn(
-            "text-[13px] sm:text-[15px] font-medium",
-            isLight ? "text-slate-700" : "text-white/90"
-          )}>
-            +{selectedCountry.dialCode}
-          </span>
           <ChevronDown className={cn(
-            "w-3.5 h-3.5 sm:w-4 sm:h-4 transition-transform flex-shrink-0",
+            "w-3.5 h-3.5 sm:w-4 sm:h-4 transition-transform flex-shrink-0 ml-1",
             isLight ? "text-slate-500" : "text-white/60",
             showDropdown && "rotate-180"
           )} />
@@ -231,7 +226,7 @@ export function PhoneInput({
           required={required}
           aria-label="Номер телефона"
           className={cn(
-            "w-full pl-[100px] sm:pl-[138px] pr-4 h-14 rounded-2xl border backdrop-blur-xl transition-all text-[15px] outline-none",
+            "w-full pl-[72px] sm:pl-[80px] pr-4 h-14 rounded-2xl border backdrop-blur-xl transition-all text-[15px] outline-none",
             isLight
               ? "bg-white/85 border-slate-300 placeholder:text-slate-400 hover:border-slate-400 focus:border-teal-500 text-slate-900"
               : "bg-white/[0.05] border-white/[0.08] placeholder:text-white/40 hover:border-white/15 focus:border-white/20 text-white"
@@ -300,7 +295,7 @@ export function PhoneInput({
                     selectedCountry.code === country.code && (isLight ? "bg-teal-50" : "bg-white/10")
                   )}
                 >
-                  <span className="text-xl leading-none flex-shrink-0 w-7 text-center" aria-hidden="true">
+                  <span className="text-xl leading-none flex-shrink-0 w-7 text-center emoji-flag" aria-hidden="true">
                     {country.flag}
                   </span>
                   <span className={cn(

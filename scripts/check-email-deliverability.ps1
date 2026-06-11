@@ -187,7 +187,7 @@ foreach ($port in $smtpPorts) {
 Write-Host ""
 Write-Host "=================================================================" -ForegroundColor Cyan
 Write-Host " Next steps for issues found above:" -ForegroundColor Cyan
-Write-Host "  PTR:   Set in VPS control panel (Selectel/Timeweb -> IP -> PTR)" -ForegroundColor Gray
+Write-Host "  PTR:   Set in VPS control panel (Selectel → IP → PTR)" -ForegroundColor Gray
 Write-Host "  SPF:   Add TXT to DNS: v=spf1 ip4:$SendingIp mx ~all" -ForegroundColor Gray
 Write-Host "  DKIM:  Run: opendkim-genkey -s $DkimSelector -d $Domain -b 2048" -ForegroundColor Gray
 Write-Host "  DMARC: Add TXT: _dmarc.$Domain -> v=DMARC1; p=none; rua=mailto:dmarc@$Domain" -ForegroundColor Gray

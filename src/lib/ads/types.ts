@@ -17,6 +17,43 @@ export type AdCreativeType = 'image' | 'video' | 'carousel' | 'story';
 export type AdAction = 'impression' | 'click' | 'conversion';
 export type CallToAction = 'learn_more' | 'shop_now' | 'sign_up' | 'contact_us' | 'download' | 'get_quote' | 'apply_now';
 export type ChangeType = 'create' | 'update' | 'delete' | 'restore' | 'status_change';
+export type CampaignStatus = 'draft' | 'review' | 'active' | 'paused' | 'completed' | 'rejected';
+export type CampaignObjective = 'awareness' | 'traffic' | 'conversions' | 'engagement';
+
+export interface Targeting {
+  countries?: string[];
+  cities?: string[];
+  minAge?: number;
+  maxAge?: number;
+  interests?: string[];
+  placements?: string[];
+}
+
+export interface AdCampaign {
+  id: string;
+  advertiser_id: string;
+  name: string;
+  objective: CampaignObjective;
+  budget_cents: number;
+  daily_budget_cents: number | null;
+  spent_cents: number;
+  start_date: string;
+  end_date: string | null;
+  targeting: Targeting;
+  status: CampaignStatus;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CreateCampaignInput {
+  name: string;
+  objective: CampaignObjective;
+  budget_cents: number;
+  daily_budget_cents?: number | null;
+  start_date: string;
+  end_date?: string | null;
+  targeting?: Targeting;
+}
 
 // ============================================================================
 // Расширенные интерфейсы (соответствуют расширенной схеме)

@@ -20,6 +20,11 @@
     }
   },
   "agent": {
+    "calls-e2ee-specialist": {
+      "permission": {
+        "bash": "ask"
+      }
+    },
     "code": {
       "permission": {
         "bash": "ask"
