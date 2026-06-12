@@ -569,7 +569,7 @@ export const CameraHost = forwardRef<CameraHostHandle, CameraHostProps>(function
 
   return (
     <div className={className}>
-      <video ref={videoRef} autoPlay playsInline muted className={videoClassName} style={videoStyle} />
+      <video ref={videoRef} playsInline muted className={videoClassName} style={videoStyle} />
       <canvas ref={canvasRef} className="hidden" />
       {children}
     </div>

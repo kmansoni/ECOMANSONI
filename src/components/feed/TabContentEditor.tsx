@@ -213,13 +213,16 @@ export function TabContentEditor({
         )}
 
         {/* Caption */}
-        <Textarea
-          value={caption}
-          onChange={(e) => onCaptionChange(e.target.value)}
-          placeholder="Добавить подпись... (до 2200 символов)"
-          maxLength={2200}
-          className="text-sm"
-        />
+        <div className="space-y-1">
+          <Textarea
+            value={caption}
+            onChange={(e) => onCaptionChange(e.target.value)}
+            placeholder="Добавить подпись... (до 2200 символов)"
+            maxLength={2200}
+            className="text-sm"
+          />
+          <p className="text-right text-xs text-white/50">{caption.length}/2200</p>
+        </div>
 
         {/* Расширенные настройки */}
         <div className="space-y-2">

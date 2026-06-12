@@ -142,6 +142,8 @@ export function CreateContentModal({ isOpen, onClose, onSuccess, initialTab = 'p
   const [isPublishing, setIsPublishing] = useState(false);
   const [reelClientPublishId, setReelClientPublishId] = useState<string | null>(null);
   const [showReelEditor, setShowReelEditor] = useState(false);
+  const [reelRecordingElapsedMs, setReelRecordingElapsedMs] = useState(0);
+  const reelRecordingStartRef = useRef(0);
 
   // CRITICAL FIX #1: EditorState Management (перемещено из TabEditor)
   const [editorState, dispatchEditor] = useReducer(
@@ -209,6 +211,22 @@ export function CreateContentModal({ isOpen, onClose, onSuccess, initialTab = 'p
     }
     return () => { document.body.style.overflow = ''; };
   }, [isOpen]);
+
+  // Reels recording timer
+  useEffect(() => {
+    if (isCameraRecording && activeTab === 'reels') {
+      reelRecordingStartRef.current = Date.now();
+      setReelRecordingElapsedMs(0);
+      const intervalId = window.setInterval(() => {
+        setReelRecordingElapsedMs(Date.now() - reelRecordingStartRef.current);
+      }, 200);
+      return () => {
+        window.clearInterval(intervalId);
+      };
+    } else {
+      setReelRecordingElapsedMs(0);
+    }
+  }, [isCameraRecording, activeTab]);
 
   const getReelsPublishStorageKey = useCallback(() => {
     if (!user?.id) return null;
@@ -762,6 +780,9 @@ export function CreateContentModal({ isOpen, onClose, onSuccess, initialTab = 'p
 
   return (
     <div
+      role="dialog"
+      aria-modal="true"
+      aria-label="Создание контента"
       className={cn(
         'fixed inset-y-0 right-0 z-[999] bg-black flex flex-col',
         isMobile ? 'left-0' : 'left-[84px]',
@@ -769,7 +790,7 @@ export function CreateContentModal({ isOpen, onClose, onSuccess, initialTab = 'p
       onTouchStart={handleTouchStart}
       onTouchEnd={handleTouchEnd}
       onKeyDown={handleKeyDown}
-      tabIndex={0}
+      tabIndex={-1}
     >
       {/* ── Full-screen camera / preview ─────────────────────────── */}
       <div className="relative flex-1 overflow-hidden bg-black">
@@ -1336,7 +1357,7 @@ export function CreateContentModal({ isOpen, onClose, onSuccess, initialTab = 'p
                 <span className="text-xs text-white/80 font-medium">Таймер: {timerCountdown}</span>
               )}
               {isCameraRecording && (
-                <span className="text-xs text-red-400 font-medium animate-pulse">● Запись</span>
+                <span className="text-xs text-red-400 font-medium animate-pulse">● Запись {Math.floor(reelRecordingElapsedMs / 1000)}с/{reelMaxDurationSec}с</span>
               )}
             </div>
 
@@ -1391,12 +1412,15 @@ export function CreateContentModal({ isOpen, onClose, onSuccess, initialTab = 'p
 
       {/* ── BOTTOM TAB BAR (Instagram-style) ─────────────────────── */}
       <div className="flex-shrink-0 bg-black border-t border-white/10 pb-safe">
-        <div className="flex items-stretch">
+        <div role="tablist" className="flex items-stretch">
           {TABS.map((tab) => {
             const isActive = activeTab === tab.id;
             return (
               <button
                 key={tab.id}
+                role="tab"
+                aria-selected={isActive}
+                aria-controls={`create-panel-${tab.id}`}
                 onClick={() => handleTabChange(tab.id)}
                 disabled={isCameraRecording}
                 className={cn(
