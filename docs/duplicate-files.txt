@@ -1,8 +1,0 @@
-﻿=== DUPLICATE GROUP (count=2) ===
-  C:\Users\manso\Desktop\разработка\mansoni\packages\analytics-contracts\src\event.ts
-  C:\Users\manso\Desktop\разработка\mansoni\src\lib\analytics\types.ts
-
-=== DUPLICATE GROUP (count=2) ===
-  C:\Users\manso\Desktop\разработка\mansoni\src\components\feed\PostMapMarker.tsx
-  C:\Users\manso\Desktop\разработка\mansoni\src\components\feed\StreamCard.tsx
-
