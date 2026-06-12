@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "mansoni://contracts/hashtag-request.v1",
+  "title": "Hashtag Request v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["request_id", "requested_at", "auth_scope", "segment_id", "locale", "hashtag", "section"],
+  "properties": {
+    "request_id": { "type": "string", "minLength": 1 },
+    "requested_at": { "type": "string", "format": "date-time" },
+    "auth_scope": { "type": "string", "enum": ["public", "authenticated"] },
+    "viewer_id": { "type": ["string", "null"], "minLength": 1 },
+    "segment_id": { "type": "string", "minLength": 1 },
+    "locale": { "type": "string", "pattern": "^[a-z]{2}(-[A-Z]{2})?$" },
+    "country": { "type": ["string", "null"], "pattern": "^[A-Z]{2}$" },
+    "hashtag": { "type": "string", "minLength": 2, "maxLength": 32 },
+    "section": { "type": "string", "enum": ["top", "recent", "trending", "related_tags"] },
+    "pagination": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "properties": {
+        "limit": { "type": "integer", "minimum": 1, "maximum": 50, "default": 20 },
+        "cursor": { "type": ["string", "null"] }
+      }
+    },
+    "ab_buckets": {
+      "type": ["object", "null"],
+      "additionalProperties": { "type": ["string", "number", "integer", "boolean", "null"] }
+    }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "auth_scope": { "const": "public" } } },
+      "then": { "properties": { "viewer_id": { "const": null } } }
+    },
+    {
+      "if": { "properties": { "auth_scope": { "const": "authenticated" } } },
+      "then": { "required": ["viewer_id"] }
+    }
+  ]
+}

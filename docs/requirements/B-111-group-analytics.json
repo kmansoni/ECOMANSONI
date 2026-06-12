@@ -1,0 +1,364 @@
+{
+  "id": "B-111",
+  "title": "Group Analytics & Engagement Metrics",
+  "description": "Real-time analytics dashboard for group admins: DAU/MAU, message volume trends, member growth, top contributors, engagement heatmaps, retention analysis",
+  "status": "draft",
+  "priority": "P1",
+  "complexity": "M",
+  "domain": "analytics",
+  "technologies": ["Postgres", "Redis", "Elasticsearch", "Grafana", "TimescaleDB"],
+  
+  "overview": {
+    "purpose": "Provide group admins with deep insights into group health, engagement patterns, and member activity",
+    "target_scale": "Groups 1k-100k members, 10M+ messages/month",
+    "key_requirements": [
+      "Real-time metrics (p95 <2s to retrieve)",
+      "Historical trends (30d, 90d, 1y views)",
+      "Exportable reports (CSV, PDF)",
+      "Anomaly detection (unusual spike alerts)",
+      "Per-member analytics (optional premium feature)"
+    ]
+  },
+
+  "database_schema": {
+    "tables": [
+      {
+        "name": "group_analytics_daily",
+        "purpose": "Daily aggregated metrics for groups",
+        "columns": [
+          {"name": "metric_id", "type": "BIGINT PRIMARY KEY"},
+          {"name": "conversation_id", "type": "UUID NOT NULL"},
+          {"name": "date", "type": "DATE NOT NULL"},
+          {"name": "dau", "type": "INT", "description": "Daily active users"},
+          {"name": "message_count", "type": "INT", "description": "Total messages sent"},
+          {"name": "media_count", "type": "INT", "description": "Media messages (images, videos, files)"},
+          {"name": "reaction_count", "type": "INT", "description": "Total reactions"},
+          {"name": "poll_created", "type": "INT"},
+          {"name": "new_members", "type": "INT"},
+          {"name": "left_members", "type": "INT"},
+          {"name": "banned_members", "type": "INT"},
+          {"name": "avg_response_time_minutes", "type": "NUMERIC", "description": "Avg time to first reply"},
+          {"name": "peak_hour", "type": "INT", "description": "Hour of day with most messages (0-23)"},
+          {"name": "sentiment_positive_pct", "type": "NUMERIC", "description": "% of messages with positive sentiment (BERT)"},
+          {"name": "sentiment_negative_pct", "type": "NUMERIC"}
+        ],
+        "indexes": [
+          "UNIQUE(conversation_id, date)",
+          "INDEX(conversation_id, date DESC)"
+        ]
+      },
+      {
+        "name": "group_analytics_hourly",
+        "purpose": "Hourly metrics for real-time dashboard",
+        "columns": [
+          {"name": "metric_id", "type": "BIGINT PRIMARY KEY"},
+          {"name": "conversation_id", "type": "UUID NOT NULL"},
+          {"name": "hour_ts", "type": "TIMESTAMP NOT NULL"},
+          {"name": "dau", "type": "INT"},
+          {"name": "message_count", "type": "INT"},
+          {"name": "unique_senders", "type": "INT"}
+        ],
+        "indexes": ["UNIQUE(conversation_id, hour_ts)"],
+        "retention": "30 days"
+      },
+      {
+        "name": "member_activity_stats",
+        "purpose": "Per-member analytics (premium feature)",
+        "columns": [
+          {"name": "stat_id", "type": "BIGINT PRIMARY KEY"},
+          {"name": "conversation_id", "type": "UUID NOT NULL"},
+          {"name": "user_id", "type": "UUID NOT NULL"},
+          {"name": "date", "type": "DATE NOT NULL"},
+          {"name": "messages_sent", "type": "INT"},
+          {"name": "reactions_given", "type": "INT"},
+          {"name": "replies_received", "type": "INT"},
+          {"name": "mentions_count", "type": "INT"},
+          {"name": "active_hours", "type": "JSONB", "description": "Array of 24 hour buckets [0,0,0,...,3,5,12,...]"},
+          {"name": "last_activity_at", "type": "TIMESTAMP"}
+        ],
+        "indexes": ["UNIQUE(conversation_id, user_id, date)", "INDEX(conversation_id, date)"]
+      },
+      {
+        "name": "group_analytics_alerts",
+        "purpose": "Anomaly detection alerts for group admins",
+        "columns": [
+          {"name": "alert_id", "type": "BIGINT PRIMARY KEY"},
+          {"name": "conversation_id", "type": "UUID NOT NULL"},
+          {"name": "alert_type", "type": "VARCHAR", "enum": ["spike_messages", "member_churn", "negative_sentiment_spike", "moderation_escalation"]},
+          {"name": "severity", "type": "VARCHAR", "enum": ["info", "warning", "critical"]},
+          {"name": "metric_name", "type": "VARCHAR"},
+          {"name": "metric_value", "type": "NUMERIC"},
+          {"name": "expected_value", "type": "NUMERIC"},
+          {"name": "threshold_pct", "type": "NUMERIC", "description": "% above/below expected"},
+          {"name": "triggered_at", "type": "TIMESTAMP NOT NULL"},
+          {"name": "dismissed_by_user_id", "type": "UUID"},
+          {"name": "dismissed_at", "type": "TIMESTAMP"}
+        ],
+        "indexes": ["INDEX(conversation_id, triggered_at DESC)"]
+      },
+      {
+        "name": "group_analytics_export",
+        "purpose": "Track exports for admin reporting",
+        "columns": [
+          {"name": "export_id", "type": "BIGINT PRIMARY KEY"},
+          {"name": "conversation_id", "type": "UUID NOT NULL"},
+          {"name": "requested_by_user_id", "type": "UUID NOT NULL"},
+          {"name": "export_format", "type": "VARCHAR", "enum": ["csv", "pdf", "json"]},
+          {"name": "date_range_start", "type": "DATE"},
+          {"name": "date_range_end", "type": "DATE"},
+          {"name": "status", "type": "VARCHAR", "enum": ["pending", "completed", "failed"]},
+          {"name": "file_url", "type": "VARCHAR", "description": "S3 URL"},
+          {"name": "requested_at", "type": "TIMESTAMP NOT NULL"},
+          {"name": "completed_at", "type": "TIMESTAMP"},
+          {"name": "error_message", "type": "TEXT"}
+        ],
+        "indexes": ["INDEX(conversation_id, requested_at DESC)"]
+      }
+    ]
+  },
+
+  "api_specification": {
+    "endpoints": [
+      {
+        "method": "GET",
+        "path": "/v1/conversations/{conversation_id}/analytics/summary",
+        "description": "Get dashboard summary (DAU, MAU, trends)",
+        "auth": "admin/moderator",
+        "request": {
+          "params": {
+            "period": "enum[today, 7d, 30d, 90d, 1y]"
+          }
+        },
+        "response": {
+          "dau": 245,
+          "mau": 1200,
+          "message_volume": {
+            "today": 450,
+            "avg_daily": 380.5,
+            "trend_pct": 18.4
+          },
+          "member_growth": {
+            "new_7d": 23,
+            "left_7d": 5,
+            "net_growth_pct": 1.5
+          },
+          "top_contributors": [
+            {"user_id": "...", "display_name": "Alice", "message_count": 125, "avg_daily_rank": 1}
+          ],
+          "sentiment": {
+            "positive_pct": 62,
+            "neutral_pct": 32,
+            "negative_pct": 6
+          }
+        }
+      },
+      {
+        "method": "GET",
+        "path": "/v1/conversations/{conversation_id}/analytics/members",
+        "description": "Per-member analytics (premium only)",
+        "auth": "admin",
+        "request": {
+          "query": {"user_id": "uuid (optional)", "sort_by": "enum[messages_sent, activity_score]", "limit": 50}
+        },
+        "response": [
+          {
+            "user_id": "...",
+            "display_name": "Bob",
+            "messages_sent": 42,
+            "reactions_given": 18,
+            "replies_received": 12,
+            "mentions_count": 3,
+            "rank": 2,
+            "activity_level": "high"
+          }
+        ]
+      },
+      {
+        "method": "GET",
+        "path": "/v1/conversations/{conversation_id}/analytics/heatmap",
+        "description": "Activity heatmap (7d by hour)",
+        "response": {
+          "data": [[0,0,1,4,...], [2,5,12,15,...], "...per day"],
+          "peak_hour": 18,
+          "peak_day": "Wednesday"
+        }
+      },
+      {
+        "method": "POST",
+        "path": "/v1/conversations/{conversation_id}/analytics/export",
+        "description": "Request analytics export (CSV/PDF)",
+        "auth": "admin",
+        "request": {
+          "format": "csv",
+          "date_range_start": "2026-01-19",
+          "date_range_end": "2026-02-19",
+          "include_member_data": true
+        },
+        "response": {"export_id": "...", "status": "pending", "estimated_ready_at": "2026-02-19T14:30:00Z"}
+      },
+      {
+        "method": "GET",
+        "path": "/v1/conversations/{conversation_id}/analytics/alerts",
+        "description": "Get active alerts",
+        "response": [
+          {
+            "alert_id": "...",
+            "type": "spike_messages",
+            "severity": "warning",
+            "message": "Message volume 45% above baseline (510 vs avg 350)",
+            "triggered_at": "2026-02-19T12:45:00Z"
+          }
+        ]
+      }
+    ]
+  },
+
+  "implementation_details": {
+    "metric_aggregation": {
+      "strategy": "TimescaleDB for time-series compression + Postgres for daily/hourly rollups",
+      "schedule": "Hourly job aggregates previous hour → group_analytics_hourly, daily 00:30 UTC → group_analytics_daily",
+      "retention": "hourly: 30d, daily: 2y, member_activity_stats: 1y"
+    },
+    "anomaly_detection": {
+      "algorithm": "Z-score (threshold >2.5 std-dev from rolling 30-day mean)",
+      "metrics_monitored": ["daily_message_volume", "dau", "new_member_rate", "churn_rate", "negative_sentiment_pct"],
+      "alert_delivery": "In-app notification + email to group admins if severity=critical"
+    },
+    "sentiment_integration": {
+      "source": "Leverage B-100 sentiment model (BERT)",
+      "storage": "Denormalize sentiment_positive_pct, sentiment_negative_pct in group_analytics_daily",
+      "refresh": "Real-time during aggregation"
+    },
+    "export_generation": {
+      "flow": "Request → Postgres async job → S3 upload → email link (24h TTL)",
+      "formats": {
+        "csv": "Rows: dates, columns: metrics; optionally per-member rows",
+        "pdf": "Formatted report with charts, admin can customize title/footer",
+        "json": "Raw data structure for BI tool integration"
+      },
+      "max_date_range": "2 years"
+    },
+    "caching": {
+      "redis_keys": {
+        "analytics:conversation_id:summary:period": "ttl 5min (dashboard refresh)",
+        "analytics:conversation_id:heatmap": "ttl 1h",
+        "analytics:conversation_id:members": "ttl 15min"
+      }
+    }
+  },
+
+  "monitoring": {
+    "metrics": [
+      "analytics_aggregation_lag_seconds (p95 should be <5s)",
+      "export_generation_time_seconds",
+      "anomaly_detection_false_positive_rate",
+      "dashboard_page_load_time_ms"
+    ],
+    "alerts": {
+      "critical": ["aggregation_lag > 60s", "export_failure_rate > 5%"],
+      "warning": ["anomaly_detection latency > 10s"]
+    }
+  },
+
+  "testing_scenarios": [
+    {
+      "id": "T-111-1",
+      "title": "Real-time DAU metric accuracy",
+      "steps": ["Send messages from 50 unique users in 1h window", "Check group_analytics_hourly.dau = 50", "Verify Redis cache updated"],
+      "expected": "DAU correctly counted, <1s query time from Redis"
+    },
+    {
+      "id": "T-111-2",
+      "title": "Anomaly detection spike alert",
+      "steps": ["Baseline: 50 msg/day for 30d", "Day 31: 200 messages (4x increase)", "Check alerts table"],
+      "expected": "Alert triggered (severity=warning), admin notified"
+    },
+    {
+      "id": "T-111-3",
+      "title": "Member churn detection",
+      "steps": ["Group has 100 members", "10 members leave in 1 day", "Check churn_rate metric"],
+      "expected": "Alert triggered if churn > baseline + 3 std-dev"
+    },
+    {
+      "id": "T-111-4",
+      "title": "Sentiment spike in negative direction",
+      "steps": ["Send 20 messages with negative sentiment (BERT confidence >0.8)", "Check sentiment_negative_pct"],
+      "expected": "Metric reflects >50%, alert triggered if above 20% threshold"
+    },
+    {
+      "id": "T-111-5",
+      "title": "CSV export generation",
+      "steps": ["Request export CSV for Feb 1-19", "Poll export status", "Download file"],
+      "expected": "File generated within 2min, contains all daily rows + columns"
+    },
+    {
+      "id": "T-111-6",
+      "title": "Per-member analytics for premium admin",
+      "steps": ["Admin with premium subscription queries member stats", "Some members not returned (free admin)"],
+      "expected": "Premium admin sees all members, free admin sees only top 10"
+    },
+    {
+      "id": "T-111-7",
+      "title": "Heatmap calculation",
+      "steps": ["Activity: Mon 8am=5, Tue 3pm=20, Wed 8pm=40", "Generate 7d heatmap"],
+      "expected": "Peak hour = 20 (8pm), peak day = Wed"
+    },
+    {
+      "id": "T-111-8",
+      "title": "Large group aggregation (100k members)",
+      "steps": ["Group with 100k members processes 10M messages/month", "Run daily aggregation"],
+      "expected": "Completes in <30s, metrics accurate"
+    },
+    {
+      "id": "T-111-9",
+      "title": "Alert dismissal",
+      "steps": ["Alert triggered", "Admin dismisses alert", "Query alerts again"],
+      "expected": "dismissed_by_user_id and dismissed_at populated, not returned in active list"
+    },
+    {
+      "id": "T-111-10",
+      "title": "Historical trend accuracy",
+      "steps": ["Query 30d message trend", "Verify trend_pct calculation (today vs avg)"],
+      "expected": "Trend matches (today - avg_daily) / avg_daily * 100"
+    },
+    {
+      "id": "T-111-11",
+      "title": "Concurrent export requests",
+      "steps": ["3 admins request exports simultaneously", "All queued and processed"],
+      "expected": "All complete successfully, no data corruption"
+    },
+    {
+      "id": "T-111-12",
+      "title": "Cache invalidation on anomaly alert",
+      "steps": ["Anomaly detected", "Check Redis cache invalidated"],
+      "expected": "Next API call gets fresh data, not stale cached values"
+    },
+    {
+      "id": "T-111-13",
+      "title": "Metric rollup consistency (hourly → daily)",
+      "steps": ["Check 24 hourly entries for a date", "Verify daily row = SUM(hourly)"],
+      "expected": "Rollup mathematically correct"
+    },
+    {
+      "id": "T-111-14",
+      "title": "Export with custom date range edge case",
+      "steps": ["Request export Jan 32 - Feb 30", "System rejects invalid dates"],
+      "expected": "400 Bad Request, clear error message"
+    },
+    {
+      "id": "T-111-15",
+      "title": "Member activity stat with member deletion",
+      "steps": ["Generate stats for member", "Member deleted/banned", "Query historical stats"],
+      "expected": "Stats preserved, soft-deleted member can still be queried for historical analysis"
+    }
+  ],
+
+  "dependencies": ["B-061", "B-100"],
+  "related_features": ["B-092 (channel discovery ranking)", "B-109 (recommendations)"],
+  "future_enhancements": [
+    "ML-based cohort analysis (identify VIP members, at-risk churn)",
+    "A/B testing framework for feature rollouts",
+    "Predictive analytics (forecast DAU/growth)",
+    "Custom metric builder for power users"
+  ]
+}

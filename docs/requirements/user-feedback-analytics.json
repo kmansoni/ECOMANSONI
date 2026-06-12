@@ -1,0 +1,1 @@
+{"req_id":"REQ-0027","title":"User Feedback & Analytics","events":{"send_message":"evt.messaging.send.success","create_group":"evt.groups.create.success","login":"evt.auth.login.success"},"sampling_rates":{"high_volume":0.1,"normal":0.5,"errors":1.0},"retention_days":90,"privacy_rules":["no_content","no_passwords","no_tokens"]}

@@ -1,0 +1,160 @@
+{
+  "req_id": "REQ-0080",
+  "title": "Message Link Previews (Unfurling URLs)",
+  "version": "1.0",
+  "status": "in-design",
+  "domain": "messaging",
+  "depends_on": ["REQ-0064"],
+  "use_cases": [
+    "user sends URL: 'https://github.com/project/spec'",
+    "message auto-fetches metadata (title, description, image)",
+    "recipient sees rich preview card inside message",
+    "tap card → opens URL in browser"
+  ],
+  "url_detection": {
+    "mechanism": "regex pattern detect URLs in message content",
+    "pattern": "https?://[^\\s]+",
+    "limits": "max 3 URLs per message (prevent spam)",
+    "async_processing": "fetch metadata after message stored (async job)"
+  },
+  "metadata_extraction": {
+    "service": "on-prem service (headless Chrome + metadata parser) OR external API",
+    "approach_internal": [
+      "1. receive message with URL",
+      "2. queue URL to link-preview-worker",
+      "3. worker fetches URL, extracts from HTML:",
+      "   - og:title, og:description, og:image (Open Graph)",
+      "   - twitter:title, twitter:description (Twitter Card fallback)",
+      "   - title, meta[description] (HTML fallback)",
+      "4. store in link_previews table",
+      "5. update message with preview data"
+    ],
+    "timeout": "5s fetch (abort if URL takes too long)",
+    "error_handling": "if fetch fails (URL down, timeout), show plain URL (no preview)"
+  },
+  "link_preview_database_schema": {
+    "link_previews_table": {
+      "columns": [
+        "preview_id UUID PK",
+        "message_id UUID FK",
+        "url TEXT",
+        "title TEXT",
+        "description TEXT",
+        "image_url TEXT",
+        "domain TEXT",
+        "created_at TIMESTAMP",
+        "PRIMARY KEY (message_id, url)",
+        "INDEX (url) -- for dedup across messages"
+      ]
+    },
+    "message_additions": {
+      "preview_data": "JSONB array of {url, title, description, image_url}"
+    }
+  },
+  "link_preview_display": {
+    "ui_format": [
+      "```",
+      "https://github.com/project/spec",
+      "",
+      "[GitHub Project Spec]",
+      "This is the main spec document for the project...",
+      "[image thumbnail]",
+      "github.com",
+      "```"
+    ],
+    "on_click": "tap card → open URL in in-app browser (WebView) OR system browser"
+  },
+  "preview_caching": {
+    "strategy": "cache per unique URL (store in link_previews table)",
+    "ttl": "30 days (metadata stable)",
+    "dedup": "if 2 messages share same URL, fetch once, reuse preview"
+  },
+  "privacy_considerations": {
+    "no_third_party_tracking": "strip utm params and referrer headers (optional for v1)",
+    "no_ip_leak": "use proxy for fetch (anonymize requester IP when possible)",
+    "user_choice": "setting to disable link preview: 'Don't load link previews' (privacy-conscious users)"
+  },
+  "preview_security": {
+    "malware_check": "optional: integrate with Google Safe Browsing API (warn user if link malicious)",
+    "phishing_detection": "future: detect phishing URLs, warn user",
+    "ssl_verification": "verify SSL cert (don't fetch from self-signed)",
+    "content_type_check": "only fetch if content-type is text/html (skip binary files)"
+  },
+  "og_image_handling": {
+    "image_download": "download og:image to app's CDN (cache locally, resize for mobile)",
+    "thumbnail_size": "200×150 for preview",
+    "storage": "store in S3 under /link-previews/{domain_hash}/{image_id}.jpg"
+  },
+  "rich_media_links": {
+    "youtube": "detect YouTube URLs, show video thumbnail + play button",
+    "twitter": "fetch tweet content (if URL is tweet link), show embedded tweet",
+    "spotify": "show track name + artist",
+    "implementation": "domain-specific handlers for popular services"
+  },
+  "preview_updates": {
+    "stale_preview": "if URL's metadata changed, don't auto-refresh (prevent confusion)",
+    "user_choice": "tap 'refresh' button to fetch latest metadata (manual)"
+  },
+  "disabling_previews": {
+    "global_toggle": "user settings: 'Load link previews' (default: on)",
+    "conversation_toggle": "disable for this conversation only"
+  },
+  "api_endpoints": {
+    "send_message_with_links": {
+      "endpoint": "POST /v1/conversations/{id}/messages",
+      "payload": {
+        "content": "Check out https://github.com/project/spec",
+        "skip_preview": false
+      },
+      "response": {
+        "message_id": "UUID",
+        "previews": [
+          {
+            "url": "https://...",
+            "title": "GitHub Project Spec",
+            "description": "Main spec for project",
+            "image_url": "https://cdn.app.com/previews/...",
+            "domain": "github.com"
+          }
+        ]
+      }
+    },
+    "fetch_preview_manually": {
+      "endpoint": "POST /v1/previews/fetch",
+      "payload": {
+        "url": "https://example.com"
+      },
+      "response": {
+        "title": "Example",
+        "description": "Example website",
+        "image_url": "https://..."
+      }
+    }
+  },
+  "testing": {
+    "scenarios": [
+      "send message with valid HTTPS URL → preview fetched within 5s",
+      "preview shows title, description, image from og:meta tags",
+      "send URL to unreachable domain → no preview (fallback to plain URL)",
+      "send 3 URLs → all previews fetched",
+      "send 4th URL → max 3 previews, last URL shows plain",
+      "same URL sent twice in conversation → reuse preview (no refetch)",
+      "toggle 'disable previews' → new messages don't show previews",
+      "tap preview card → opens URL in browser"
+    ]
+  },
+  "monitoring": {
+    "metrics": [
+      "link_preview.requests_per_hour",
+      "link_preview.fetch_latency_p95_seconds",
+      "link_preview.success_rate",
+      "link_preview.cache_hit_rate",
+      "link_preview.cdn_bandwidth_gb_per_day"
+    ],
+    "alerts": [
+      "fetch latency > 10s p95 (slow domain?)",
+      "fetch failures > 10%",
+      "error URLs accumulating (stale preview cache?)"
+    ]
+  }
+}

@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mansoni.com/schemas/ws/ROOM_JOIN.schema.json",
+  "title": "ROOM_JOIN",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["roomId", "deviceId"],
+  "properties": {
+    "roomId": { "$ref": "https://mansoni.com/schemas/ws/types.schema.json#/properties/roomId" },
+    "deviceId": { "$ref": "https://mansoni.com/schemas/ws/types.schema.json#/properties/deviceId" },
+    "clientRttProbe": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "ruMs": { "type": "integer", "minimum": 0 },
+        "trMs": { "type": "integer", "minimum": 0 },
+        "aeMs": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "e2eeState": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "lastEpochSeen": { "type": "integer", "minimum": 0 },
+        "ackedSenderKeyIds": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 8, "maxLength": 128 }
+        }
+      }
+    }
+  }
+}

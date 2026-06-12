@@ -1,0 +1,356 @@
+{
+  "id": "B-115",
+  "title": "Content Federation & Interoperability",
+  "description": "Support for ActivityPub protocol, Matrix integration, and cross-platform message federation enabling interop with other messaging networks",
+  "status": "draft",
+  "priority": "P2",
+  "complexity": "M",
+  "domain": "federation",
+  "technologies": ["ActivityPub", "Matrix Client-Server API", "HTTP signatures", "Postgres", "Redis"],
+
+  "overview": {
+    "purpose": "Enable federation with decentralized protocols (ActivityPub, Matrix) for cross-platform messaging",
+    "target_scale": "100k+ federated participants",
+    "key_requirements": [
+      "ActivityPub support for public channels",
+      "Matrix room bridging",
+      "Signature verification for federation",
+      "Message translation layer",
+      "Conflict resolution for duplicates",
+      "Federation policy (allowlist/blocklist)"
+    ]
+  },
+
+  "database_schema": {
+    "tables": [
+      {
+        "name": "federated_identities",
+        "purpose": "Map local users to federated identities",
+        "columns": [
+          {"name": "identity_id", "type": "UUID PRIMARY KEY"},
+          {"name": "user_id", "type": "UUID"},
+          {"name": "local_user_id", "type": "UUID"},
+          {"name": "protocol", "type": "VARCHAR", "enum": ["activitypub", "matrix", "local"]},
+          {"name": "remote_uri", "type": "VARCHAR", "description": "https://mastodon.social/users/alice"},
+          {"name": "remote_id", "type": "VARCHAR UNIQUE"},
+          {"name": "display_name", "type": "VARCHAR"},
+          {"name": "avatar_url", "type": "VARCHAR"},
+          {"name": "public_key", "type": "TEXT", "description": "For HTTP signature verification"},
+          {"name": "created_at", "type": "TIMESTAMP"}
+        ],
+        "indexes": ["INDEX(protocol, remote_id)"]
+      },
+      {
+        "name": "federated_conversations",
+        "purpose": "Track federated channels/rooms",
+        "columns": [
+          {"name": "fed_conversation_id", "type": "UUID PRIMARY KEY"},
+          {"name": "local_conversation_id", "type": "UUID NOT NULL"},
+          {"name": "federation_type", "type": "VARCHAR", "enum": ["activitypub_outbox", "matrix_room"]},
+          {"name": "remote_id", "type": "VARCHAR UNIQUE", "description": "Remote room/collection ID"},
+          {"name": "federation_status", "type": "VARCHAR", "enum": ["active", "blocked", "suspended"]},
+          {"name": "follower_count", "type": "INT"},
+          {"name": "last_activity_at", "type": "TIMESTAMP"},
+          {"name": "created_at", "type": "TIMESTAMP"}
+        ],
+        "indexes": ["INDEX(local_conversation_id)"]
+      },
+      {
+        "name": "federation_followers",
+        "purpose": "Track remote servers/users following local channels",
+        "columns": [
+          {"name": "follower_id", "type": "BIGINT PRIMARY KEY"},
+          {"name": "fed_conversation_id", "type": "UUID NOT NULL"},
+          {"name": "remote_actor_uri", "type": "VARCHAR", "description": "Mastodon user handle or Matrix user"},
+          {"name": "follower_type", "type": "VARCHAR", "enum": ["actor", "server"]},
+          {"name": "inbox_url", "type": "VARCHAR", "description": "For delivery"},
+          {"name": "subscribed_at", "type": "TIMESTAMP"}
+        ],
+        "indexes": ["INDEX(fed_conversation_id)"]
+      },
+      {
+        "name": "federated_messages",
+        "purpose": "Store federated message metadata",
+        "columns": [
+          {"name": "fed_message_id", "type": "BIGINT PRIMARY KEY"},
+          {"name": "message_id", "type": "BIGINT NOT NULL"},
+          {"name": "fed_conversation_id", "type": "UUID NOT NULL"},
+          {"name": "protocol", "type": "VARCHAR", "enum": ["activitypub", "matrix"]},
+          {"name": "remote_message_id", "type": "VARCHAR UNIQUE"},
+          {"name": "origin_server", "type": "VARCHAR", "description": "mastodon.social, matrix.org"},
+          {"name": "federation_status", "type": "VARCHAR", "enum": ["pending_delivery", "delivered", "failed"]},
+          {"name": "created_at", "type": "TIMESTAMP"}
+        ]
+      },
+      {
+        "name": "federation_policy",
+        "purpose": "Allowlist/blocklist for federation",
+        "columns": [
+          {"name": "policy_id", "type": "BIGINT PRIMARY KEY"},
+          {"name": "conversation_id", "type": "UUID NOT NULL"},
+          {"name": "federation_enabled", "type": "BOOLEAN", "default": false},
+          {"name": "federation_type", "type": "VARCHAR", "enum": ["public_activitypub", "matrix_rooms"]},
+          {"name": "server_allowlist", "type": "TEXT[]", "description": "[\"mastodon.social\", \"pixelfed.de\"]"},
+          {"name": "server_blocklist", "type": "TEXT[]"},
+          {"name": "require_approval", "type": "BOOLEAN", "description": "Moderate inbound from federation"},
+          {"name": "updated_at", "type": "TIMESTAMP"}
+        ]
+      }
+    ]
+  },
+
+  "activitypub_implementation": {
+    "outbox": {
+      "endpoint": "GET /ap/v1/conversations/{conversation_id}/outbox",
+      "format": "ActivityPub OrderedCollection",
+      "items": "Create/Update/Delete activities for messages",
+      "pagination": "OrderedCollectionPage (50 items/page)"
+    },
+    "followers": {
+      "endpoint": "GET /ap/v1/conversations/{conversation_id}/followers",
+      "visibility": "Public channels only"
+    },
+    "create_activity": {
+      "structure": {
+        "type": "Create",
+        "actor": "https://our-server.com/ap/v1/users/{user_id}",
+        "object": {
+          "type": "Note",
+          "content": "Message text",
+          "inReplyTo": "optional remote message URI",
+          "attributedTo": "actor URI",
+          "published": "ISO8601 timestamp"
+        },
+        "to": ["https://www.w3.org/ns/activitystreams#Public"],
+        "cc": ["followers collection"]
+      },
+      "delivery": "Deliver to inboxes of all followers + mentioned actors"
+    },
+    "http_signature": {
+      "algorithm": "RSA-SHA256",
+      "headers": ["(request-target)", "host", "date", "digest"],
+      "key_id": "https://our-server.com/ap/v1/users/{user_id}#main-key"
+    }
+  },
+
+  "matrix_integration": {
+    "bridge_mode": "Matrix → Our platform (users can bridge our channels to Matrix)",
+    "matrix_user_format": "@our-bridge:matrix.org (virtual user for our server)",
+    "client_server_api": {
+      "room_id": "Map Matrix room to local conversation",
+      "events": "Inbound m.room.message → create message locally",
+      "state_sync": "Sync room members, typing indicators, read receipts"
+    },
+    "bridge_bots": {
+      "role": "Relay messages between Matrix and our platform",
+      "auth": "Service Token (Matrix application service registration)"
+    }
+  },
+
+  "api_specification": {
+    "endpoints": [
+      {
+        "method": "POST",
+        "path": "/v1/conversations/{conversation_id}/federation/enable",
+        "description": "Enable federation for public channel",
+        "auth": "admin",
+        "request": {
+          "federation_type": "activitypub",
+          "server_allowlist": ["mastodon.social"],
+          "server_blocklist": []
+        }
+      },
+      {
+        "method": "GET",
+        "path": "/ap/v1/conversations/{conversation_id}/outbox",
+        "description": "ActivityPub outbox (public readable)",
+        "response": {
+          "type": "OrderedCollection",
+          "totalItems": 1250,
+          "orderedItems": [
+            {
+              "type": "Create",
+              "actor": "...",
+              "object": {"type": "Note", "content": "..."},
+              "published": "2026-02-19T14:30:00Z"
+            }
+          ]
+        }
+      },
+      {
+        "method": "POST",
+        "path": "/ap/v1/inbox",
+        "description": "Accept inbound federation activities (Create, Update, Delete, Follow)",
+        "request": {
+          "type": "Create",
+          "actor": "https://mastodon.social/users/alice",
+          "object": {"type": "Note", "content": "..."}
+        },
+        "response": 202
+      },
+      {
+        "method": "GET",
+        "path": "/v1/conversations/{conversation_id}/federation/followers",
+        "description": "Get remote followers",
+        "auth": "admin",
+        "response": [
+          {"remote_actor_uri": "...", "subscribed_at": "...", "last_activity_at": "..."}
+        ]
+      },
+      {
+        "method": "POST",
+        "path": "/v1/conversations/{conversation_id}/federation/blocklist",
+        "description": "Block a server from federating",
+        "auth": "admin",
+        "request": {"server": "spam.example.com"}
+      }
+    ]
+  },
+
+  "conflict_resolution": {
+    "duplicate_detection": {
+      "approach": "Hash content + timestamp, deduplicate in federa_messages.remote_message_id lookup",
+      "scenario": "Mastodon user X follows our channel, server A and server B both forward the same inbound message"
+    },
+    "message_ordering": {
+      "approach": "Use timestamp + server domain as tiebreaker for ordering",
+      "strategy": "Accept slight out-of-order for federation resilience"
+    },
+    "user_identity_collision": {
+      "scenario": "Mastodon user alice@server1.com and alice@server2.com both message our channel",
+      "resolution": "Use full actor URI (scheme + domain + handle) as unique identifier"
+    }
+  },
+
+  "implementation_details": {
+    "outbox_generation": {
+      "trigger": "Message created in public channel → if federation_enabled, create Activity",
+      "delivery": "Kafka job processes activities → fetch followers → deliver to inboxes",
+      "retry": "Exponential backoff (1s-1h), max 5 attempts"
+    },
+    "inbound_validation": {
+      "signature_check": "Verify HTTP-Signature with actor's public_key",
+      "authenticity": "Reject unsigned or invalid signatures",
+      "spam_filtering": "Rate-limit per remote actor (10 msg/min)"
+    },
+    "federation_policy_enforcement": {
+      "allowlist": "If set, only accept from servers in list",
+      "blocklist": "Reject all activities from blocked servers",
+      "require_approval": "If true, federated messages need admin approval before appearing"
+    }
+  },
+
+  "monitoring": {
+    "metrics": [
+      "federation_outbox_delivery_latency_p95_ms",
+      "federation_inbound_msg_count_per_day",
+      "federation_signature_validation_failure_rate",
+      "federation_server_blocklist_hits_per_day"
+    ],
+    "alerts": [
+      "signature_validation_failure_rate > 1%",
+      "outbox_delivery_latency > 5s"
+    ]
+  },
+
+  "testing_scenarios": [
+    {
+      "id": "T-115-1",
+      "title": "Enable ActivityPub federation on channel",
+      "steps": ["POST /federation/enable with type=activitypub", "Verify federation_status=active"],
+      "expected": "Channel exposed via ActivityPub outbox"
+    },
+    {
+      "id": "T-115-2",
+      "title": "Remote Mastodon user follows our channel",
+      "steps": ["Mastodon actor sends Follow activity to our inbox", "Verify federation_followers created"],
+      "expected": "Follower recorded, subsequent activities delivered to Mastodon inbox"
+    },
+    {
+      "id": "T-115-3",
+      "title": "Message delivery to remote followers",
+      "steps": ["Our user sends message in federated channel", "Kafka job processes"],
+      "expected": "Create activity sent to all follower inboxes"
+    },
+    {
+      "id": "T-115-4",
+      "title": "HTTP signature verification",
+      "steps": ["Mastodon sends inbound Create with signature", "Verify signature"],
+      "expected": "Valid signature accepted, invalid rejected (400/401)"
+    },
+    {
+      "id": "T-115-5",
+      "title": "Duplicate message handling",
+      "steps": ["Same message from Mastodon arrives twice (network retry)", "Deduplicate via remote_message_id"],
+      "expected": "Only one message created locally"
+    },
+    {
+      "id": "T-115-6",
+      "title": "Server blocklist enforcement",
+      "steps": ["Add spam.example.com to blocklist", "Message from spam.example.com arrives"],
+      "expected": "Message rejected (410 Gone)"
+    },
+    {
+      "id": "T-115-7",
+      "title": "ActivityPub outbox pagination",
+      "steps": ["Query outbox with 1000 messages", "Get page 1 (50 items)"],
+      "expected": "OrderedCollectionPage with next link for pagination"
+    },
+    {
+      "id": "T-115-8",
+      "title": "Inbound message approval workflow",
+      "steps": ["federation_policy.require_approval=true", "Mastodon message arrives", "Admin approves"],
+      "expected": "Message hidden until approval, visible after"
+    },
+    {
+      "id": "T-115-9",
+      "title": "Matrix room bridging",
+      "steps": ["Bridge our channel to Matrix room", "Message sent in Matrix"],
+      "expected": "Matrix event forwarded to our channel, appears to users"
+    },
+    {
+      "id": "T-115-10",
+      "title": "Follower count denormalization update",
+      "steps": ["10 new followers added", "Query /federation/followers"],
+      "expected": "Follower count >= 10"
+    },
+    {
+      "id": "T-115-11",
+      "title": "Update activity (message edit) federation",
+      "steps": ["User edits message in federated channel", "Generate Update activity"],
+      "expected": "Update sent to remote followers"
+    },
+    {
+      "id": "T-115-12",
+      "title": "Delete activity federation",
+      "steps": ["User deletes message", "Generate Delete activity"],
+      "expected": "Delete sent to all followers"
+    },
+    {
+      "id": "T-115-13",
+      "title": "Rate limiting of remote actor",
+      "steps": ["Remote actor sends 20 messages in 1 minute"],
+      "expected": "After 10 msg/min, additional messages rejected (429)"
+    },
+    {
+      "id": "T-115-14",
+      "title": "Inbound signature validation with wrong key",
+      "steps": ["Message signed with key1, we have key2 on file"],
+      "expected": "Signature validation fails, message rejected"
+    },
+    {
+      "id": "T-115-15",
+      "title": "Private/public channel federation scope",
+      "steps": ["Try to federate private channel"],
+      "expected": "API rejects (only public channels federating)"
+    }
+  ],
+
+  "dependencies": ["B-091", "B-092"],
+  "future_enhancements": [
+    "Full Mastodon client compatibility (rich media, polls, polls)",
+    "Matrix end-to-end encryption bridging",
+    "Relay server mode (for capacity)",
+    "Federation analytics (cross-platform engagement)"
+  ]
+}

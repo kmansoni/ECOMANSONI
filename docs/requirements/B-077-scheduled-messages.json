@@ -1,0 +1,189 @@
+{
+  "req_id": "REQ-0077",
+  "title": "Scheduled Messages (Send at Specific Time)",
+  "version": "1.0",
+  "status": "in-design",
+  "domain": "messaging",
+  "depends_on": ["REQ-0064"],
+  "use_cases": [
+    "user composes message, taps 'Schedule send'",
+    "picks date + time: 'Tomorrow at 9am'",
+    "message queued until scheduled time, then auto-sends",
+    "user can edit or cancel scheduled messages before send"
+  ],
+  "scheduled_message_workflow": {
+    "compose": {
+      "ui_element": "dropdown/toggle in composer: 'Schedule send'",
+      "picker": "datetime picker: date + time",
+      "constraints": [
+        "cannot schedule in the past",
+        "min future: 1 minute from now",
+        "max future: 30 days from now"
+      ]
+    },
+    "schedule_storage": {
+      "state": "message created in scheduled_messages table (not in messages table yet)",
+      "schema": {
+        "scheduled_message_id": "UUID PK",
+        "user_id": "UUID",
+        "conversation_id": "UUID",
+        "content": "text",
+        "scheduled_for": "timestamp (when to send)",
+        "created_at": "timestamp",
+        "status": "enum (scheduled, sent, cancelled)",
+        "media": "optional media file references (S3 keys)"
+      }
+    },
+    "preview": "shows in composer: 'Scheduled for 2026-02-20 at 09:00 AM EST'"
+  },
+  "scheduled_message_list": {
+    "ui_location": "dedicated 'Scheduled' tab in conversation",
+    "display": [
+      {
+        "preview": "First 50 chars of message",
+        "scheduled_time": "2026-02-20 at 09:00 AM",
+        "status_icon": "⏱ (scheduled) or ✓ (sent) or ✗ (cancelled)"
+      }
+    ],
+    "actions": [
+      "tap to edit (reschedule or change content)",
+      "tap X to cancel",
+      "tap to view as preview"
+    ]
+  },
+  "scheduled_send_trigger": {
+    "mechanism": "Postgres scheduled task (pg_cron) OR AsyncJob queue",
+    "query": "SELECT id FROM scheduled_messages WHERE scheduled_for <= now() AND status='scheduled'",
+    "batch_processing": [
+      "1. fetch all due scheduled messages",
+      "2. for each: create message in messages table",
+      "3. assign seq number (normal ordering)",
+      "4. publish to Kafka",
+      "5. update scheduled_message.status='sent'"
+    ],
+    "execution_interval": "every 1 minute",
+    "latency_target": "send within 1-5 min of scheduled_for (not exact second)"
+  },
+  "edit_scheduled_message": {
+    "before_send": {
+      "user_action": "tap scheduled message → 'Edit' button",
+      "flow": [
+        "1. load message content in composer",
+        "2. allow editing content + rescheduling time",
+        "3. save changes",
+        "4. update scheduled_messages row"
+      ]
+    },
+    "after_send": "cannot edit (message already in conversation, use normal edit flow)"
+  },
+  "cancel_scheduled_message": {
+    "flow": [
+      "1. user taps X on scheduled message",
+      "2. confirmation: 'Cancel scheduled message?'",
+      "3. UPDATE scheduled_messages SET status='cancelled'",
+      "4. no message appears in conversation"
+    ]
+  },
+  "timezone_handling": {
+    "user_timezone": "stored in user profile (default: device timezone)",
+    "scheduler_logic": [
+      "1. user selects '9:00 AM EST'",
+      "2. convert to UTC internally: '2:00 PM UTC'",
+      "3. store scheduled_for='2026-02-20T14:00:00Z'",
+      "4. display in user's local timezone when shown"
+    ],
+    "dst_consideration": "if timezone observes DST, recalculate scheduled_for if DST changes between now and send time (optional for v1, warn user)"
+  },
+  "batch_operations": {
+    "schedule_multiple": "future v2 - select multiple conversations, schedule same message to all"
+  },
+  "scheduled_with_media": {
+    "flow": "user attaches image/video, then schedules",
+    "storage": "media_s3_key stored in scheduled_messages.media_references",
+    "send_action": "when send time arrives, create message + media_s3_key"
+  },
+  "notifications_for_scheduled": {
+    "feature": "optional: remind user 5 min before send",
+    "setting": "conversation-level or global toggle"
+  },
+  "database_schema": {
+    "scheduled_messages_table": {
+      "columns": [
+        "scheduled_message_id UUID PK",
+        "user_id UUID FK",
+        "conversation_id UUID FK",
+        "content TEXT",
+        "scheduled_for TIMESTAMP",
+        "created_at TIMESTAMP",
+        "status ENUM (scheduled, sent, cancelled)",
+        "sent_at TIMESTAMP (null until sent)",
+        "media_references JSONB (null if no media)",
+        "timezone TEXT (user's tz)",
+        "PRIMARY KEY (scheduled_message_id)",
+        "INDEX (user_id, scheduled_for)",
+        "INDEX (conversation_id, scheduled_for)"
+      ]
+    }
+  },
+  "api_endpoints": {
+    "create_scheduled_message": {
+      "endpoint": "POST /v1/conversations/{id}/scheduled-messages",
+      "payload": {
+        "content": "Hello tomorrow!",
+        "scheduled_for": "2026-02-20T14:00:00Z",
+        "timezone": "America/New_York"
+      },
+      "response": {
+        "scheduled_message_id": "UUID",
+        "status": "scheduled",
+        "scheduled_for": "2026-02-20T14:00:00Z"
+      }
+    },
+    "list_scheduled_messages": {
+      "endpoint": "GET /v1/conversations/{id}/scheduled-messages",
+      "response": [
+        {
+          "scheduled_message_id": "UUID",
+          "content": "First 50 chars",
+          "scheduled_for": "2026-02-20T14:00:00Z",
+          "status": "scheduled"
+        }
+      ]
+    },
+    "edit_scheduled_message": {
+      "endpoint": "PATCH /v1/scheduled-messages/{id}",
+      "payload": {
+        "content": "Updated content",
+        "scheduled_for": "2026-02-21T10:00:00Z"
+      }
+    },
+    "cancel_scheduled_message": {
+      "endpoint": "DELETE /v1/scheduled-messages/{id}",
+      "response": {
+        "success": true
+      }
+    }
+  },
+  "testing": {
+    "scenarios": [
+      "schedule message for 1 minute → wait → message appears in conversation",
+      "edit scheduled message before send → content updated",
+      "cancel scheduled message → message never appears",
+      "schedule with timezone EST → verify time displayed in user's timezone",
+      "schedule in past → API error 400 'cannot schedule in past'",
+      "batch send: 100 scheduled messages due at same time → all sent within 5min"
+    ]
+  },
+  "monitoring": {
+    "metrics": [
+      "scheduled_messages.created_per_day",
+      "scheduled_messages.sent_per_day",
+      "scheduled_send_job.execution_latency_seconds",
+      "scheduled_send_job.failure_rate"
+    ],
+    "alerts": [
+      "scheduled send latency > 5min (job stalled?)",
+      "scheduled send failures > 5%"
+    ]
+  }
+}

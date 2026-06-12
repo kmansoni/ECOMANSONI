@@ -1,0 +1,73 @@
+{
+  "version": 1,
+  "generated_at": "2026-02-19",
+  "testing_strategy": {
+    "unit_tests": {
+      "coverage_target": "80%",
+      "framework": "vitest",
+      "location": "src/**/*.test.ts",
+      "philosophy": "Fast, deterministic, isolated"
+    },
+    "integration_tests": {
+      "coverage_target": "60%",
+      "framework": "playwright",
+      "location": "src/**/*.integration.test.ts",
+      "philosophy": "API + DB together, but no external services"
+    },
+    "e2e_tests": {
+      "coverage_target": "critical paths only (>10)",
+      "framework": "playwright",
+      "location": "src/test/**/*.e2e.test.ts",
+      "philosophy": "Real browser, real backend, real flow"
+    },
+    "critical_paths": [
+      {
+        "path_id": "CP-001",
+        "name": "Send message and confirm delivery",
+        "acceptance": "message appears for both users within 5s"
+      },
+      {
+        "path_id": "CP-002",
+        "name": "Create group and invite members",
+        "acceptance": "all members see group in list, can view history"
+      },
+      {
+        "path_id": "CP-003",
+        "name": "Login, browse chats, send message",
+        "acceptance": "user sees inbox, can send and receive in real-time"
+      },
+      {
+        "path_id": "CP-004",
+        "name": "Offline send, reconnect, sync",
+        "acceptance": "message queued locally, delivered on reconnect"
+      },
+      {
+        "path_id": "CP-005",
+        "name": "Forward message with signature",
+        "acceptance": "forwarded message shows '↪ Переслано от {name}'"
+      }
+    ],
+    "flakiness_tolerance": {
+      "max_flaky_tests_percent": 1.0,
+      "max_flaky_e2e_percent": 5.0,
+      "retry_strategy": "retry 3x before marking flaky"
+    },
+    "performance_benchmarks": {
+      "message_send_latency_p95_ms": 1000,
+      "sync_full_latency_p95_ms": 2000,
+      "search_query_latency_p95_ms": 500,
+      "ui_frame_rate": "60 fps min"
+    },
+    "security_testing": {
+      "penetration_testing": "quarterly by external firm",
+      "dependency_scanning": "continuous via snyk",
+      "secret_scanning": "commits via git-secrets",
+      "owasp_compliance": "every release"
+    },
+    "accessibility_testing": {
+      "wcag_target": "2.1 AA",
+      "screen_reader_test": "every major feature",
+      "keyboard_navigation": "100% coverage"
+    }
+  }
+}

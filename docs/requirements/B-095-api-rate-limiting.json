@@ -1,0 +1,195 @@
+{
+  "req_id": "REQ-0095",
+  "title": "API Rate Limiting (Quotas, Backpressure)",
+  "version": "1.0",
+  "status": "in-design",
+  "domain": "messaging",
+  "depends_on": ["REQ-0061"],
+  "use_cases": [
+    "user sends 100 messages/min (excess) → 11th message returns 429 Too Many Requests",
+    "bot deployed on free tier receives 1000 messages/day quota → on day 1001 gets 403 Quota Exceeded",
+    "client detects 429 → backs off, retries after delay (exponential)",
+    "premium user has 10x rate limit vs free tier"
+  ],
+  "rate_limit_layers": [
+    {
+      "layer": "per-user-per-endpoint",
+      "limits": {
+        "send_message": {
+          "free": "100 messages/hour",
+          "premium": "1000 messages/hour",
+          "burst": "10 messages/sec (local burst)"
+        },
+        "read_messages": {
+          "free": "1000 reads/hour",
+          "premium": "unlimited"
+        },
+        "api.search": {
+          "free": "10 searches/day",
+          "premium": "1000 searches/day"
+        }
+      }
+    },
+    {
+      "layer": "per-ip-address",
+      "limits": {
+        "login_attempts": "5 per 15min",
+        "password_reset": "3 per 1h"
+      }
+    },
+    {
+      "layer": "per-conversation",
+      "limits": {
+        "webhook_events": "100 events per second (burst 200)"
+      }
+    }
+  ],
+  "rate_limit_implementation": {
+    "algorithm": "token bucket (sliding window with Redis)",
+    "storage": "Redis key: rate_limit:{user_id}:{endpoint}",
+    "check_on_endpoint_call": [
+      "1. read token count from Redis",
+      "2. if count > 0, decrement and allow request",
+      "3. if count == 0, return 429 (Too Many Requests)",
+      "4. bucket refills at regulated_rate (e.g., 10/sec)"
+    ]
+  },
+  "response_headers": {
+    "on_success": {
+      "X-RateLimit-Limit": "100",
+      "X-RateLimit-Remaining": "87",
+      "X-RateLimit-Reset": "1613406900"
+    },
+    "on_failure": {
+      "HTTP_429": "Too Many Requests",
+      "Retry-After": "5",
+      "X-RateLimit-Limit": "100",
+      "X-RateLimit-Remaining": "0",
+      "X-RateLimit-Reset": "1613406905"
+    }
+  },
+  "quota_vs_rate_limit": {
+    "rate_limit": "rolling window, resets frequently (hour, second)",
+    "quota": "daily or monthly ceiling, hard stop",
+    "example": {
+      "rate_limit": "100 messages/hour",
+      "quota": "10,000 messages/month (premium tier)"
+    }
+  },
+  "tier_based_limits": {
+    "free": {
+      "messages_per_hour": 100,
+      "messages_per_day": 500,
+      "messages_per_month": 5000,
+      "api_calls_per_day": 100,
+      "search_per_day": 10,
+      "bot_rate_limit": "100 messages/day"
+    },
+    "premium": {
+      "messages_per_hour": 1000,
+      "messages_per_day": 10000,
+      "messages_per_month": "unlimited",
+      "api_calls_per_day": "unlimited",
+      "search_per_day": "unlimited",
+      "bot_rate_limit": "10,000 messages/day"
+    }
+  },
+  "backoff_strategy_for_clients": {
+    "on_429": [
+      "1. read Retry-After header (seconds)",
+      "2. wait that long (exponential backoff: 1s, 2s, 4s, 8s, 16s max 60s)",
+      "3. retry request",
+      "4. if still failing after 5 attempts, give up and show error to user"
+    ]
+  },
+  "quota_enforcement": {
+    "monthly_reset": "every month on 1st at 00:00 UTC",
+    "storage": "quota_usage table with user_id, metric, value, period",
+    "check_on_api_call": [
+      "1. look up quota_usage for user & metric & current month",
+      "2. if usage >= limit, return 403 Quota Exceeded",
+      "3. if usage < limit, increment usage and proceed"
+    ]
+  },
+  "database_schema": {
+    "quota_usage_table": {
+      "columns": [
+        "quota_id UUID PK",
+        "user_id UUID FK",
+        "metric VARCHAR(50) (messages_sent, api_calls, searches)",
+        "period VARCHAR(20) (daily, monthly)",
+        "usage INTEGER",
+        "limit_value INTEGER",
+        "reset_at TIMESTAMP",
+        "updated_at TIMESTAMP"
+      ]
+    }
+  },
+  "api_endpoints": {
+    "get_rate_limit_status": {
+      "endpoint": "GET /v1/rate-limits",
+      "response": {
+        "limits": {
+          "messages_per_hour": {
+            "limit": 100,
+            "remaining": 87,
+            "reset_at": "2026-02-15T16:35:00Z"
+          },
+          "api_calls_per_day": {
+            "limit": 100,
+            "remaining": 75,
+            "reset_at": "2026-02-16T00:00:00Z"
+          }
+        },
+        "quota": {
+          "messages_per_month": {
+            "limit": 5000,
+            "usage": 1234,
+            "reset_at": "2026-03-01T00:00:00Z"
+          }
+        }
+      }
+    }
+  },
+  "special_cases": {
+    "admin_override": "admins/bots can request higher limits (manual approval)",
+    "burst_capacity": "short spikes allowed (e.g., 10 msgs/sec for 1 sec only)",
+    "distributed_clients": "limit is PER user, not per device (each phone/web app shares quota)"
+  },
+  "premium_upgrade_path": {
+    "detection": "if user hits rate limit 3x in a day, show upgrade banner",
+    "messaging": "'You've exceeded your message limit. Upgrade to Premium for unlimited messaging.'"
+  },
+  "monitoring": {
+    "metrics": [
+      "rate_limit.hits_per_endpoint_per_hour (how often 429 returned?)",
+      "quota.usage_percentage_by_tier",
+      "quota.reset_distribution (spike at month boundary?)"
+    ],
+    "alerts": [
+      "rate_limit hit rate >10% on send_message endpoint (users frustrated?)",
+      "quota reset causing >1000 quota exceeded errors (system overload?)"
+    ]
+  },
+  "compliance": {
+    "gdpr": "quota usage exposed to user (GET /v1/rate-limits)",
+    "transparency": "user can see their limits at all times"
+  },
+  "testing": {
+    "scenarios": [
+      "free user sends 101 messages in 1 minute → 101st returns 429",
+      "receive 429 response → check X-RateLimit-Reset, wait, retry",
+      "free user sends 5000 messages in a month → all pass",
+      "user sends 5001st message → receives 403 Quota Exceeded",
+      "month boundary (28th to 1st) → usage resets at 00:00 UTC on 1st",
+      "premium user → same load does not trigger limits",
+      "client backoff: receive 429 → wait 1s, retry → wait 2s, retry → succeed",
+      "admin can check rate_limit_status endpoint"
+    ]
+  },
+  "edge_cases": {
+    "timezone_mismatch": "daily quota resets at UTC, user in different TZ (may see 'split day')",
+    "burst_vs_limit": "allow 10/sec for max 10 sec (100 total), then reset",
+    "concurrent_requests": "client makes 5 parallel requests → each counts against limit"
+  }
+}

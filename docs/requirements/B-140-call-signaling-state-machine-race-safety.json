@@ -1,0 +1,19 @@
+{
+  "file": "B-140-call-signaling-state-machine-race-safety.json",
+  "id": "B-140",
+  "title": "Call Signaling State Machine and Race Safety",
+  "description": "Defines call lifecycle transitions, idempotent actions and race conflict rules (accept/cancel/timeout).",
+  "priority": "P0",
+  "complexity": "M",
+  "must_have": [
+    "call_create/accept/decline/cancel/end idempotency",
+    "state transition guards",
+    "expires_at timeout->missed",
+    "busy detection"
+  ],
+  "acceptance": [
+    "accept vs cancel race resolves atomically",
+    "expired call cannot become active",
+    "all transitions produce outbox events"
+  ]
+}

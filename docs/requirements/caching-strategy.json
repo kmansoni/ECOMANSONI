@@ -1,0 +1,1 @@
+{"req_id":"REQ-0039","title":"Caching Strategy","layers":["browser","cdn","server"],"ttl_seconds":{"static":86400,"api":300,"user_data":60}}

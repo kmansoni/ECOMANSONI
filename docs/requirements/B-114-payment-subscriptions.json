@@ -1,0 +1,423 @@
+{
+  "id": "B-114",
+  "title": "Payment Integration & Subscriptions",
+  "description": "In-app purchases, recurring subscriptions, premium features, billing management, invoice generation, and payment provider integration (Stripe, Apple Pay, Google Pay)",
+  "status": "draft",
+  "priority": "P1",
+  "complexity": "M",
+  "domain": "monetization",
+  "technologies": ["Stripe", "Postgres", "Redis", "Webhook handlers"],
+
+  "overview": {
+    "purpose": "Enable monetization through premium features and subscriptions",
+    "target_scale": "1M+ active users, $M+ monthly revenue",
+    "key_requirements": [
+      "Multiple payment methods (Stripe, Apple Pay, Google Pay)",
+      "Recurring subscriptions with auto-renewal",
+      "Premium feature gating",
+      "Flexible pricing tiers",
+      "Invoice & receipt generation",
+      "Tax handling (VAT/GST/Sales tax)",
+      "Refund & cancellation workflows",
+      "Fraud detection"
+    ]
+  },
+
+  "database_schema": {
+    "tables": [
+      {
+        "name": "user_subscriptions",
+        "purpose": "User subscription records",
+        "columns": [
+          {"name": "subscription_id", "type": "UUID PRIMARY KEY"},
+          {"name": "user_id", "type": "UUID NOT NULL"},
+          {"name": "tier_id", "type": "VARCHAR NOT NULL", "description": "premium_monthly, premium_annual, etc"},
+          {"name": "provider", "type": "VARCHAR", "enum": ["stripe", "apple_pay", "google_pay"]},
+          {"name": "provider_subscription_id", "type": "VARCHAR UNIQUE", "description": "Stripe subscription ID, etc"},
+          {"name": "status", "type": "VARCHAR", "enum": ["active", "past_due", "cancelled", "suspended"]},
+          {"name": "current_period_start", "type": "TIMESTAMP"},
+          {"name": "current_period_end", "type": "TIMESTAMP"},
+          {"name": "auto_renew_enabled", "type": "BOOLEAN", "default": true},
+          {"name": "created_at", "type": "TIMESTAMP NOT NULL"},
+          {"name": "updated_at", "type": "TIMESTAMP NOT NULL"},
+          {"name": "cancelled_at", "type": "TIMESTAMP"},
+          {"name": "cancellation_reason", "type": "VARCHAR", "description": "user_requested, payment_failed, etc"}
+        ],
+        "indexes": ["UNIQUE(user_id, tier_id)", "INDEX(status)"]
+      },
+      {
+        "name": "subscription_tiers",
+        "purpose": "Available subscription tiers",
+        "columns": [
+          {"name": "tier_id", "type": "VARCHAR PRIMARY KEY"},
+          {"name": "tier_name", "type": "VARCHAR NOT NULL"},
+          {"name": "description", "type": "TEXT"},
+          {"name": "monthly_price_cents", "type": "INT"},
+          {"name": "annual_price_cents", "type": "INT"},
+          {"name": "trial_days", "type": "INT", "default": 7},
+          {"name": "features", "type": "JSONB", "description": "[\"analytics\", \"advanced_search\", \"custom_emoji\"]"},
+          {"name": "is_active", "type": "BOOLEAN", "default": true},
+          {"name": "display_order", "type": "INT"}
+        ]
+      },
+      {
+        "name": "invoices",
+        "purpose": "Invoice records for billing",
+        "columns": [
+          {"name": "invoice_id", "type": "BIGINT PRIMARY KEY"},
+          {"name": "user_id", "type": "UUID NOT NULL"},
+          {"name": "subscription_id", "type": "UUID"},
+          {"name": "invoice_number", "type": "VARCHAR UNIQUE", "description": "INV-2026-00123"},
+          {"name": "amount_cents", "type": "INT"},
+          {"name": "currency", "type": "VARCHAR", "default": "USD"},
+          {"name": "tax_cents", "type": "INT"},
+          {"name": "status", "type": "VARCHAR", "enum": ["draft", "issued", "paid", "overdue", "refunded"]},
+          {"name": "issued_at", "type": "TIMESTAMP"},
+          {"name": "due_at", "type": "TIMESTAMP"},
+          {"name": "paid_at", "type": "TIMESTAMP"},
+          {"name": "pdf_url", "type": "VARCHAR", "description": "Stored in S3"}
+        ],
+        "indexes": ["INDEX(user_id, issued_at DESC)"]
+      },
+      {
+        "name": "payments",
+        "purpose": "Individual payment transactions",
+        "columns": [
+          {"name": "payment_id", "type": "BIGINT PRIMARY KEY"},
+          {"name": "user_id", "type": "UUID NOT NULL"},
+          {"name": "invoice_id", "type": "BIGINT"},
+          {"name": "provider", "type": "VARCHAR", "enum": ["stripe", "apple_pay", "google_pay"]},
+          {"name": "provider_payment_id", "type": "VARCHAR UNIQUE"},
+          {"name": "amount_cents", "type": "INT"},
+          {"name": "currency", "type": "VARCHAR", "default": "USD"},
+          {"name": "status", "type": "VARCHAR", "enum": ["pending", "succeeded", "failed", "refunded"]},
+          {"name": "payment_method", "type": "VARCHAR", "description": "card_visa, paypal, etc"},
+          {"name": "created_at", "type": "TIMESTAMP NOT NULL"},
+          {"name": "succeeded_at", "type": "TIMESTAMP"},
+          {"name": "error_message", "type": "TEXT", "description": "If failed"}
+        ],
+        "indexes": ["INDEX(user_id, created_at DESC)"]
+      },
+      {
+        "name": "billing_addresses",
+        "purpose": "Customer billing information for tax calculation",
+        "columns": [
+          {"name": "billing_id", "type": "UUID PRIMARY KEY"},
+          {"name": "user_id", "type": "UUID NOT NULL UNIQUE"},
+          {"name": "country", "type": "VARCHAR(2)"},
+          {"name": "state_province", "type": "VARCHAR"},
+          {"name": "postal_code", "type": "VARCHAR"},
+          {"name": "is_business", "type": "BOOLEAN", "default": false},
+          {"name": "tax_id", "type": "VARCHAR", "description": "VAT/GST ID"},
+          {"name": "updated_at", "type": "TIMESTAMP"}
+        ]
+      },
+      {
+        "name": "refund_requests",
+        "purpose": "Refund request tracking",
+        "columns": [
+          {"name": "refund_id", "type": "BIGINT PRIMARY KEY"},
+          {"name": "payment_id", "type": "BIGINT NOT NULL"},
+          {"name": "user_id", "type": "UUID NOT NULL"},
+          {"name": "reason", "type": "VARCHAR", "description": "cancellation, duplicate, other"},
+          {"name": "reason_detail", "type": "TEXT"},
+          {"name": "status", "type": "VARCHAR", "enum": ["pending_approval", "approved", "rejected", "completed"]},
+          {"name": "refund_amount_cents", "type": "INT"},
+          {"name": "requested_at", "type": "TIMESTAMP NOT NULL"},
+          {"name": "reviewed_by_user_id", "type": "UUID"},
+          {"name": "reviewed_at", "type": "TIMESTAMP"},
+          {"name": "completed_at", "type": "TIMESTAMP"}
+        ],
+        "indexes": ["INDEX(user_id, requested_at DESC)"]
+      }
+    ]
+  },
+
+  "subscription_tiers": [
+    {
+      "tier_id": "free",
+      "tier_name": "Free",
+      "monthly_price_cents": 0,
+      "trial_days": 0,
+      "features": ["basic_messaging", "1k_friends_limit", "7d_message_history"]
+    },
+    {
+      "tier_id": "premium_monthly",
+      "tier_name": "Premium Monthly",
+      "monthly_price_cents": 499,
+      "annual_price_cents": null,
+      "trial_days": 7,
+      "features": ["unlimited_messaging", "100k_friends", "unlimited_history", "analytics", "custom_emoji", "auto_translate", "advanced_search", "1gb_storage"]
+    },
+    {
+      "tier_id": "premium_annual",
+      "tier_name": "Premium Annual",
+      "monthly_price_cents": null,
+      "annual_price_cents": 4990,
+      "trial_days": 14,
+      "features": ["same_as_monthly"]
+    },
+    {
+      "tier_id": "business",
+      "tier_name": "Business",
+      "monthly_price_cents": 1999,
+      "trial_days": 30,
+      "features": ["all_premium_features", "team_analytics", "sso_integration", "priority_support", "10gb_storage", "api_access"]
+    }
+  ],
+
+  "api_specification": {
+    "endpoints": [
+      {
+        "method": "GET",
+        "path": "/v1/subscriptions/tiers",
+        "description": "List available subscription tiers",
+        "response": [
+          {
+            "tier_id": "premium_monthly",
+            "tier_name": "Premium",
+            "monthly_price": 4.99,
+            "features": ["..."],
+            "trial_days": 7
+          }
+        ]
+      },
+      {
+        "method": "POST",
+        "path": "/v1/subscriptions/purchase",
+        "description": "Initiate subscription purchase",
+        "auth": "user",
+        "request": {
+          "tier_id": "premium_monthly",
+          "payment_method": "card",
+          "billing_period": "monthly"
+        },
+        "response": {
+          "session_id": "...",
+          "checkout_url": "https://checkout.stripe.com/..."
+        }
+      },
+      {
+        "method": "GET",
+        "path": "/v1/user/subscription",
+        "description": "Get user's current subscription",
+        "response": {
+          "subscription_id": "...",
+          "tier_id": "premium_monthly",
+          "status": "active",
+          "current_period_end": "2026-03-19T14:30:00Z",
+          "auto_renew_enabled": true
+        }
+      },
+      {
+        "method": "POST",
+        "path": "/v1/user/subscription/cancel",
+        "description": "Cancel subscription at period end",
+        "request": {
+          "reason": "too_expensive",
+          "feedback": "optional message"
+        },
+        "response": {"status": "cancelled", "current_period_end": "2026-03-19T14:30:00Z"}
+      },
+      {
+        "method": "PUT",
+        "path": "/v1/user/billing-address",
+        "description": "Update billing address (for tax calculation)",
+        "request": {
+          "country": "US",
+          "state": "CA",
+          "postal_code": "90210",
+          "is_business": false
+        }
+      },
+      {
+        "method": "GET",
+        "path": "/v1/user/invoices",
+        "description": "Get user's payment history",
+        "response": [
+          {
+            "invoice_id": "...",
+            "invoice_number": "INV-2026-00123",
+            "amount": 4.99,
+            "issued_at": "2026-02-19T14:30:00Z",
+            "status": "paid",
+            "pdf_url": "..."
+          }
+        ]
+      },
+      {
+        "method": "POST",
+        "path": "/v1/invoices/{invoice_id}/refund",
+        "description": "Request refund for invoice",
+        "request": {
+          "reason": "duplicate",
+          "detail": "Was charged twice"
+        },
+        "response": {"refund_id": "...", "status": "pending_approval"}
+      }
+    ]
+  },
+
+  "implementation_details": {
+    "payment_flow": {
+      "checkout": "Redirect to Stripe Checkout → payment provider → webhook confirmation",
+      "subscription_creation": "On successful payment, create user_subscriptions record + enable premium features via Redis flag",
+      "receipt": "Generate PDF invoice, store S3, send via email"
+    },
+    "tax_handling": {
+      "approach": "Stripe Tax API (or Avalara for advanced)",
+      "calculation": "Query billing_address → call tax API → apply rate at checkout",
+      "vat_reversal": "For EU B2B (with valid tax_id), apply 0% tax"
+    },
+    "webhook_handlers": {
+      "events": [
+        "charge.succeeded → mark payment succeeded, enable features",
+        "charge.failed → mark payment failed, schedule retry",
+        "customer.subscription.renewed → auto-renewal payment",
+        "customer.subscription.deleted → disable premium features, mark cancelled"
+      ]
+    },
+    "feature_gating": {
+      "approach": "Redis cache user_subscriptions, feature_flag checks against tier.features",
+      "cache_key": "user:user_id:subscription_tier → \"premium_monthly\"",
+      "ttl": "1h (refresh on subscription change)"
+    },
+    "fraud_detection": {
+      "signals": [
+        "Same card used for multiple users in <10min",
+        "User in country A, payment from country B",
+        "Refund requested within 24h of purchase (high-risk)",
+        "Multiple failed payment attempts in <1h"
+      ],
+      "action": "Flag for manual review, send verification email"
+    },
+    "cancellation_flow": {
+      "user_initiated": "Set auto_renew_enabled=false, retain access until current_period_end",
+      "payment_failed": "Retry 3x over 7 days, then suspend access and notify",
+      "dunning_email": "Send email with retry link after 2nd failure"
+    }
+  },
+
+  "monitoring": {
+    "metrics": [
+      "monthly_recurring_revenue (MRR)",
+      "monthly_new_subscriptions",
+      "churn_rate (% cancellations)",
+      "payment_success_rate",
+      "checkout_conversion_rate (purchases / views)",
+      "refund_request_rate"
+    ],
+    "alerts": [
+      "payment_success_rate < 95% (payment provider issue?)",
+      "churn_rate > expected baseline + 2x",
+      "fraud_detection_flag_rate spike"
+    ]
+  },
+
+  "testing_scenarios": [
+    {
+      "id": "T-114-1",
+      "title": "Successful subscription purchase",
+      "steps": ["User clicks 'Upgrade to Premium'", "Redirect to Stripe Checkout", "Complete payment", "Webhook received"],
+      "expected": "Subscription created, user_subscriptions.status=active, premium features enabled"
+    },
+    {
+      "id": "T-114-2",
+      "title": "Free trial activation",
+      "steps": ["User starts 7-day trial", "Check subscription.current_period_end"],
+      "expected": "current_period_end = now + 7 days, status=active (no payment required)"
+    },
+    {
+      "id": "T-114-3",
+      "title": "Tax calculation for different countries",
+      "steps": ["US customer (CA state): 8.6% + 7% VAT", "EU customer (France): 20% VAT", "UK customer: 20% VAT"],
+      "expected": "Correct tax amounts shown at checkout"
+    },
+    {
+      "id": "T-114-4",
+      "title": "Subscription cancellation at period end",
+      "steps": ["User cancels subscription", "Auto_renew disabled", "current_period_end passes"],
+      "expected": "Subscription.status=cancelled, premium features disabled, user downgraded"
+    },
+    {
+      "id": "T-114-5",
+      "title": "Payment retry on failure",
+      "steps": ["First payment attempt fails", "Retry job runs after 3 days"],
+      "expected": "Up to 3 retry attempts, success = subscription active, all 3 fail = send dunning email"
+    },
+    {
+      "id": "T-114-6",
+      "title": "Invoice PDF generation and download",
+      "steps": ["Query /v1/user/invoices", "Download PDF", "Verify content"],
+      "expected": "PDF generated, stored S3, contains invoice number, amount, date, tax breakdown"
+    },
+    {
+      "id": "T-114-7",
+      "title": "Refund request workflow",
+      "steps": ["User requests refund within 30 days", "Admin reviews", "Approves"],
+      "expected": "Refund marked approved, Stripe refund initiated, user credited"
+    },
+    {
+      "id": "T-114-8",
+      "title": "Feature gating for premium-only feature",
+      "steps": ["Non-premium user queries analytics endpoint", "Premium user same query"],
+      "expected": "Non-premium: 403 Forbidden, premium: data returned"
+    },
+    {
+      "id": "T-114-9",
+      "title": "Fraud detection: duplicate card across users",
+      "steps": ["Card X used for user A, user B within 5min", "Fraud detection runs"],
+      "expected": "Both flagged for manual review, email sent to users"
+    },
+    {
+      "id": "T-114-10",
+      "title": "Annual subscription pricing discount",
+      "steps": ["Compare monthly * 12 vs annual price", "Annual should save ~15%"],
+      "expected": "Premium annual ($49.90/yr) < premium monthly ($4.99 * 12 = $59.88/yr)"
+    },
+    {
+      "id": "T-114-11",
+      "title": "Subscription downgrade (premium → free)",
+      "steps": ["Premium user cancels", "Check features disabled after period end"],
+      "expected": "All premium features removed, access to free-only features retained"
+    },
+    {
+      "id": "T-114-12",
+      "title": "Invoice history export",
+      "steps": ["User requests invoice export for tax purposes", "Format: CSV"],
+      "expected": "All invoices exported with invoice number, date, amount, tax, status"
+    },
+    {
+      "id": "T-114-13",
+      "title": "Company VAT ID exemption",
+      "steps": ["Business user with valid EU VAT ID", "Purchase premium"],
+      "expected": "0% tax applied, invoiced with reverse charge notation"
+    },
+    {
+      "id": "T-114-14",
+      "title": "Concurrent purchase prevention",
+      "steps": ["Same user submits 2 purchase requests simultaneously"],
+      "expected": "First succeeds, second rejected (already has active subscription)"
+    },
+    {
+      "id": "T-114-15",
+      "title": "Subscription webhook idempotency",
+      "steps": ["Stripe resends same webhook twice (network issue)"],
+      "expected": "Idempotent handler (subscription created only once, not duplicated)"
+    }
+  ],
+
+  "compliance": {
+    "pci_dss": "Do not store card data, use Stripe tokenization",
+    "gdpr": "Invoice retention: 6 years (tax requirement), user can request deletion after",
+    "tax": "Calculate + collect sales tax/VAT, file monthly/quarterly per jurisdiction"
+  },
+
+  "dependencies": ["B-061"],
+  "future_enhancements": [
+    "Family/team billing (shared subscriptions)",
+    "Promo codes & discounts",
+    "Usage-based billing (pay-per-message tier)",
+    "Marketplace (user-created premium features)"
+  ]
+}

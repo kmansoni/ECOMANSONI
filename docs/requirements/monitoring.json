@@ -1,0 +1,77 @@
+{
+  "version": 1,
+  "generated_at": "2026-02-19",
+  "monitoring_setup": {
+    "metrics_backend": "prometheus",
+    "aggregation": "thanos (optional)",
+    "retention": "15 days local, 1 year in long-term storage",
+    "core_metrics": [
+      {
+        "name": "messages_sent_total",
+        "type": "counter",
+        "labels": ["domain", "service", "status"],
+        "slo_link": "SLO-001"
+      },
+      {
+        "name": "message_delivery_latency_seconds",
+        "type": "histogram",
+        "buckets": [0.1, 0.5, 1.0, 2.0, 5.0, 10.0],
+        "labels": ["domain", "service"],
+        "slo_link": "SLO-002"
+      },
+      {
+        "name": "sync_delta_latency_seconds",
+        "type": "histogram",
+        "buckets": [0.1, 0.5, 1.0, 2.0],
+        "labels": ["platform"],
+        "slo_link": "SLO-005"
+      },
+      {
+        "name": "login_attempts_total",
+        "type": "counter",
+        "labels": ["method", "result"],
+        "slo_link": "SLO-004"
+      }
+    ],
+    "logging_backend": "datadog OR elk",
+    "log_retention": "30 days",
+    "log_sampling": {
+      "level": "info+ all, debug 10%",
+      "high_volume_services": "message_send (1%), sync (0.1%)"
+    },
+    "tracing_backend": "jaeger",
+    "trace_sampling": "10% (adaptive)",
+    "trace_retention": "7 days",
+    "dashboards": [
+      {
+        "name": "System Health",
+        "metrics": [
+          "message_delivery_latency p95/p99",
+          "api_error_rate",
+          "database_connection_usage"
+        ]
+      },
+      {
+        "name": "Business Metrics",
+        "metrics": [
+          "messages_sent_per_minute",
+          "active_conversations",
+          "group_creation_rate"
+        ]
+      }
+    ],
+    "alerting_rules": [
+      {
+        "alert": "HighErrorRate",
+        "condition": "rate(api_errors[5m]) > 0.05",
+        "severity": "warning",
+        "action": "page on-call"
+      },
+      {
+        "alert": "HighLatency",
+        "condition": "histogram_quantile(0.95, message_delivery_latency) > 5",
+        "severity": "warning"
+      }
+    ]
+  }
+}

@@ -1,0 +1,102 @@
+{
+  "req_id": "REQ-0122",
+  "title": "Bot Payments (In-Chat Payment Processing via Payment Provider Abstraction)",
+  "version": "1.0",
+  "status": "in-design",
+  "domain": "payments",
+  "priority": "P2",
+  "depends_on": ["REQ-0094"],
+  "description": "Bots can initiate payment requests in-chat. Users pay via the platform's native payment UI, which delegates to external PSPs (Stripe, YooKassa, etc.) via a provider abstraction layer. The platform never handles raw card data — PCI scope is minimized to the PSP redirect flow. Funds flow: User → PSP → Merchant (bot operator).",
+  "pci_scope_minimization": {
+    "strategy": "SAQ-A level: platform renders an iframe/webview pointing to PSP-hosted payment page. Card data never touches platform servers.",
+    "card_data_flow": "User browser/app → PSP iframe → PSP backend. Platform receives only payment token (opaque reference).",
+    "tokenization": "PSP returns charge_id + payment_token. Platform stores payment_token for refund operations — never raw PAN/CVV."
+  },
+  "participants": {
+    "bot_operator": "Business registering a bot with payment capability. Must complete KYC with chosen PSP.",
+    "payment_provider": "Configured per bot: Stripe / YooKassa / Razorpay (extensible). Registered in payment_providers table.",
+    "platform": "Orchestration layer: routes payment requests, receives callbacks, notifies bots."
+  },
+  "data_model": {
+    "payment_invoices": {
+      "table": "payment_invoices",
+      "schema": {
+        "id": "UUID PK",
+        "bot_id": "UUID FK → bots.id",
+        "message_id": "UUID FK → messages.id",
+        "conversation_id": "UUID FK → conversations.id",
+        "user_id": "UUID FK → users.id (payer)",
+        "title": "VARCHAR(255)",
+        "description": "TEXT(1024)",
+        "payload": "TEXT(128) (opaque bot-defined string for order tracking)",
+        "currency": "CHAR(3) (ISO 4217)",
+        "total_amount": "INTEGER (smallest currency unit, e.g., cents)",
+        "price_parts": "JSONB[] (line items)",
+        "photo_url": "TEXT (product image)",
+        "status": "ENUM('pending','pre_checkout','paid','refunded','failed','expired')",
+        "provider_id": "UUID FK → payment_providers.id",
+        "provider_charge_id": "TEXT (PSP reference)",
+        "shipping_address": "JSONB (optional)",
+        "idempotency_key": "UUID UNIQUE",
+        "created_at": "TIMESTAMPTZ",
+        "paid_at": "TIMESTAMPTZ",
+        "expires_at": "TIMESTAMPTZ DEFAULT created_at + interval '24h'"
+      },
+      "rls": "Bot can read its own invoices. User can read invoices where user_id = auth.uid(). No cross-access."
+    }
+  },
+  "payment_state_machine": {
+    "states": ["pending", "pre_checkout", "paid", "refunded", "failed", "expired"],
+    "transitions": [
+      "pending → pre_checkout: user taps 'Pay', passes pre-checkout validation (shipping, phone if required)",
+      "pre_checkout → paid: PSP webhook confirms successful charge",
+      "pre_checkout → failed: PSP webhook indicates decline",
+      "pending | pre_checkout → expired: expires_at reached without payment",
+      "paid → refunded: bot operator requests refund via API"
+    ],
+    "idempotency": "PSP webhooks may duplicate. UNIQUE constraint on provider_charge_id ensures exactly-once state transition."
+  },
+  "api": {
+    "create_invoice": {
+      "endpoint": "POST /v1/bots/{bot_id}/invoices",
+      "auth": "Bot API token",
+      "body": {
+        "conversation_id": "UUID",
+        "title": "string",
+        "description": "string",
+        "payload": "string (max 128 chars)",
+        "currency": "string",
+        "prices": "[{label, amount}]",
+        "need_name": "boolean",
+        "need_phone_number": "boolean",
+        "need_shipping_address": "boolean",
+        "idempotency_key": "UUID"
+      }
+    },
+    "pre_checkout_answer": {
+      "endpoint": "POST /v1/bots/{bot_id}/pre-checkout/{query_id}/answer",
+      "body": { "ok": "boolean", "error_message": "string?" },
+      "timeout": "Bot must respond within 10 seconds or platform auto-rejects"
+    },
+    "psp_webhook": {
+      "endpoint": "POST /v1/payments/webhook/{provider_slug}",
+      "security": "HMAC-SHA256 signature validation per PSP spec. Unsigned webhooks rejected (HTTP 401).",
+      "idempotency": "webhook event ID deduplicated in Redis (TTL 48h)"
+    }
+  },
+  "security": {
+    "price_tampering": "Client sends payment; server validates amount against invoice record — client-side amount claim NEVER trusted.",
+    "double_charge": "Idempotency key on invoice creation prevents duplicate charges. paid_at nullable, set exactly once via CAS.",
+    "bot_impersonation": "Invoice creation requires signed bot API token (JWT, HS256 with bot secret in Vault).",
+    "refund_abuse": "Refund only via authenticated bot API. Platform marks invoice as refunded and calls PSP refund API."
+  },
+  "observability": {
+    "metrics": [
+      "counter: payment.invoice.created{bot_id, currency}",
+      "counter: payment.invoice.status_transition{from, to}",
+      "histogram: payment.checkout_duration_ms",
+      "counter: payment.webhook.duplicate_filtered"
+    ],
+    "alerts": ["payment.invoice.failed rate > 10% over 5m → PagerDuty P2"]
+  }
+}

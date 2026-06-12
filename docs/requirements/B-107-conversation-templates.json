@@ -1,0 +1,125 @@
+{
+  "req_id": "REQ-0107",
+  "title": "Conversation Templates (Quick Group Creation from Templates)",
+  "version": "1.0",
+  "status": "in-design",
+  "domain": "messaging",
+  "depends_on": ["REQ-0086"],
+  "use_cases": [
+    "team lead uses template 'Project Team' to quickly recreate group structure",
+    "template includes recommended members, initial pinned messages, rules",
+    "new group created with template pre-populated"
+  ],
+  "template_concept": {
+    "definition": "saved group configuration (members list, name, description, initial messages, pinboard)",
+    "use_case": "teams that frequently create similar groups (sprint planning, client kickoffs)"
+  },
+  "creating_template_from_group": {
+    "flow": [
+      "1. admin in group → group settings → 'Save as Template'",
+      "2. system captures: members (optional), name, description, rules, pinboard",
+      "3. creates template record",
+      "4. template available for user to create new groups"
+    ]
+  },
+  "using_template": {
+    "flow": [
+      "1. user creates new group",
+      "2. optional: 'Use Template' → select template",
+      "3. pre-fill name, description, suggested members",
+      "4. user can edit before creating",
+      "5. new group created with template data"
+    ]
+  },
+  "template_scope": {
+    "private": "template only for user who created it",
+    "shared": "template shared with specific team/org (future)"
+  },
+  "template_customization": {
+    "members_list": "template can suggest members, user can add/remove before creating",
+    "initial_messages": "optional: send template message (e.g., 'Welcome! This is a project team.')",
+    "pinboard": "template can include pinned messages (admin can populate on creation)"
+  },
+  "database_schema": {
+    "group_templates_table": {
+      "columns": [
+        "template_id UUID PK",
+        "creator_user_id UUID FK",
+        "template_name VARCHAR(100)",
+        "description TEXT",
+        "icon_emoji VARCHAR(10) (e.g., '🚀')",
+        "created_at TIMESTAMP",
+        "usage_count INTEGER (denormalized)"
+      ]
+    },
+    "template_members_table": {
+      "columns": [
+        "template_member_id UUID PK",
+        "template_id UUID FK",
+        "suggested_user_id UUID FK (optional)"
+      ]
+    },
+    "template_settings_table": {
+      "columns": [
+        "template_settings_id UUID PK",
+        "template_id UUID FK",
+        "group_name VARCHAR(100) (default name)",
+        "group_description TEXT",
+        "notification_level VARCHAR(all, mentions, muted)",
+        "initial_message TEXT (message sent on group creation)"
+      ]
+    }
+  },
+  "api_endpoints": {
+    "create_template_from_group": {
+      "endpoint": "POST /v1/conversations/{conversation_id}/save-template",
+      "payload": {
+        "template_name": "Project Team",
+        "include_members": true,
+        "include_pinboard": true
+      },
+      "response": {
+        "template_id": "UUID"
+      }
+    },
+    "list_user_templates": {
+      "endpoint": "GET /v1/templates",
+      "response": [
+        {
+          "template_id": "UUID",
+          "template_name": "Project Team",
+          "usage_count": 5
+        }
+      ]
+    },
+    "create_group_from_template": {
+      "endpoint": "POST /v1/conversations",
+      "payload": {
+        "template_id": "UUID (optional)",
+        "group_name": "Project Alpha",
+        "members": ["user_id1", "user_id2"]
+      },
+      "response": {
+        "conversation_id": "UUID"
+      }
+    },
+    "delete_template": {
+      "endpoint": "DELETE /v1/templates/{template_id}"
+    }
+  },
+  "monitoring": {
+    "metrics": [
+      "templates.total_created",
+      "templates.avg_usage_count",
+      "templates.adoption_rate (% new groups from template)"
+    ]
+  },
+  "testing": {
+    "scenarios": [
+      "save group as template → template_id returned",
+      "create new group from template → pre-filled with name, member suggestions",
+      "template with 10 suggested members → user can add/remove before creating",
+      "delete template → no longer in list"
+    ]
+  }
+}

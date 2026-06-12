@@ -1,0 +1,59 @@
+{
+  "version": 1,
+  "generated_at": "2026-02-19",
+  "api_spec_template": {
+    "title": "{Feature Name}",
+    "description": "...",
+    "scope": "messaging|groups|channels|auth|...",
+    "owner": "@team",
+    "status": "draft|beta|released",
+    "endpoints": [
+      {
+        "method": "POST",
+        "path": "/api/v1/messages/send",
+        "summary": "Send a direct message",
+        "request": {
+          "body": {
+            "conversation_id": "uuid",
+            "content": "string (max 10000 chars)",
+            "client_msg_id": "uuid (idempotency key)",
+            "media_url": "string? (optional)"
+          },
+          "headers": {
+            "Authorization": "Bearer {token}",
+            "Content-Type": "application/json"
+          }
+        },
+        "response": {
+          "200": {
+            "message_id": "uuid",
+            "created_at": "ISO8601",
+            "status": "pending|delivered"
+          },
+          "400": { "error": "ValidationError", "message": "..." },
+          "401": { "error": "Unauthorized" },
+          "429": { "error": "RateLimited", "retry_after_seconds": 60 }
+        },
+        "rate_limit": "100 req/hour per user",
+        "idempotency": "Required: client_msg_id",
+        "examples": {
+          "success": {
+            "curl": "curl -X POST https://api.localhost/api/v1/messages/send ...",
+            "response": "{...}"
+          }
+        }
+      }
+    ]
+  },
+  "documentation_checklist": [
+    "API endpoint documented (method, path, params)",
+    "Request/response schema with examples",
+    "Error codes and HTTP status documented",
+    "Rate limits and quotas defined",
+    "Authentication method specified",
+    "Idempotency strategy documented",
+    "Breaking changes policy",
+    "Deprecation timeline for old versions",
+    "Migration guide from v1 if applicable"
+  ]
+}

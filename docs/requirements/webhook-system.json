@@ -1,0 +1,1 @@
+{"req_id":"REQ-0041","title":"Webhook System","events":["message.sent","group.created","user.updated"],"retry_policy":{"max_attempts":5,"backoff_ms":1000}}

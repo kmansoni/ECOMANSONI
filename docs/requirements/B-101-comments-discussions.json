@@ -1,0 +1,161 @@
+{
+  "req_id": "REQ-0101",
+  "title": "Comments and Discussion Threads (Sub-Conversation Model)",
+  "version": "1.0",
+  "status": "in-design",
+  "domain": "messaging",
+  "depends_on": ["REQ-0098"],
+  "use_cases": [
+    "message in #announcements has 50 comments (separate sub-thread below main message)",
+    "user can expand comments section → sees all replies (nested, sorted by time)",
+    "comment on comment creates sub-sub-thread (limited depth)"
+  ],
+  "comparison": {
+    "b098_threads": "nested replies within main conversation feed",
+    "b101_comments": "flat comment section below message (like Instagram), separate from main thread"
+  },
+  "data_model": {
+    "comments_vs_replies": "comments stored in separate comments table, not in messages table",
+    "association": "comment.parent_message_id → original message, comment.parent_comment_id (for nested comments)"
+  },
+  "ui_design": {
+    "main_feed": [
+      "Alice: 'Great announcement!'",
+      "[50 comments ↓] [share] [bookmark]"
+    ],
+    "expanded_comments": [
+      "Alice: 'Great announcement!'",
+      "─────────────────────",
+      "COMMENTS:",
+      "  Bob: 'Love it!'  [like] [reply]",
+      "    └─ Charlie: 'Same!' [like]",
+      "  David: 'When?' [like] [reply]",
+      "─────────────────────",
+      "[Add comment...] text field"
+    ]
+  },
+  "comment_creation": {
+    "flow": [
+      "1. user taps 'Add comment' below message",
+      "2. text input appears (simple, no media initially)",
+      "3. user types and taps 'Post'",
+      "4. INSERT comments (message_id, user_id, content, created_at)",
+      "5. comment appears in comments section"
+    ]
+  },
+  "nested_comments": {
+    "depth": "allow 2 levels (comment on comment), beyond that, flatten to level 2",
+    "display": "indent nested comments, show '@user replied to your comment' notification"
+  },
+  "comment_notifications": {
+    "original_poster": "Alice notified: 'Bob commented on your message'",
+    "comment_author": "Bob notified if someone replies to Bob's comment",
+    "@mention_in_comment": "if Charlie @mentions Bob in comment, Bob notified"
+  },
+  "database_schema": {
+    "comments_table": {
+      "columns": [
+        "comment_id UUID PK",
+        "message_id UUID FK (original message)",
+        "parent_comment_id UUID FK (null if top-level comment)",
+        "user_id UUID FK",
+        "content TEXT (markdown allowed)",
+        "edited_at TIMESTAMP",
+        "deleted_at TIMESTAMP (soft-delete)",
+        "created_at TIMESTAMP",
+        "like_count INTEGER (denormalized)"
+      ],
+      "indexes": ["message_id", "parent_comment_id", "user_id", "created_at DESC"]
+    },
+    "comment_likes_table": {
+      "columns": [
+        "like_id UUID PK",
+        "comment_id UUID FK",
+        "user_id UUID FK",
+        "created_at TIMESTAMP"
+      ]
+    }
+  },
+  "comment_editing_deletion": {
+    "edit": "user can edit own comment (no time limit, but shows 'edited' badge)",
+    "delete": "soft-delete, shows '[deleted comment]' placeholder",
+    "admin_delete": "admin can delete any comment (moderation)"
+  },
+  "comment_likes": {
+    "mechanism": "users can like comments (simple like, not emoji reactions)",
+    "display": "show like count below comment, avatar stack of first 3 likers"
+  },
+  "comment_pagination": {
+    "display": "show first 3 comments, 'load more' button",
+    "sorting": "by created_at DESC (newest first)"
+  },
+  "search_in_comments": {
+    "feature": "search queries include comments (not just messages)",
+    "result": "show comment preview + parent message context"
+  },
+  "api_endpoints": {
+    "post_comment": {
+      "endpoint": "POST /v1/messages/{message_id}/comments",
+      "payload": {
+        "content": "This is a great message!",
+        "parent_comment_id": "UUID (optional, for nested)"
+      },
+      "response": {
+        "comment_id": "UUID",
+        "created_at": "2026-02-15T15:35:00Z"
+      }
+    },
+    "get_message_comments": {
+      "endpoint": "GET /v1/messages/{message_id}/comments",
+      "query": "?limit=20&offset=0",
+      "response": [
+        {
+          "comment_id": "UUID",
+          "user_id": "UUID",
+          "user_name": "Bob",
+          "content": "Love it!",
+          "like_count": 5,
+          "nested_replies": [
+            {
+              "comment_id": "UUID",
+              "user_name": "Charlie",
+              "content": "Same!"
+            }
+          ],
+          "created_at": "2026-02-15T15:36:00Z"
+        }
+      ]
+    },
+    "like_comment": {
+      "endpoint": "POST /v1/comments/{comment_id}/like"
+    },
+    "edit_comment": {
+      "endpoint": "PATCH /v1/comments/{comment_id}",
+      "payload": {
+        "content": "Updated content"
+      }
+    },
+    "delete_comment": {
+      "endpoint": "DELETE /v1/comments/{comment_id}"
+    }
+  },
+  "monitoring": {
+    "metrics": [
+      "comments.total_per_day",
+      "comments.avg_per_message",
+      "comments.nested_depth_distribution",
+      "comments.like_rate"
+    ]
+  },
+  "testing": {
+    "scenarios": [
+      "post comment on message → appears in comments section",
+      "reply to comment → nested under parent comment",
+      "like comment → like count increments",
+      "edit own comment → shows 'edited' badge",
+      "delete comment → shows '[deleted]'",
+      "message with 100 comments → load first 20, 'load more' button appears",
+      "search 'solution' → returns messages + matching comments with context"
+    ]
+  }
+}

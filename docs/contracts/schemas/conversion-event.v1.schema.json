@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "mansoni://contracts/conversion-event.v1",
+  "title": "Conversion Event v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["client_event_id", "event_type", "content_id", "target_type", "client_ts"],
+  "properties": {
+    "client_event_id": { "type": "string", "minLength": 1 },
+    "event_type": {
+      "type": "string",
+      "enum": [
+        "svc.content_open_service",
+        "svc.service_cta_click",
+        "svc.service_lead_created",
+        "svc.chat_started_from_service",
+        "svc.deal_completed"
+      ]
+    },
+    "content_id": { "type": "string", "minLength": 1 },
+    "target_type": { "type": "string", "minLength": 1 },
+    "target_id": { "type": ["string", "null"] },
+    "viewer_id": { "type": ["string", "null"] },
+    "session_id": { "type": ["string", "null"] },
+    "client_ts": { "type": "string", "format": "date-time" }
+  }
+}

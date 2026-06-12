@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mansoni.com/schemas/ws/types.schema.json",
+  "title": "Common WS Types",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "userId": { "type": "string", "minLength": 8, "maxLength": 128 },
+    "deviceId": { "type": "string", "minLength": 6, "maxLength": 128 },
+    "roomId": { "type": "string", "minLength": 6, "maxLength": 128 },
+    "callId": { "type": "string", "minLength": 6, "maxLength": 128 },
+    "region": { "type": "string", "enum": ["ru", "tr", "ae"] },
+    "nodeId": { "type": "string", "minLength": 3, "maxLength": 128 }
+  }
+}

@@ -1,0 +1,5 @@
+{"v":1,"type":"PEER_JOINED","msgId":"00000000-0000-0000-0000-000000000201","ts":0,"seq":10,"payload":{"roomId":"R","userId":"uC","deviceId":"devC","memberSetVersion":42}}
+{"v":1,"type":"REKEY_BEGIN","msgId":"00000000-0000-0000-0000-000000000202","ts":1,"seq":11,"payload":{"roomId":"R","newEpoch":6,"memberSetVersion":42,"leaderDeviceId":"devA","deadlineMs":8000}}
+{"v":1,"type":"KEY_PACKAGE","msgId":"00000000-0000-0000-0000-000000000203","ts":2,"seq":12,"payload":{"roomId":"R","epoch":6,"fromDeviceId":"devA","toDeviceId":"devC","senderKeyId":"skA6","keyPackageType":"SENDER_KEY","ciphertext":"Y2lwaGVy","sig":"c2ln","protocolVersion":1}}
+{"v":1,"type":"KEY_ACK","msgId":"00000000-0000-0000-0000-000000000204","ts":3,"seq":1,"payload":{"roomId":"R","epoch":6,"fromDeviceId":"devC","toDeviceId":"devA","senderKeyId":"skA6","refId":"00000000-0000-0000-0000-000000000202"}}
+{"v":1,"type":"REKEY_COMMIT","msgId":"00000000-0000-0000-0000-000000000205","ts":4,"seq":13,"payload":{"roomId":"R","epoch":6}}

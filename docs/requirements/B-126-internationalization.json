@@ -1,0 +1,311 @@
+{
+  "id": "B-126",
+  "section": "B",
+  "title": "Internationalization (i18n) & Multi-language Support",
+  "description": "i18n framework for 100+ languages, RTL support, locale detection, and regional customization",
+  "priority": "P1",
+  "complexity": "M",
+  "architecture": {
+    "translation_system": {
+      "framework": "i18next for browser/web, native for app",
+      "namespaces": [
+        "common (UI labels)",
+        "messages (message content)",
+        "errors (error messages)",
+        "notifications (push notifications)",
+        "emails (email templates)"
+      ],
+      "language_codes": "BCP 47 format (en, en-US, en-GB, pt-BR, zh-Hans, zh-Hant)",
+      "fallback_chain": "en-US → en → English (always have fallback)"
+    },
+    "key_principles": {
+      "lazy_loading": "translations loaded on demand, cached locally",
+      "ssr_hydration": "server renders with user's language, client hydrates",
+      "namespace_splitting": "200KB max per namespace for lazy loading",
+      "pluralization": "i18next handles complex plural rules (English: singular/plural, Polish: 5 forms)"
+    }
+  },
+  "supported_languages": {
+    "tier_1_30_languages": [
+      "English (en-US, en-GB)",
+      "Spanish (es, es-MX, es-ES)",
+      "French (fr, fr-CA)",
+      "German (de, de-AT, de-CH)",
+      "Italian (it)",
+      "Portuguese (pt, pt-BR)",
+      "Russian (ru)",
+      "Chinese (Simplified zh-Hans, Traditional zh-Hant)",
+      "Japanese (ja)",
+      "Korean (ko)",
+      "Arabic (ar)",
+      "Hindi (hi)",
+      "Polish (pl)",
+      "Turkish (tr)",
+      "Dutch (nl)",
+      "Swedish (sv)",
+      "Norwegian (no)",
+      "Danish (da)",
+      "Finnish (fi)",
+      "Czech (cs)",
+      "Ukrainian (uk)",
+      "Thai (th)",
+      "Vietnamese (vi)",
+      "Indonesian (id)",
+      "Filipino (fil)",
+      "Hebrew (he)",
+      "Greek (el)",
+      "Persian (fa)",
+      "Bangla (bn)"
+    ]
+  },
+  "features": {
+    "locale_detection": {
+      "priority_order": [
+        "user_preference (saved in account)",
+        "browser_language (accept-language header)",
+        "geo_ip_location (detect region)",
+        "system_language (mobile app)",
+        "fallback (en-US)"
+      ],
+      "remember_choice": "store in localStorage + user profile"
+    },
+    "rtl_support": {
+      "languages": "Arabic, Hebrew, Persian, Urdu, etc.",
+      "implementation": {
+        "dir_attribute": "<html dir='rtl'> or <html dir='ltr'>",
+        "css_logical_properties": "use margin-inline, padding-block (not left/right)",
+        "flexbox_grid": "flex-direction: row / row-reverse based on dir",
+        "text_alignment": "use text-align: start/end (not left/right)"
+      },
+      "rtl_specific": {
+        "message_timestamps": "appear on left in RTL",
+        "avatar_position": "swapped sides",
+        "swipe_gestures": "reversed (swipe left → right, etc)"
+      },
+      "testing": "test each RTL language separately (not just flip)"
+    },
+    "date_time_formatting": {
+      "use_intl_api": "Intl.DateTimeFormat, not manual string formatting",
+      "formats": {
+        "short_date": "M/d/y (US) vs d/m/y (EU)",
+        "time": "12h (US) vs 24h (EU)",
+        "timezone": "detect user timezone, display offset"
+      },
+      "examples": {
+        "en_us": "3/15/2024, 2:30 PM",
+        "en_gb": "15/03/2024, 14:30",
+        "de": "15.03.2024, 14:30",
+        "ja": "2024/3/15 14:30"
+      }
+    },
+    "number_currency_formatting": {
+      "use_intl_api": "Intl.NumberFormat, Intl.RelativeTimeFormat",
+      "currency": {
+        "locale_default": "use user's locale currency if available",
+        "display": "USD $100 (en-US) vs 100 $ (fr-CA) vs 100 USD (de)"
+      },
+      "numbers": {
+        "decimal_separator": "comma (de) vs period (en)",
+        "thousands_separator": "space (de) vs comma (en)"
+      }
+    },
+    "translation_workflows": {
+      "source_language": "English, developers add keys to en.json",
+      "translation_process": "crowdsourced (community) → manual QA → deployment",
+      "tools": "use Crowdin or Lokalise for translator management",
+      "ci_integration": "auto import translations nightly, alert on missing strings"
+    },
+    "dynamic_content": {
+      "user_generated_content": "use language tag, preserve original language",
+      "group_descriptions": "admin sets language when creating group",
+      "messages": "no auto-translation (user sends in their language)"
+    },
+    "regional_customization": {
+      "payment_options": "show applicable payment methods per region",
+      "phone_numbers": "format by country (E.164 standard)",
+      "addresses": "adapt form fields by country (postal code, state/province)",
+      "holidays": "custom timing for notifications (Ramadan, Chinese New Year)"
+    }
+  },
+  "database": {
+    "tables": [
+      {
+        "name": "user_locale_preference",
+        "columns": [
+          {"name": "user_id", "type": "uuid", "pk": true, "fk": "users"},
+          {"name": "language_code", "type": "varchar(10)", "default": "en-US"},
+          {"name": "timezone", "type": "varchar(50)"},
+          {"name": "region", "type": "varchar(2) (ISO 3166-1)"},
+          {"name": "date_format", "type": "varchar(20)"},
+          {"name": "auto_detect", "type": "bool", "default": true},
+          {"name": "updated_at", "type": "timestamp"}
+        ]
+      },
+      {
+        "name": "translation_keys",
+        "columns": [
+          {"name": "id", "type": "uuid", "pk": true},
+          {"name": "key", "type": "varchar(255)", "unique": true},
+          {"name": "namespace", "type": "varchar(50)"},
+          {"name": "default_text_en", "type": "text"},
+          {"name": "context", "type": "text"},
+          {"name": "created_at", "type": "timestamp"}
+        ]
+      },
+      {
+        "name": "translations",
+        "columns": [
+          {"name": "id", "type": "uuid", "pk": true},
+          {"name": "key_id", "type": "uuid", "fk": "translation_keys"},
+          {"name": "language_code", "type": "varchar(10)"},
+          {"name": "translated_text", "type": "text"},
+          {"name": "translator_id", "type": "uuid"},
+          {"name": "reviewed", "type": "bool", "default": false},
+          {"name": "reviewer_id", "type": "uuid"},
+          {"name": "updated_at", "type": "timestamp"}
+        ],
+        "indexes": ["key_id, language_code (unique)"]
+      }
+    ]
+  },
+  "api": {
+    "endpoints": [
+      {
+        "path": "GET /v1/i18n/languages",
+        "description": "Get all supported languages with metadata",
+        "returns": [
+          {
+            "code": "en-US",
+            "name": "English (United States)",
+            "nativeName": "English",
+            "rtl": false,
+            "speakers": "330M"
+          }
+        ]
+      },
+      {
+        "path": "GET /v1/i18n/translations/{namespace}",
+        "description": "Fetch translation namespace for language",
+        "query": {"lang": "en-US", "namespace": "common"},
+        "returns": {
+          "key.welcome": "Welcome",
+          "key.goodbye": "Goodbye"
+        },
+        "caching": "1 week CDN cache + LocalStorage"
+      },
+      {
+        "path": "PUT /v1/user/locale",
+        "description": "Update user language preference",
+        "body": {
+          "language_code": "es",
+          "timezone": "America/Mexico_City",
+          "region": "MX"
+        },
+        "returns": {"locale_updated": true}
+      }
+    ]
+  },
+  "monitoring": {
+    "metrics": [
+      {
+        "name": "translation_coverage",
+        "target": ">95% for Tier 1 languages",
+        "alert": "<90% (missing translations)"
+      },
+      {
+        "name": "language_distribution",
+        "target": "at least 1% users per top 20 languages",
+        "alert": "language <0.1% (consider deprecating)"
+      },
+      {
+        "name": "rtl_rendering_correctness",
+        "target": "100% RTL languages render correctly",
+        "alert": "visual regression in RTL (mirror check)"
+      },
+      {
+        "name": "locale_detection_accuracy",
+        "target": ">85%",
+        "alert": "<80% (improve detection logic)"
+      }
+    ]
+  },
+  "testing": {
+    "test_scenarios": [
+      {
+        "name": "Language detection from browser",
+        "steps": ["Set browser language to Spanish", "Visit app", "Check UI language"],
+        "expected": "UI displays in Spanish by default"
+      },
+      {
+        "name": "Change language in settings",
+        "steps": ["Go to Settings", "Select German", "Confirm"],
+        "expected": "UI switches to German immediately, saved in profile"
+      },
+      {
+        "name": "Email in user's language",
+        "steps": ["French user receives notification email"],
+        "expected": "Email content in French (from email_fr.json template)"
+      },
+      {
+        "name": "RTL message rendering (Arabic)",
+        "steps": ["Send message in Arabic"],
+        "expected": "Text right-to-left, timestamps on left, avatar on right"
+      },
+      {
+        "name": "Date formatting by locale",
+        "steps": ["US user: 3/15/2024", "UK user: 15/03/2024"],
+        "expected": "Each user sees their locale date format"
+      },
+      {
+        "name": "Currency display",
+        "steps": ["US user sees $100", "FR user sees 100 USD"],
+        "expected": "Symbol position matches locale convention"
+      },
+      {
+        "name": "Pluralization rules",
+        "steps": ["Polish user: 1 msg / 2-4 msgs / 5+ msgs"],
+        "expected": "Correct plural form displayed (Polish has 5 forms)"
+      },
+      {
+        "name": "Missing translation fallback",
+        "steps": ["Key missing in Spanish", "Request Spanish translation"],
+        "expected": "Falls back to English, logs warning"
+      },
+      {
+        "name": "Timezone-aware timestamps",
+        "steps": ["Message sent 2pm UTC", "EST user sees 9am", "IST user sees 7:30pm"],
+        "expected": "Each user sees correct local time"
+      },
+      {
+        "name": "Translation hot-reload",
+        "steps": ["Translator updates French text", "App running"],
+        "expected": "Updated text appears after 1-hour cache invalidation (or on page refresh)"
+      },
+      {
+        "name": "RTL swipe gestures",
+        "steps": ["Arabic user swipes right on message"],
+        "expected": "Swipe direction reversed, reply action triggers (visual match)"
+      },
+      {
+        "name": "Mixed direction text (Arabic + English)",
+        "steps": ["Message contains 'Hello مرحبا'"],
+        "expected": "Bidirectional text renders correctly, direction tags auto-applied"
+      },
+      {
+        "name": "Phone number format by country",
+        "steps": ["US: +1-555-0123 (formatted)", "UK: +44 20 7946 0958"],
+        "expected": "Phone input auto-formats by selected country"
+      },
+      {
+        "name": "Regional payment options",
+        "steps": ["German user: SEPA, PayPal", "US user: Credit card, PayPal"],
+        "expected": "Payment methods shown match user's region/language"
+      },
+      {
+        "name": "Search respects language",
+        "steps": ["Search 'café' in French (accented)", "Search 'cafe' (unaccented)"],
+        "expected": "Both find 'café' (accent-insensitive search)"
+      }
+    ]
+  }
+}

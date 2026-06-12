@@ -1,0 +1,41 @@
+{
+  "schemaVersion": "1.1.2",
+  "currentStage": "S0",
+  "nextStage": null,
+  "evaluatedAt": "2026-02-24T06:00:00Z",
+  "metricsRef": {
+    "kind": "file",
+    "commitSha": "0000000",
+    "artifactUri": "file://artifacts/migration-metrics.json",
+    "generatedAt": "2026-02-24T06:00:00Z"
+  },
+  "requiredChecksRef": {
+    "uri": "docs/ci/branch-protection.md#requiredJobsByStage",
+    "digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+  },
+  "exitCriteria": {
+    "targetStage": "S1",
+    "rules": [
+      {
+        "id": "mig_crash_free",
+        "metric": "crash_free_rate",
+        "operator": ">=",
+        "threshold": 0.995,
+        "blocking": true
+      }
+    ],
+    "regressionGuards": [
+      {
+        "metric": "chat_send_p95_ms",
+        "baselineRef": "baseline:chat_send_p95_ms",
+        "maxDeltaPct": 10,
+        "blocking": true
+      }
+    ]
+  },
+  "attestation": {
+    "changedViaPr": true,
+    "prNumber": 0,
+    "approvedBy": []
+  }
+}

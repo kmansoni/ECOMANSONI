@@ -1,0 +1,152 @@
+{
+  "req_id": "REQ-0071",
+  "title": "Message Forwarding (Share to Other Conversations)",
+  "version": "1.0",
+  "status": "in-design",
+  "domain": "messaging",
+  "depends_on": ["REQ-0064"],
+  "use_cases": [
+    "user taps message → shares to 5 other conversations",
+    "forwarded message shows attribution: 'Forwarded from Alice'",
+    "user can add personal note above forwarded message",
+    "bulk forward: select 10 messages, forward all in one action"
+  ],
+  "forward_mechanics": {
+    "trigger": "long-press message → menu appears with 'Forward' option",
+    "forward_modal": {
+      "title": "Forward message to...",
+      "conversation_selection": "search/select conversations",
+      "multiple_select": "enabled (forward to multiple conversations at once)",
+      "message_note": "optional text field 'Add a note'",
+      "forward_button": "sends to all selected conversations"
+    }
+  },
+  "forwarded_message_structure": {
+    "database_model": {
+      "forwarded_messages_table": {
+        "schema": {
+          "original_message_id": "UUID FK to messages",
+          "forwarded_message_id": "UUID FK to forwarded copy",
+          "forwarded_by_user_id": "UUID (who did the forward)",
+          "forwarded_at": "timestamp",
+          "forward_note": "text (optional personal note)",
+          "PRIMARY KEY": "(forwarded_message_id)"
+        }
+      }
+    },
+    "forwarded_message_content": {
+      "structure": [
+        "header: 'Forwarded from {original_sender_name}'",
+        "optional: user's note (if provided)",
+        "separator",
+        "original message content (text, media, etc)"
+      ],
+      "example": "Forwarded from Alice\n\nCheck out this spec!\n\n---\nThe project structure is...[original content]"
+    }
+  },
+  "what_gets_forwarded": {
+    "text_messages": "full content copied",
+    "media_messages": [
+      "images: full resolution (user can choose quality)",
+      "voice: full recording",
+      "video: full video"
+    ],
+    "not_forwarded": [
+      "reactions (start fresh in new conversation)",
+      "read receipts (new message, new delivery status)",
+      "replies/threads (only main message forwarded)",
+      "edited history (shows current content, not edit_edits)"
+    ],
+    "reactions_option": "user can optionally include reaction summary: '3 👍 2 ❤️'"
+  },
+  "forwarding_restrictions": {
+    "permission_check": "user can only forward to conversations they're member of",
+    "deleted_messages": "cannot forward soft-deleted or hard-deleted messages",
+    "private_messages": "cannot forward from another user's DM (privacy violation)",
+    "group_visibility": "can forward group message to different group or DM"
+  },
+  "batch_forwarding": {
+    "trigger": "select multiple messages (long-press + toggle others)",
+    "count_indicator": "'5 messages selected'",
+    "forward_all": "taps forward → same modal, forwards all 5 to selected conversations",
+    "order": "messages forwarded in original seq order (maintained in new conversation)",
+    "atomicity": "all-or-nothing: if one forwarding fails, rollback (don't partial-forward)"
+  },
+  "forward_note_integration": {
+    "personal_note": "optional message from forwarder placed above forwarded content",
+    "use_case": "'Here's the spec I mentioned' [forwarded original document]",
+    "display": "note appears in same message thread as forwarded content, but visually separated"
+  },
+  "api_design": {
+    "single_forward": {
+      "endpoint": "POST /v1/messages/{id}/forward",
+      "payload": {
+        "target_conversation_ids": ["UUID1", "UUID2", "UUID3"],
+        "note": "Here's the spec I mentioned",
+        "include_reactions": false
+      },
+      "response": {
+        "forwarded_message_ids": ["UUID_new1", "UUID_new2", "UUID_new3"]
+      }
+    },
+    "batch_forward": {
+      "endpoint": "POST /v1/messages/forward-batch",
+      "payload": {
+        "message_ids": ["UUID1", "UUID2", "UUID3"],
+        "target_conversation_ids": ["UUID_conv1", "UUID_conv2"],
+        "note": "Check these out"
+      },
+      "response": {
+        "forwarded_message_ids": [
+          {
+            "original_message_id": "UUID1",
+            "new_message_ids": ["UUID_new1", "UUID_new_2"]
+          }
+        ]
+      }
+    }
+  },
+  "message_history": {
+    "tracking": "forwarded_messages table records origin of each forward",
+    "user_view": "iOS/Telegram show 'Forwarded from ...' header on message",
+    "chain_prevention": "cannot forward an already-forwarded message (copy the original instead)"
+  },
+  "notifications": {
+    "forwarding_user": "instant confirmation '✓ forwarded to 5 conversations'",
+    "recipients": "no special notification (regular message arrival)"
+  },
+  "privacy_considerations": {
+    "forwarding_disables": "forwarded messages lose sender's read receipts (shows as new)",
+    "no_tracking": "original sender does NOT know message was forwarded",
+    "intent": "breaking forwarding chains, preventing spiral of sharings"
+  },
+  "performance": {
+    "bulk_insert": "batch forward 10 messages to 5 conversations = 50 inserts",
+    "optimization": "use Postgres multi-row insert, Kafka batching (50 events in one batch)",
+    "latency": "p95 forward 10 messages to 5 conversations: <500ms"
+  },
+  "testing": {
+    "scenarios": [
+      "forward single message to 1 conversation: verify forwarded_messages entry",
+      "forwarded message shows 'Forwarded from {name}' header",
+      "add note to forward: note appears before message content",
+      "batch forward 10 messages: all appear in conversation in correct order",
+      "forward media (image, voice): content copied fully",
+      "attempt forward of deleted message: API error 403",
+      "attempt forward to conversation user not in: API error 403",
+      "reaction summary included: message shows '3 👍 2 ❤️' if selected"
+    ]
+  },
+  "monitoring": {
+    "metrics": [
+      "forward.requests_per_hour",
+      "forward.batch_size_avg_count",
+      "forward.latency_p95_ms",
+      "forward.success_rate"
+    ],
+    "alerts": [
+      "forward fails > 5% (database insert error)",
+      "forward latency > 1s p95"
+    ]
+  }
+}

@@ -1,0 +1,47 @@
+{
+  "registry_version": "1.1.0",
+  "curves": {
+    "friend_post": {
+      "half_life_hours": 36,
+      "hard_expiry_hours": null,
+      "deadline_sensitive": false,
+      "stale_floor_penalty": 0.10
+    },
+    "creator_post": {
+      "half_life_hours": 18,
+      "hard_expiry_hours": null,
+      "deadline_sensitive": false,
+      "stale_floor_penalty": 0.18
+    },
+    "utility_card": {
+      "half_life_hours": 8,
+      "hard_expiry_hours": 72,
+      "deadline_sensitive": false,
+      "stale_floor_penalty": 0.35
+    },
+    "local_event": {
+      "half_life_hours": 10,
+      "hard_expiry_hours": 48,
+      "deadline_sensitive": true,
+      "stale_floor_penalty": 0.50
+    },
+    "business_update": {
+      "half_life_hours": 12,
+      "hard_expiry_hours": 96,
+      "deadline_sensitive": false,
+      "stale_floor_penalty": 0.28
+    },
+    "reel_card": {
+      "half_life_hours": 10,
+      "hard_expiry_hours": null,
+      "deadline_sensitive": false,
+      "stale_floor_penalty": 0.22
+    }
+  },
+  "formula": "freshness = exp(-age_hours / half_life_hours)",
+  "invariants": [
+    "deadline-sensitive content must receive post-deadline hard penalty",
+    "utility and business classes must decay faster than friend posts",
+    "freshness score must be clamped to [0,1]"
+  ]
+}

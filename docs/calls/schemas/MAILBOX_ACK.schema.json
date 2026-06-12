@@ -1,0 +1,12 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mansoni.com/schemas/ws/MAILBOX_ACK.schema.json",
+  "title": "MAILBOX_ACK",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["deviceId", "upToStreamId"],
+  "properties": {
+    "deviceId": { "$ref": "https://mansoni.com/schemas/ws/types.schema.json#/properties/deviceId" },
+    "upToStreamId": { "type": "string", "maxLength": 64 }
+  }
+}

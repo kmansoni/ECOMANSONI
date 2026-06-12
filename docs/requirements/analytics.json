@@ -1,0 +1,76 @@
+{
+  "version": 1,
+  "generated_at": "2026-02-19",
+  "event_taxonomy": {
+    "format": "evt.{domain}.{action}.{result}",
+    "examples": [
+      "evt.messaging.send.success",
+      "evt.messaging.send.error_rate_limit",
+      "evt.messaging.forward.with_signature",
+      "evt.groups.create.success",
+      "evt.auth.login.success",
+      "evt.sync.delta.latency_ms"
+    ],
+    "core_events": [
+      {
+        "event": "evt.messaging.send.success",
+        "properties": {
+          "conversation_id": "uuid",
+          "message_id": "uuid",
+          "latency_ms": "integer",
+          "has_media": "boolean",
+          "platform": "web|ios|android|desktop"
+        },
+        "sampling": "100%",
+        "retention_days": 90
+      },
+      {
+        "event": "evt.messaging.forward.success",
+        "properties": {
+          "source_message_id": "uuid",
+          "new_message_id": "uuid",
+          "with_signature": "boolean",
+          "destination_type": "dm|group|channel"
+        },
+        "sampling": "100%",
+        "retention_days": 90
+      },
+      {
+        "event": "evt.groups.create.success",
+        "properties": {
+          "group_id": "uuid",
+          "initial_member_count": "integer",
+          "creator_user_id": "uuid"
+        },
+        "sampling": "100%"
+      },
+      {
+        "event": "evt.auth.login.success",
+        "properties": {
+          "user_id": "uuid",
+          "method": "password|oauth|phone",
+          "platform": "web|ios|android|desktop",
+          "latency_ms": "integer"
+        },
+        "sampling": "100%"
+      },
+      {
+        "event": "evt.sync.delta.completed",
+        "properties": {
+          "conversation_count": "integer",
+          "total_messages_synced": "integer",
+          "latency_ms": "integer",
+          "gap_detected": "boolean"
+        },
+        "sampling": "10%"
+      }
+    ],
+    "privacy_constraints": {
+      "rules": [
+        "Never log message content",
+        "Never log passwords or auth tokens",
+        "Hash or redact PII (email, phone only when identifier needed)"
+      ]
+    }
+  }
+}

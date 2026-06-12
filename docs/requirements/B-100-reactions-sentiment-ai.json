@@ -1,0 +1,204 @@
+{
+  "req_id": "REQ-0100",
+  "title": "Message Reactions Sentiment Analysis (AI-Driven Reactions)",
+  "version": "1.0",
+  "status": "in-design",
+  "domain": "messaging",
+  "depends_on": ["REQ-0083"],
+  "note": "Extension of B-083 (reactions-advanced), adding sentiment analysis and ML-based suggestions",
+  "use_cases": [
+    "user receives message 'Great news!' → system suggests 😍 reaction",
+    "admin views conversation analytics → see sentiment trend (happy messages 70%, neutral 20%, angry 10%)",
+    "moderation team uses sentiment scores to prioritize hateful message detection"
+  ],
+  "reaction_suggestions": {
+    "mechanism": "ML model analyzes message sentiment, suggests appropriate emoji",
+    "input": "message text (sentiment classifier)",
+    "output": "top 3 suggested reactions with confidence scores",
+    "model": "fine-tuned BERT or GPT for sentiment → emoji mapping"
+  },
+  "sentiment_analysis": {
+    "categories": [
+      {
+        "name": "positive",
+        "emoji_suggestions": ["😍", "👍", "🎉", "😂"],
+        "score_range": [0.7, 1.0]
+      },
+      {
+        "name": "neutral",
+        "emoji_suggestions": ["🤔", "👀"],
+        "score_range": [0.3, 0.7]
+      },
+      {
+        "name": "negative",
+        "emoji_suggestions": ["😢", "😡"],
+        "score_range": [0.0, 0.3]
+      }
+    ],
+    "confidence": "0.0-1.0 (how confident is model in classification)"
+  },
+  "reaction_analytics": {
+    "per_message": "show emoji distribution (👍: 5 people, 😍: 3 people, ...)",
+    "per_conversation": "aggregate sentiment over last 7 days (chart: positive/neutral/negative trend)",
+    "per_user": "user's most common reactions (Alice tends to react with 😂, Bob with 👍)"
+  },
+  "database_schema": {
+    "message_sentiment_table": {
+      "columns": [
+        "sentiment_id UUID PK",
+        "message_id UUID FK",
+        "sentiment_label VARCHAR(positive, neutral, negative)",
+        "sentiment_score FLOAT (0.0-1.0)",
+        "confidence FLOAT (0.0-1.0)",
+        "analyzed_at TIMESTAMP"
+      ]
+    },
+    "reaction_suggestions_cache": {
+      "columns": [
+        "suggestion_id UUID PK",
+        "message_id UUID FK",
+        "suggested_emojis TEXT[] (top 3 emojis with scores, e.g., ['😍:0.95', '👍:0.88', '🎉:0.75'])",
+        "created_at TIMESTAMP"
+      ]
+    },
+    "reaction_analytics_table": {
+      "columns": [
+        "analytics_id UUID PK",
+        "conversation_id UUID FK",
+        "metric_date DATE",
+        "positive_count INTEGER",
+        "neutral_count INTEGER",
+        "negative_count INTEGER",
+        "total_reactions INTEGER"
+      ]
+    }
+  },
+  "ui_components": {
+    "reaction_suggestions": [
+      "when user long-presses message to react, show pop-up",
+      "top 3 suggested emoji highlighted (e.g., '😍 👍 🎉' in larger size)",
+      "below: other emoji options (full picker)"
+    ],
+    "sentiment_indicator": [
+      "on message, show small sentiment icon (😊 🤷 😞) if sentiment_score is high (>0.8 or <0.2)",
+      "only show if confidence >0.85"
+    ],
+    "conversation_analytics": [
+      "new tab 'Analytics' for admin/moderator",
+      "chart: sentiment trend over last 7 days",
+      "table: top messages by reaction count"
+    ]
+  },
+  "api_endpoints": {
+    "get_reaction_suggestions": {
+      "endpoint": "POST /v1/messages/{id}/reaction-suggestions",
+      "response": [
+        {
+          "emoji": "😍",
+          "confidence": 0.95,
+          "reasoning": "positive_sentiment_detected"
+        },
+        {
+          "emoji": "👍",
+          "confidence": 0.88
+        }
+      ]
+    },
+    "get_message_sentiment": {
+      "endpoint": "GET /v1/messages/{id}/sentiment",
+      "response": {
+        "sentiment": "positive",
+        "score": 0.87,
+        "confidence": 0.92
+      }
+    },
+    "get_conversation_analytics": {
+      "endpoint": "GET /v1/conversations/{conversation_id}/analytics",
+      "query": "?period=7d",
+      "response": {
+        "period": "last_7_days",
+        "sentiment_trend": [
+          {
+            "date": "2026-02-09",
+            "positive_percent": 65,
+            "neutral_percent": 25,
+            "negative_percent": 10
+          },
+          {
+            "date": "2026-02-10",
+            "positive_percent": 70,
+            "neutral_percent": 20,
+            "negative_percent": 10
+          }
+        ],
+        "top_reactions": {
+          "😍": 45,
+          "👍": 38,
+          "😂": 32
+        }
+      }
+    }
+  },
+  "moderation_integration": {
+    "use_case": "negative sentiment messages more likely to contain hate speech or harassment",
+    "enhancement_to_b096": "flag messages with sentiment_score <0.2 and confidence >0.9 for moderation review",
+    "alert": "if conversation sentiment_negative trend up >20% in 1 day, alert moderation team"
+  },
+  "performance": {
+    "inference_latency": "BERT inference ~500ms per message",
+    "optimization": "batch process messages (analyze 100 messages at once, 100ms each)",
+    "caching": "store sentiment in DB, don't re-compute (unless message edited)"
+  },
+  "cost": {
+    "local_inference": "run BERT model on GPU servers (one-time: model download + containerization)",
+    "vs_external_api": "cheaper than calling external sentiment API (per call)",
+    "estimated": "10k messages/day → 5 GPU cores, ~$500/month"
+  },
+  "model_retraining": {
+    "frequency": "monthly",
+    "data_source": "user reactions (if user adds 😢 reaction, train model that message's sentiment is negative)",
+    "feedback_loop": "model improves over time based on real reactions"
+  },
+  "privacy": {
+    "consideration": "sentiment analysis reads message content (privacy impact),anese only store neutral sentiment score (not full content)"
+  },
+  "multilingual_support": {
+    "challenge": "sentiment can differ by culture/language (sarcasm in French vs English)",
+    "implementation": "per-language sentiment models (train separate BERT for each language)"
+  },
+  "monitoring": {
+    "metrics": [
+      "sentiment.inference_latency_p95_ms",
+      "sentiment.model_accuracy (compare predictions vs actual reactions)",
+      "sentiment.suggestion_acceptance_rate (% users use suggested emoji)",
+      "analytics.sentiment_positive_percent_by_conversation"
+    ],
+    "alerts": [
+      "sentiment model accuracy drops >5% (model drift, retrain needed)",
+      "inference latency >1000ms (GPU bottleneck)"
+    ]
+  },
+  "testing": {
+    "scenarios": [
+      "message: 'I love this!' → suggestions: [😍:0.96, 👍:0.85, 🎉:0.80]",
+      "message: 'This is terrible' → suggestions: [😢:0.93, 😡:0.88]",
+      "message: 'Ok, got it' → suggestions: [👍:0.85, 🤔:0.70]",
+      "admin views analytics → chart shows sentiment trend over 7 days",
+      "negative sentiment spike detected → alert sent to moderation team",
+      "same message predicted sentiment:0.95 twice → confidence high, correct cache lookup"
+    ]
+  },
+  "edge_cases": {
+    "emoji_only_message": "message with only emoji (😂🎉) → analyze sentiment of emoji themselves",
+    "code_snippet": "message with code → exclude code from sentiment analysis",
+    "sarcasm": "message says 'This is great!' but sentiment model detects sarcasm → low score (if model trained on sarcasm)"
+  },
+  "future_roadmap": {
+    "v2": [
+      "emotion detection (vs sentiment: detect anger, surprise, joy separately)",
+      "topic modeling (what are conversations about?)",
+      "engagement prediction (which messages will get most reactions?)",
+      "toxic content severity scoring (enhance B-096 moderation)"
+    ]
+  }
+}

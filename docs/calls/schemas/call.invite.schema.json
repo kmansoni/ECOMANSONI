@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mansoni.com/schemas/ws/call.invite.schema.json",
+  "title": "call.invite",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["call_id", "from", "to", "device_id", "capabilities"],
+  "properties": {
+    "call_id": { "$ref": "https://mansoni.com/schemas/ws/types.schema.json#/properties/callId" },
+    "from": { "$ref": "https://mansoni.com/schemas/ws/types.schema.json#/properties/userId" },
+    "to": { "$ref": "https://mansoni.com/schemas/ws/types.schema.json#/properties/userId" },
+    "device_id": { "$ref": "https://mansoni.com/schemas/ws/types.schema.json#/properties/deviceId" },
+    "capabilities": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["video", "e2ee"],
+      "properties": {
+        "video": { "type": "boolean" },
+        "e2ee": { "type": "boolean" }
+      }
+    },
+    "sfu_region_hint": { "type": "string", "enum": ["ru", "tr", "ae"] }
+  }
+}

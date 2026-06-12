@@ -1,0 +1,31 @@
+{
+  "version": 1,
+  "generated_at": "2026-02-19",
+  "performance_budgets": {
+    "web": {
+      "bundle_size_kb": 350,
+      "main_js_kb": 150,
+      "main_css_kb": 50,
+      "images_total_mb": 10,
+      "fonts_kb": 100,
+      "first_contentful_paint_ms": 1500,
+      "largest_contentful_paint_ms": 2500,
+      "cumulative_layout_shift": 0.1,
+      "time_to_interactive_ms": 3500
+    },
+    "mobile": {
+      "android_app_size_mb": 80,
+      "ios_app_size_mb": 95,
+      "startup_cold_ms": 2000,
+      "startup_warm_ms": 500,
+      "memory_footprint_mb": 120,
+      "battery_drain_per_hour": 5
+    },
+    "api": {
+      "p95_latency_ms": 500,
+      "p99_latency_ms": 1000,
+      "throughput_rps": 5000,
+      "database_query_p95_ms": 100
+    }
+  }
+}

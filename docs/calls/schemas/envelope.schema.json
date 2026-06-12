@@ -1,0 +1,34 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mansoni.com/schemas/ws/envelope.schema.json",
+  "title": "Mansoni Calls WS Envelope",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["v", "type", "msgId", "ts", "payload"],
+  "properties": {
+    "v": { "type": "integer", "const": 1, "description": "Protocol version" },
+    "type": { "type": "string", "description": "Message type" },
+    "msgId": { "type": "string", "format": "uuid", "description": "Idempotency key" },
+    "ts": { "type": "integer", "minimum": 0, "description": "unix ms" },
+    "seq": { "type": "integer", "minimum": 0, "description": "Monotonic per-connection sequence" },
+    "ack": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ackOfMsgId"],
+      "properties": {
+        "ackOfMsgId": { "type": "string", "format": "uuid", "description": "Original message msgId being acknowledged" },
+        "ok": { "type": "boolean" },
+        "error": { "$ref": "https://mansoni.com/schemas/ws/error.schema.json" }
+      }
+    },
+    "trace": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "traceId": { "type": "string", "minLength": 8, "maxLength": 64 },
+        "spanId": { "type": "string", "minLength": 8, "maxLength": 64 }
+      }
+    },
+    "payload": { "type": "object" }
+  }
+}

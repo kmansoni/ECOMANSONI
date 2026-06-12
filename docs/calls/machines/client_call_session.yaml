@@ -1,0 +1,200 @@
+machine: ClientCallSession
+initial: DISCONNECTED
+
+timers:
+  T_WS_HELLO: 2000
+  T_WS_AUTH: 3000
+  T_JOIN: 5000
+  T_ICE_CONNECT: 4000
+  T_ICE_RELAY_CONNECT: 6000
+  T_HEARTBEAT_MISS: 25000
+  T_REKEY_DEADLINE: 8000
+  T_KEY_ACK_RETRY_BASE: 300
+  T_KEY_ACK_RETRY_MAX: 3000
+  T_MIGRATE_REJOIN: 2000
+
+states:
+  DISCONNECTED:
+    on:
+      APP_START:
+        actions: [openWs]
+        target: WS_CONNECTING
+
+  WS_CONNECTING:
+    on:
+      WS_OPEN:
+        actions: [sendHELLO, startTimer(T_WS_HELLO)]
+        target: WS_WAIT_WELCOME
+      WS_ERROR:
+        actions: [backoffReconnect]
+        target: DISCONNECTED
+
+  WS_WAIT_WELCOME:
+    on:
+      WELCOME:
+        actions: [stopTimer(T_WS_HELLO), startHeartbeat, sendAUTH, startTimer(T_WS_AUTH)]
+        target: WS_AUTHENTICATING
+      TIMER_T_WS_HELLO:
+        actions: [closeWs, backoffReconnect]
+        target: DISCONNECTED
+
+  WS_AUTHENTICATING:
+    on:
+      AUTH_OK:
+        actions: [stopTimer(T_WS_AUTH), sendE2EE_CAPS]
+        target: READY
+      AUTH_FAIL:
+        actions: [stopTimer(T_WS_AUTH), hardFail("UNAUTHENTICATED")]
+        target: FAILED
+      TIMER_T_WS_AUTH:
+        actions: [closeWs, backoffReconnect]
+        target: DISCONNECTED
+
+  READY:
+    on:
+      USER_CREATE_CALL:
+        actions: [probeRegionsRTT, chooseRegion, sendROOM_CREATE]
+        target: WAIT_ROOM_CREATED
+      USER_JOIN_CALL:
+        actions: [probeRegionsRTT, sendROOM_JOIN, startTimer(T_JOIN)]
+        target: WAIT_JOIN_OK
+      HEARTBEAT_MISSED:
+        actions: [closeWs, backoffReconnect]
+        target: DISCONNECTED
+
+  WAIT_ROOM_CREATED:
+    on:
+      ROOM_CREATED:
+        actions: [cacheRoom, sendROOM_JOIN, startTimer(T_JOIN)]
+        target: WAIT_JOIN_OK
+      ERROR:
+        actions: [showError]
+        target: READY
+
+  WAIT_JOIN_OK:
+    on:
+      ROOM_JOIN_OK:
+        actions:
+          - stopTimer(T_JOIN)
+          - cacheJoinContext
+          - ifE2eeRequiredThenEnsureCapsElseFail
+          - createMediasoupDevice
+          - createTransports
+          - connectTransportsDTLS
+          - startIcePolicy("all")
+          - startTimer(T_ICE_CONNECT)
+        target: ICE_CONNECTING
+      TIMER_T_JOIN:
+        actions: [retryROOM_JOIN_or_failoverDirectory]
+        target: READY
+      E2EE_POLICY:
+        actions: [applyPolicyOrFail]
+      ROOM_SNAPSHOT:
+        actions: [applySnapshot, ifSnapshotMissingKeysEnterRekey]
+        target: E2EE_REKEYING
+
+  ICE_CONNECTING:
+    on:
+      ICE_CONNECTED:
+        actions: [stopTimer(T_ICE_CONNECT), startProduceLocalTracks]
+        target: MEDIA_ESTABLISHING
+      ICE_FAILED:
+        actions: [requestIceRestart(policy="relay"), startTimer(T_ICE_RELAY_CONNECT)]
+        target: ICE_RELAY_CONNECTING
+      TIMER_T_ICE_CONNECT:
+        actions: [requestIceRestart(policy="relay"), startTimer(T_ICE_RELAY_CONNECT)]
+        target: ICE_RELAY_CONNECTING
+
+  ICE_RELAY_CONNECTING:
+    on:
+      ICE_CONNECTED:
+        actions: [stopTimer(T_ICE_RELAY_CONNECT), startProduceLocalTracks]
+        target: MEDIA_ESTABLISHING
+      TIMER_T_ICE_RELAY_CONNECT:
+        actions: [hardFail("CONNECTIVITY_FAILED")]
+        target: FAILED
+
+  MEDIA_ESTABLISHING:
+    on:
+      PRODUCER_ADDED:
+        actions: [sendCONSUME]
+      CONSUMER_ADDED:
+        actions: [attachRemoteTrack]
+      REKEY_BEGIN:
+        actions: [enterRekey(newEpoch), startTimer(T_REKEY_DEADLINE)]
+        target: E2EE_REKEYING
+      E2EE_KEYS_READY:
+        actions: [markE2eeReadyUI]
+        target: IN_CALL
+      ROOM_SNAPSHOT:
+        actions: [applySnapshot, ifSnapshotMissingKeysEnterRekey]
+        target: E2EE_REKEYING
+      ROOM_MIGRATE:
+        actions: [beginMigrate]
+        target: MIGRATING
+
+  IN_CALL:
+    on:
+      REKEY_BEGIN:
+        actions: [enterRekey(newEpoch), startTimer(T_REKEY_DEADLINE)]
+        target: E2EE_REKEYING
+      ROOM_MIGRATE:
+        actions: [beginMigrate]
+        target: MIGRATING
+      ICE_FAILED:
+        actions: [requestIceRestart(policy=currentPolicy)]
+        target: ICE_CONNECTING
+      USER_HANGUP:
+        actions: [stopAllMedia, closeTransports, sendLeave]
+        target: READY
+      HEARTBEAT_MISSED:
+        actions: [closeWs, attemptResume]
+        target: DISCONNECTED
+      ROOM_SNAPSHOT:
+        actions: [applySnapshot, ifSnapshotMissingKeysEnterRekey]
+        target: E2EE_REKEYING
+
+  E2EE_REKEYING:
+    on:
+      REKEY_BEGIN:
+        actions: [resetRekeyState(newEpoch), restartTimer(T_REKEY_DEADLINE)]
+      KEY_PACKAGE:
+        actions: [decryptAndInstallSenderKey, sendKEY_ACK]
+      KEY_ACK:
+        actions: [recordAck]
+      REKEY_COMMIT:
+        actions: [stopTimer(T_REKEY_DEADLINE), switchEpochKeys, markE2eeReadyIfComplete]
+        target: IN_CALL
+      REKEY_ABORT:
+        actions: [stopTimer(T_REKEY_DEADLINE), hardFail("E2EE_KEY_SYNC_FAILED")]
+        target: FAILED
+      TIMER_T_REKEY_DEADLINE:
+        actions: [requestRekeyResyncOrFail]
+        target: FAILED
+
+  MIGRATING:
+    on:
+      ENTER:
+        actions:
+          - stopAllMedia
+          - closeTransports
+          - wait(T_MIGRATE_REJOIN)
+          - sendROOM_JOIN
+          - startTimer(T_JOIN)
+      ROOM_JOIN_OK:
+        actions:
+          - stopTimer(T_JOIN)
+          - rebuildDeviceAndTransports
+          - connectTransportsDTLS
+          - startIcePolicy("all")
+          - startTimer(T_ICE_CONNECT)
+        target: ICE_CONNECTING
+      TIMER_T_JOIN:
+        actions: [hardFail("MIGRATE_FAILED")]
+        target: FAILED
+
+  FAILED:
+    on:
+      USER_RETRY:
+        actions: [cleanup, backoffReconnect]
+        target: DISCONNECTED

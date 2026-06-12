@@ -1,0 +1,155 @@
+{
+  "spec_version": "1.1.0",
+  "surface": "home_feed",
+  "components": [
+    {
+      "name": "relationship",
+      "scorer_version": "rel_v1",
+      "feature_version": "rel_feat_v1",
+      "normalization_version": "logistic_v1",
+      "range": [0.0, 1.0],
+      "fallback_value": 0.15,
+      "weight": 0.24,
+      "normalization": {
+        "method": "logistic",
+        "params": { "k": 4.2, "x0": 0.35 }
+      }
+    },
+    {
+      "name": "relevance",
+      "scorer_version": "relv_v1",
+      "feature_version": "relv_feat_v1",
+      "normalization_version": "minmax_v1",
+      "range": [0.0, 1.0],
+      "fallback_value": 0.20,
+      "weight": 0.17,
+      "normalization": {
+        "method": "minmax_clamped",
+        "params": { "min": 0.0, "max": 1.0 }
+      }
+    },
+    {
+      "name": "freshness",
+      "scorer_version": "fresh_v1",
+      "feature_version": "fresh_feat_v1",
+      "normalization_version": "piecewise_decay_v1",
+      "range": [0.0, 1.0],
+      "fallback_value": 0.10,
+      "weight": 0.13,
+      "normalization": {
+        "method": "piecewise_decay",
+        "params": {}
+      }
+    },
+    {
+      "name": "quality",
+      "scorer_version": "qae_v1",
+      "feature_version": "qae_feat_v1",
+      "normalization_version": "logistic_v1",
+      "range": [0.0, 1.0],
+      "fallback_value": 0.25,
+      "weight": 0.12,
+      "normalization": {
+        "method": "logistic",
+        "params": { "k": 3.8, "x0": 0.45 }
+      }
+    },
+    {
+      "name": "trust",
+      "scorer_version": "trust_v1",
+      "feature_version": "trust_feat_v1",
+      "normalization_version": "bucketed_v1",
+      "range": [0.0, 1.0],
+      "fallback_value": 0.30,
+      "weight": 0.10,
+      "normalization": {
+        "method": "bucketed_lookup",
+        "params": { "A": 1.0, "B": 0.82, "C": 0.50, "D": 0.10 }
+      }
+    },
+    {
+      "name": "conversation",
+      "scorer_version": "conv_v1",
+      "feature_version": "conv_feat_v1",
+      "normalization_version": "logistic_v1",
+      "range": [0.0, 1.0],
+      "fallback_value": 0.10,
+      "weight": 0.08,
+      "normalization": {
+        "method": "logistic",
+        "params": { "k": 4.0, "x0": 0.25 }
+      }
+    },
+    {
+      "name": "utility",
+      "scorer_version": "util_v1",
+      "feature_version": "util_feat_v1",
+      "normalization_version": "minmax_v1",
+      "range": [0.0, 1.0],
+      "fallback_value": 0.0,
+      "weight": 0.05,
+      "normalization": {
+        "method": "minmax_clamped",
+        "params": { "min": 0.0, "max": 1.0 }
+      }
+    },
+    {
+      "name": "diversity_prior",
+      "scorer_version": "div_v1",
+      "feature_version": "div_feat_v1",
+      "normalization_version": "minmax_v1",
+      "range": [0.0, 1.0],
+      "fallback_value": 0.50,
+      "weight": 0.04,
+      "normalization": {
+        "method": "minmax_clamped",
+        "params": { "min": 0.0, "max": 1.0 }
+      }
+    },
+    {
+      "name": "local_context",
+      "scorer_version": "local_v1",
+      "feature_version": "local_feat_v1",
+      "normalization_version": "minmax_v1",
+      "range": [0.0, 1.0],
+      "fallback_value": 0.0,
+      "weight": 0.03,
+      "normalization": {
+        "method": "minmax_clamped",
+        "params": { "min": 0.0, "max": 1.0 }
+      }
+    },
+    {
+      "name": "fairness_prior",
+      "scorer_version": "fair_v1",
+      "feature_version": "fair_feat_v1",
+      "normalization_version": "bucketed_v1",
+      "range": [0.0, 1.0],
+      "fallback_value": 0.5,
+      "weight": 0.04,
+      "normalization": {
+        "method": "bucketed_lookup",
+        "params": {
+          "underexposed_clean_new_creator": 0.75,
+          "neutral": 0.50,
+          "oversaturated_large_author": 0.30
+        }
+      }
+    }
+  ],
+  "modifiers": {
+    "trust_modifier": { "A": 1.0, "B": 0.92, "C": 0.65, "D": 0.15 },
+    "abuse_modifier": { "tier0": 1.0, "tier1": 0.85, "tier2": 0.45, "tier3": 0.05 },
+    "fatigue_modifier": { "min": 0.75, "max": 1.0 },
+    "session_intent_modifier": { "min": 0.85, "max": 1.10 },
+    "policy_modifier": { "min": 0.60, "max": 1.0 }
+  },
+  "formula": "final_score = weighted_sum(components) * trust_modifier * abuse_modifier * fatigue_modifier * session_intent_modifier * policy_modifier",
+  "invariants": [
+    "all components must be finite",
+    "all components must be clamped to [0,1]",
+    "missing feature values must use explicit fallback",
+    "utility weight must not exceed 0.08 on home_feed",
+    "fairness must not override trust or abuse restrictions"
+  ]
+}

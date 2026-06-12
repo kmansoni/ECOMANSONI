@@ -1,0 +1,95 @@
+{
+  "matrix_version": "1.1.0",
+  "actions": {
+    "hide_post": {
+      "post_suppression": 1.0,
+      "author_penalty": 0.05,
+      "topic_penalty": 0.03,
+      "discovery_penalty": 0.0,
+      "business_penalty": 0.0,
+      "duration_hours": 168
+    },
+    "not_interested_topic": {
+      "post_suppression": 0.6,
+      "author_penalty": 0.0,
+      "topic_penalty": 0.55,
+      "discovery_penalty": 0.15,
+      "business_penalty": 0.0,
+      "duration_hours": 336
+    },
+    "less_from_author": {
+      "post_suppression": 0.15,
+      "author_penalty": 0.45,
+      "topic_penalty": 0.0,
+      "discovery_penalty": 0.0,
+      "business_penalty": 0.0,
+      "duration_hours": 720
+    },
+    "mute_author": {
+      "post_suppression": 1.0,
+      "author_penalty": 1.0,
+      "topic_penalty": 0.0,
+      "discovery_penalty": 0.0,
+      "business_penalty": 0.0,
+      "duration_hours": 99999
+    },
+    "mute_topic": {
+      "post_suppression": 0.75,
+      "author_penalty": 0.0,
+      "topic_penalty": 0.9,
+      "discovery_penalty": 0.2,
+      "business_penalty": 0.0,
+      "duration_hours": 2160
+    },
+    "hide_business_content": {
+      "post_suppression": 0.0,
+      "author_penalty": 0.0,
+      "topic_penalty": 0.0,
+      "discovery_penalty": 0.0,
+      "business_penalty": 0.8,
+      "duration_hours": 720
+    },
+    "hide_local_offers": {
+      "post_suppression": 0.0,
+      "author_penalty": 0.0,
+      "topic_penalty": 0.0,
+      "discovery_penalty": 0.0,
+      "business_penalty": 0.6,
+      "duration_hours": 720
+    },
+    "hide_recommendations": {
+      "post_suppression": 0.0,
+      "author_penalty": 0.0,
+      "topic_penalty": 0.0,
+      "discovery_penalty": 0.6,
+      "business_penalty": 0.3,
+      "duration_hours": 168
+    },
+    "report_spam": {
+      "post_suppression": 1.0,
+      "author_penalty": 0.6,
+      "topic_penalty": 0.1,
+      "discovery_penalty": 0.7,
+      "business_penalty": 0.5,
+      "duration_hours": 99999,
+      "escalate_to_trust": true,
+      "escalate_to_moderation": true
+    },
+    "report_abuse": {
+      "post_suppression": 1.0,
+      "author_penalty": 0.8,
+      "topic_penalty": 0.2,
+      "discovery_penalty": 0.8,
+      "business_penalty": 0.6,
+      "duration_hours": 99999,
+      "escalate_to_trust": true,
+      "escalate_to_moderation": true
+    }
+  },
+  "invariants": [
+    "report actions are not preference-only; they must enter trust pipeline",
+    "mute actions must be enforced before ranking",
+    "hide_recommendations must reduce discovery budgets",
+    "business-related suppressions must not affect organic friend posts"
+  ]
+}

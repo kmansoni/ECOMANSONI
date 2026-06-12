@@ -1,0 +1,19 @@
+{
+  "file": "B-138-read-cursor-semantics-unread-counters.json",
+  "id": "B-138",
+  "title": "Read Cursor Semantics and Unread Counters",
+  "description": "Defines seen/read cursor monotonicity and unread counter derivation without per-message receipts.",
+  "priority": "P0",
+  "complexity": "S",
+  "must_have": [
+    "last_seen_seq monotonic",
+    "last_read_seq monotonic",
+    "unread=last_msg_seq-last_read_seq",
+    "multi-device cursor merge via greatest()"
+  ],
+  "acceptance": [
+    "Unread counters consistent across devices",
+    "Cursor cannot move backwards",
+    "No O(messages x members) receipt writes"
+  ]
+}

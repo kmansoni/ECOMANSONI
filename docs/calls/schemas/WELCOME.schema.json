@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mansoni.com/schemas/ws/WELCOME.schema.json",
+  "title": "WELCOME",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["serverTime", "heartbeatSec", "resumeToken"],
+  "properties": {
+    "serverTime": { "type": "integer", "minimum": 0 },
+    "heartbeatSec": { "type": "integer", "minimum": 5, "maximum": 60 },
+    "resumeToken": { "type": "string", "maxLength": 2048 },
+    "features": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "wsSeqRequired": { "type": "boolean" },
+        "e2eeRequiredDefault": { "type": "boolean" }
+      }
+    }
+  }
+}

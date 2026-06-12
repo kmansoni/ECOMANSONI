@@ -1,0 +1,140 @@
+{
+  "req_id": "REQ-0062",
+  "title": "Real-time Sync Protocol",
+  "version": "1.0",
+  "status": "in-design",
+  "domain": "messaging",
+  "depends_on": ["REQ-0061"],
+  "background": "Клиент должен видеть новые сообщения мгновенно (<100ms), даже при плохой сети. Протокол должен поддерживать фаззевание отказов и автоматического восстановления.",
+  "protocol": {
+    "transport": "WebSocket + fallback HTTP long-polling",
+    "format": "JSON + optional binary (protobuf for performance)",
+    "uri": "wss://api.app.com/v1/realtime?token={jwt}"
+  },
+  "message_flow": {
+    "client_to_server": {
+      "ack": {
+        "type": "ACK",
+        "fields": {
+          "seq": "integer (monotonic client sequence)",
+          "message_ids": ["UUID"],
+          "timestamp_ms": "long"
+        },
+        "purpose": "Сообщить серверу, что клиент получил сообщения и может перезагружаться без потери"
+      },
+      "subscribe": {
+        "type": "SUBSCRIBE",
+        "fields": {
+          "conversations": ["conversation_id"],
+          "groups": ["group_id"]
+        },
+        "purpose": "Клиент подписывается на обновления конкретных чатов после переподключения"
+      }
+    },
+    "server_to_client": {
+      "message": {
+        "type": "MESSAGE",
+        "fields": {
+          "message_id": "UUID",
+          "conversation_id": "UUID",
+          "sender_id": "UUID",
+          "content": "string",
+          "seq": "integer (conversation-wide sequence number)",
+          "timestamp": "ISO8601",
+          "attachments": [{"type": "image|video|audio", "url": "str"}]
+        },
+        "sla": "p95 latency from send → deliver to client: 100ms"
+      },
+      "ack_request": {
+        "type": "ACK_REQUEST",
+        "fields": {
+          "req_id": "UUID",
+          "client_seq_expected": "integer"
+        },
+        "purpose": "Сервер просит клиента отправить ACK, если потеря соединения"
+      },
+      "sync_snapshot": {
+        "type": "SYNC_SNAPSHOT",
+        "sent_when": "client reconnects",
+        "fields": {
+          "conversation_id": "UUID",
+          "messages": [{
+            "message_id": "UUID",
+            "seq": "integer",
+            "content": "string"
+          }],
+          "last_seq_on_server": "integer",
+          "cursor_position": "integer (where client had last ack)"
+        },
+        "purpose": "Наверстать все пропущенные сообщения при переподключении"
+      }
+    }
+  },
+  "state_machine": {
+    "states": [
+      "DISCONNECTED → CONNECTING (try open WebSocket)",
+      "CONNECTING → CONNECTED (ACK received from server)",
+      "CONNECTED → SYNCING (request snapshot from last ack seq)",
+      "SYNCING → CONNECTED (resume normal flow)",
+      "CONNECTED → DISCONNECTED (network lost, backoff retry)"
+    ],
+    "backoff": {
+      "strategy": "exponential_with_jitter",
+      "initial_ms": 100,
+      "max_ms": 30000,
+      "multiplier": 2,
+      "jitter_factor": 0.1
+    }
+  },
+  "reliability": {
+    "at_least_once_delivery": {
+      "mechanism": "client tracks seq per conversation, server keeps history in Kafka",
+      "window": "last 7 days"
+    },
+    "exactly_once_processing": {
+      "mechanism": "idempotency key (client_message_id) on insert",
+      "dedup_window": "24 hours",
+      "db_constraint": "UNIQUE(conversation_id, sender_id, client_message_id)"
+    },
+    "message_ordering": {
+      "per_conversation": "FIFO by seq number",
+      "enforcement": "SET LOCK TIMEOUT, skip out-of-order, alert if gap detected"
+    }
+  },
+  "fallback_strategy": {
+    "websocket_unavailable": {
+      "trigger": "no ACK for 30s",
+      "fallback": "HTTP/1.1 long-polling",
+      "interval_sec": 3,
+      "batch_size": 50
+    },
+    "slow_network": {
+      "detection": "RTT > 1000ms for 3 consecutive packets",
+      "action": "compress payload, reduce sampling rate for typing indicators",
+      "recovery": "resume normal mode when RTT < 500ms for 5s"
+    }
+  },
+  "client_buffering": {
+    "when_offline": {
+      "store": "SQLite (mobile) / IndexedDB (web)",
+      "max_messages": 10000,
+      "retention": "until sync confirms"
+    },
+    "memory_optimization": {
+      "large_payloads": "lazy load attachments on scroll",
+      "old_messages": "evict from memory after 1 hour inactive"
+    }
+  },
+  "security": {
+    "authentication": "JWT in WebSocket query param (rotate hourly)",
+    "encryption": "TLS 1.3 for transport, E2E optional per conversation",
+    "rate_limiting": "per_user: 1000 msg/hour, per_ws_conn: 500 msg/min"
+  },
+  "testing_scenarios": [
+    "client sends message, server acks within <100ms p95",
+    "client offline 5min, reconnects, receives all 50 missed messages in order",
+    "two clients in same convo, message order preserved despite network jitter",
+    "mobile client switches network (wifi→4g), resume without duplication",
+    "server crashes, Kafka replay ensures client catches up on reconnect"
+  ]
+}

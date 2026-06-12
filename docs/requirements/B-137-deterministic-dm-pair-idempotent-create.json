@@ -1,0 +1,18 @@
+{
+  "file": "B-137-deterministic-dm-pair-idempotent-create.json",
+  "id": "B-137",
+  "title": "Deterministic DM Pair and Idempotent Create",
+  "description": "Guarantees one DM per user pair with race-safe create/get semantics and no duplicate dialogs.",
+  "priority": "P0",
+  "complexity": "S",
+  "must_have": [
+    "dm_pairs unique(user_low,user_high)",
+    "dialog_get_or_create_dm_v1",
+    "idempotent create retries"
+  ],
+  "acceptance": [
+    "Parallel create returns same dialog_id",
+    "No duplicate DM rows",
+    "Blocked pair policy enforced server-side"
+  ]
+}

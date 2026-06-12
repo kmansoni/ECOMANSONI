@@ -1,0 +1,24 @@
+{
+  "version": 1,
+  "generated_at": "2026-02-19",
+  "wcag_2_1_aa_compliance": {
+    "visual": {
+      "color_contrast_ratio": "4.5:1 for normal text, 3:1 for large text",
+      "text_scaling": "support up to 200%",
+      "focus_indicators": "visible on keyboard navigation",
+      "target_size": "44x44 px minimum"
+    },
+    "navigation": {
+      "keyboard_accessible": "all features via keyboard",
+      "skip_links": "present on every page",
+      "focus_order": "logical and intuitive",
+      "no_keyboard_trap": "required"
+    },
+    "screen_reader": {
+      "semantic_html": "proper headings, landmarks, labels",
+      "alt_text": "all images with meaningful alternatives",
+      "aria_labeling": "complex widgets labeled",
+      "language_tag": "html lang attribute"
+    }
+  }
+}

@@ -1,0 +1,2 @@
+{"v":1,"type":"ROOM_MIGRATE","msgId":"00000000-0000-0000-0000-000000000301","ts":0,"seq":55,"payload":{"roomId":"R","fromNodeId":"tr-sfu-1","toNodeId":"tr-sfu-2","region":"tr","reason":"NODE_UNHEALTHY","rejoinAfterMs":1500}}
+{"v":1,"type":"ROOM_JOIN","msgId":"00000000-0000-0000-0000-000000000302","ts":1501,"seq":5,"payload":{"roomId":"R","deviceId":"devA","e2eeState":{"lastEpochSeen":3,"ackedSenderKeyIds":["skA3"]}}}

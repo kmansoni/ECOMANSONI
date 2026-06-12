@@ -1,0 +1,260 @@
+{
+  "req_id": "REQ-0096",
+  "title": "Content Moderation (Auto-Flagging, Human Review)",
+  "version": "1.0",
+  "status": "in-design",
+  "domain": "messaging",
+  "depends_on": ["REQ-0061"],
+  "use_cases": [
+    "user posts hateful content → system auto-flags (confidence 95%)",
+    "human moderator reviews flagged message, confirms it's hateful",
+    "message removed, user muted for 24h",
+    "repeated violations → account suspended"
+  ],
+  "moderation_layers": [
+    {
+      "layer": "client-side",
+      "mechanism": "optional profanity filter (user can enable/disable)"
+    },
+    {
+      "layer": "automatic-server",
+      "mechanism": "ML model detects hate speech, spam, NSFW"
+    },
+    {
+      "layer": "human-review",
+      "mechanism": "reported messages reviewed by moderator team"
+    }
+  ],
+  "auto_flagging": {
+    "ml_model": "text classification (PyTorch/TensorFlow)",
+    "categories": [
+      {
+        "name": "hate_speech",
+        "threshold": 0.8,
+        "action": "auto-remove if >0.95 confidence, flag for review if 0.8-0.95"
+      },
+      {
+        "name": "harassment",
+        "threshold": 0.8,
+        "action": "flag for review"
+      },
+      {
+        "name": "spam",
+        "threshold": 0.9,
+        "action": "auto-remove if >0.99 confidence, flag if 0.9-0.99"
+      },
+      {
+        "name": "self_harm",
+        "threshold": 0.9,
+        "action": "auto-remove, alert mental health resources"
+      },
+      {
+        "name": "nsfw",
+        "threshold": 0.8,
+        "action": "blur image, tag [NSFW], flag for review"
+      }
+    ]
+  },
+  "additional_signals": {
+    "sender_reputation": "if user has prior violations, lower threshold for flagging",
+    "context_window": "if previous 3 messages in thread are hateful, lower threshold",
+    "bulk_reports": "if message gets 5+ user reports, auto-flag even if model confidence low"
+  },
+  "user_reporting": {
+    "flow": [
+      "1. long-press message → 'Report'",
+      "2. select reason: spam, harassment, hateful, inappropriate, other",
+      "3. optional: add comment (e.g., 'This is racist')",
+      "4. send report to moderation queue"
+    ]
+  },
+  "database_schema": {
+    "flagged_messages_table": {
+      "columns": [
+        "flag_id UUID PK",
+        "message_id UUID FK",
+        "category VARCHAR(50) (hate_speech, spam, nsfw, etc)",
+        "confidence FLOAT (0.0-1.0)",
+        "source VARCHAR (auto_ml, user_report, bulk_report)",
+        "flagged_at TIMESTAMP",
+        "status VARCHAR(pending, reviewed, resolved)"
+      ]
+    },
+    "moderation_reviews_table": {
+      "columns": [
+        "review_id UUID PK",
+        "flag_id UUID FK",
+        "moderator_id UUID FK",
+        "decision VARCHAR(remove, warn, allow, escalate)",
+        "reason TEXT",
+        "action_taken VARCHAR(remove_msg, mute_user, suspend_user)",
+        "reviewed_at TIMESTAMP"
+      ]
+    },
+    "user_violation_history_table": {
+      "columns": [
+        "violation_id UUID PK",
+        "user_id UUID FK",
+        "violation_type VARCHAR(hate_speech, spam, etc)",
+        "action_taken VARCHAR(warn, mute, suspend)",
+        "duration_hours INTEGER (null for permanent)",
+        "created_at TIMESTAMP",
+        "expires_at TIMESTAMP (null for permanent)"
+      ]
+    }
+  },
+  "moderation_actions": {
+    "warn": {
+      "effect": "user shown warning: 'Your message violated our policy'",
+      "counter": "1st violation"
+    },
+    "remove": {
+      "effect": "message hidden from conversation, thread replies hid",
+      "counter": "1st-2nd violation"
+    },
+    "mute": {
+      "effect": "user cannot send messages for N hours",
+      "effect_on_group": "cannot send in that group (if group-scoped)",
+      "duration": "24h (default), or custom per violation"
+    },
+    "suspend": {
+      "effect": "user account suspended, cannot log in",
+      "duration": "7 days (default), or permanent on repeated",
+      "appeal": "user can appeal suspension"
+    }
+  },
+  "automated_escalation": {
+    "rule_1": "3 violations in 30 days → auto-mute 24h",
+    "rule_2": "5 violations in 30 days → auto-suspend 7 days",
+    "rule_3": "10+ violations → auto-suspend permanent (with appeal option)"
+  },
+  "moderation_queue": {
+    "ui": "moderation dashboard for moderator team",
+    "sections": [
+      {
+        "name": "Pending Review",
+        "filters": ["category", "confidence", "flag source"],
+        "sort": ["by confidence DESC", "by user violation history"]
+      },
+      {
+        "name": "Resolved",
+        "filters": ["decision", "moderator"]
+      }
+    ],
+    "per_review": {
+      "message_content": "message text",
+      "context": "previous 5 messages in thread",
+      "sender_history": "user's past violations",
+      "actions": ["Remove & Warn", "Remove & Mute 24h", "Remove & Suspend", "Allow"]
+    }
+  },
+  "moderation_appeal": {
+    "flow": [
+      "1. suspended user sees 'Appeal Suspension'",
+      "2. user submits appeal (text)",
+      "3. different moderator reviews appeal",
+      "4. moderator approves or denies",
+      "5. user notified of decision"
+    ]
+  },
+  "image_moderation": {
+    "auto_detection": "NSFW detector (image classification model)",
+    "action_on_detect": "blur image, tag [NSFW], allow to view if user clicks (age gate?)",
+    "hash_matching": "store perceptual hash of known CSAM, reject if match"
+  },
+  "link_moderation": {
+    "detection": "scan URLs in messages for malware/phishing (3rd party API: VirusTotal)",
+    "action_on_detect": "block URL, mark message as 'Dangerous Link Detected'"
+  },
+  "language_specific": {
+    "multilingual_model": "support hate speech detection in 10+ languages",
+    "challenge": "cultural context (some phrases OK in one language, hateful in another)"
+  },
+  "api_endpoints": {
+    "report_message": {
+      "endpoint": "POST /v1/messages/{id}/report",
+      "payload": {
+        "reason": "harassment",
+        "comment": "This is threatening language"
+      },
+      "response": {
+        "report_id": "UUID",
+        "received_at": "2026-02-15T15:35:00Z"
+      }
+    },
+    "list_flagged_messages": {
+      "endpoint": "GET /v1/moderation/flagged",
+      "permission": "moderator only",
+      "query": "?status=pending&category=hate_speech&limit=50",
+      "response": [
+        {
+          "flag_id": "UUID",
+          "message_id": "UUID",
+          "category": "hate_speech",
+          "confidence": 0.92,
+          "flagged_at": "2026-02-15T15:30:00Z"
+        }
+      ]
+    },
+    "review_message": {
+      "endpoint": "POST /v1/moderation/flags/{flag_id}/review",
+      "payload": {
+        "decision": "remove",
+        "action": "mute_user",
+        "duration_hours": 24,
+        "reason": "Hate speech violation"
+      },
+      "response": {
+        "review_id": "UUID",
+        "message_id": "UUID",
+        "action_taken": "mute_user"
+      }
+    },
+    "appeal_suspension": {
+      "endpoint": "POST /v1/user/appeal-suspension",
+      "payload": {
+        "appeal_text": "I apologize, I did not intend to violate the policy..."
+      },
+      "response": {
+        "appeal_id": "UUID",
+        "status": "submitted"
+      }
+    }
+  },
+  "monitoring": {
+    "metrics": [
+      "moderation.flagged_messages_per_day",
+      "moderation.auto_removed_confidence_score_distribution",
+      "moderation.human_review_resolution_time_hours",
+      "moderation.appeal_rate",
+      "moderation.false_positive_rate (mods override auto-remove)",
+      "moderation.repeat_offender_rate"
+    ],
+    "alerts": [
+      "false_positive_rate >10% (ML model misconfigured?)",
+      "review_backlog >1000 messages (understaffed moderation?)",
+      "spike in reports from one user (organized harassment?)"
+    ]
+  },
+  "testing": {
+    "scenarios": [
+      "post hateful message → auto-flagged if confidence >0.95, removed immediately",
+      "post marginal message (confidence 0.85) → flagged for human review, visible to users",
+      "5 users report same message → escalated to high-priority review",
+      "moderator reviews flagged message → removes and mutes user 24h",
+      "muted user attempts message → API returns 403 'You are muted in this group'",
+      "3rd violation in 30 days → auto-muted 24h",
+      "7 days later, mute expires → user can message again",
+      "suspended user logs in → shown appeal page"
+    ]
+  },
+  "compliance": {
+    "gdpr": "moderation decision logged (decision, reason, moderator), user can request their data",
+    "cda_230": "platform liable for illegal content (CSAM, etc), need active moderation",
+    "dsa_eu": "must respond to removal requests within 24h, provide appeal mechanism"
+  },
+  "privacy": {
+    "moderator_context": "moderators can see sender's name and history (needed for context)",
+    "reported_user_notification": "user NOT notified who reported them (anonymized)"
+  }
+}

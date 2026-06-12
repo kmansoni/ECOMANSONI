@@ -1,0 +1,53 @@
+{
+  "generated_at": "2026-02-22T10:20:00Z",
+  "sections": [
+    {
+      "type": "trending_now",
+      "title": "Trending now",
+      "items": [
+        {
+          "trend_id": "trend_20260222_001",
+          "type": "hashtag",
+          "subject_id": "hashtag:cars",
+          "score": 0.82,
+          "window": "6h",
+          "generated_at": "2026-02-22T10:15:00Z",
+          "flags": ["rank.trust_weighted"]
+        }
+      ]
+    },
+    {
+      "type": "hashtags",
+      "title": "Hashtags",
+      "items": [
+        { "hashtag": "cars", "status": "normal", "post_count_approx": 120000 }
+      ]
+    },
+    {
+      "type": "fresh_creators",
+      "title": "Fresh creators",
+      "items": [
+        { "user_id": "user_123", "display_name": "Manso", "avatar_url": null }
+      ]
+    },
+    {
+      "type": "categories",
+      "title": "Categories",
+      "items": [
+        { "category_id": "cat_auto", "title": "Auto" }
+      ]
+    },
+    {
+      "type": "recommended_reels",
+      "title": null,
+      "items": [
+        {
+          "reel_id": "reel_abc",
+          "author_id": "user_456",
+          "thumbnail_url": "https://cdn.example.com/thumb.jpg",
+          "created_at": "2026-02-21T12:00:00Z"
+        }
+      ]
+    }
+  ]
+}

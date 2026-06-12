@@ -1,0 +1,121 @@
+{
+  "version": 1,
+  "generated_at": "2026-02-19",
+  "slos": [
+    {
+      "slo_id": "SLO-001",
+      "domain_id": "messaging",
+      "title": "Message Delivery Availability",
+      "objective": "99.5%",
+      "window": "30-day rolling",
+      "sli": {
+        "name": "sli_message_delivery_success",
+        "definition": "(successful_deliveries) / (attempted_deliveries)",
+        "threshold": 0.995,
+        "measurement_interval": "1 minute"
+      },
+      "error_budget": {
+        "per_month_percent": 0.5,
+        "per_month_minutes": 21.6,
+        "per_week_minutes": 5
+      },
+      "owner": "@backend"
+    },
+    {
+      "slo_id": "SLO-002",
+      "domain_id": "messaging",
+      "title": "Message Delivery Latency",
+      "objective": "p95 < 5 seconds",
+      "window": "30-day rolling",
+      "sli": {
+        "name": "sli_message_delivery_latency",
+        "definition": "percentile(delivery_latency_seconds, 0.95)",
+        "threshold": 5.0,
+        "measurement_interval": "1 minute"
+      },
+      "owner": "@backend"
+    },
+    {
+      "slo_id": "SLO-003",
+      "domain_id": "groups",
+      "title": "Group Message Fanout Latency",
+      "objective": "p95 < 2 seconds for 100-member groups",
+      "window": "30-day rolling",
+      "sli": {
+        "name": "sli_fanout_latency",
+        "definition": "percentile(fanout_latency_seconds, 0.95) for 100 <= members <= 200",
+        "threshold": 2.0
+      },
+      "owner": "@backend"
+    },
+    {
+      "slo_id": "SLO-004",
+      "domain_id": "auth",
+      "title": "Login Success Rate",
+      "objective": "99.9%",
+      "window": "30-day rolling",
+      "sli": {
+        "name": "sli_login_success",
+        "definition": "(successful_logins) / (attempted_logins)",
+        "threshold": 0.999
+      },
+      "error_budget": {
+        "per_month_percent": 0.1,
+        "per_month_minutes": 4.3
+      },
+      "owner": "@security"
+    },
+    {
+      "slo_id": "SLO-005",
+      "domain_id": "sync",
+      "title": "Delta Sync Lag",
+      "objective": "p95 < 2 seconds",
+      "window": "30-day rolling",
+      "sli": {
+        "name": "sli_sync_lag",
+        "definition": "percentile(sync_lag_seconds, 0.95)",
+        "threshold": 2.0
+      },
+      "owner": "@backend"
+    },
+    {
+      "slo_id": "SLO-006",
+      "domain_id": "notifications",
+      "title": "Push Notification Delivery",
+      "objective": "99.5% within 30 seconds",
+      "window": "30-day rolling",
+      "sli": {
+        "name": "sli_push_delivery",
+        "definition": "(delivered_within_30s) / (all_pushed)",
+        "threshold": 0.995
+      },
+      "owner": "@notifications"
+    },
+    {
+      "slo_id": "SLO-007",
+      "domain_id": "perf",
+      "title": "App Startup Performance",
+      "objective": "p95 < 2 seconds cold start",
+      "window": "7-day rolling",
+      "sli": {
+        "name": "sli_startup_latency",
+        "definition": "percentile(startup_time_seconds, 0.95) for cold starts",
+        "threshold": 2.0
+      },
+      "owner": "@perf"
+    },
+    {
+      "slo_id": "SLO-008",
+      "domain_id": "security",
+      "title": "Key Rotation Compliance",
+      "objective": "100% keys rotated within 90 days",
+      "window": "quarterly",
+      "sli": {
+        "name": "sli_key_rotation",
+        "definition": "(keys_rotated_within_90d) / (total_keys)",
+        "threshold": 1.0
+      },
+      "owner": "@security"
+    }
+  ]
+}

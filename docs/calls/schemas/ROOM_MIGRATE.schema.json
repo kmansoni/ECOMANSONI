@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mansoni.com/schemas/ws/ROOM_MIGRATE.schema.json",
+  "title": "ROOM_MIGRATE",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["roomId", "fromNodeId", "toNodeId", "region", "reason", "rejoinAfterMs"],
+  "properties": {
+    "roomId": { "$ref": "https://mansoni.com/schemas/ws/types.schema.json#/properties/roomId" },
+    "fromNodeId": { "$ref": "https://mansoni.com/schemas/ws/types.schema.json#/properties/nodeId" },
+    "toNodeId": { "$ref": "https://mansoni.com/schemas/ws/types.schema.json#/properties/nodeId" },
+    "region": { "$ref": "https://mansoni.com/schemas/ws/types.schema.json#/properties/region" },
+    "reason": { "type": "string", "enum": ["NODE_UNHEALTHY", "OVERLOADED", "MAINTENANCE"] },
+    "rejoinAfterMs": { "type": "integer", "minimum": 0, "maximum": 10000 }
+  }
+}

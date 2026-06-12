@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "mansoni://contracts/explore-cache-entry.v1",
+  "title": "Explore Cache Entry v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["cache_key", "segment_id", "generated_at", "expires_at", "status", "payload"],
+  "properties": {
+    "cache_key": { "type": "string", "minLength": 1 },
+    "segment_id": { "type": "string", "minLength": 1 },
+    "generated_at": { "type": "string", "format": "date-time" },
+    "expires_at": { "type": "string", "format": "date-time" },
+    "status": { "type": "string", "enum": ["fresh", "stale", "invalidated"] },
+    "payload": { "$ref": "explore-page.v1.schema.json" },
+    "reason_codes": {
+      "type": "array",
+      "items": { "type": "string", "pattern": "^(feed|rank|rollout)\\.[a-z0-9_]+$" }
+    }
+  }
+}

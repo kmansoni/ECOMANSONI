@@ -1,0 +1,152 @@
+{
+  "req_id": "REQ-0089",
+  "title": "Group Notifications & Muting (Group-level Controls)",
+  "version": "1.0",
+  "status": "in-design",
+  "domain": "messaging",
+  "depends_on": ["REQ-0078"],
+  "use_cases": [
+    "user mutes group notifications for 1 hour (too noisy)",
+    "user enables only @mentions notifications",
+    "admin sets default: new members get 'mentions only'",
+    "unmute sends you right back in the conversation"
+  ],
+  "group_notification_levels": {
+    "all": {
+      "level": 3,
+      "behavior": "notify on every message",
+      "use_case": "active projects you care about"
+    },
+    "mentions": {
+      "level": 2,
+      "behavior": "notify only on @mentions, @everyone, @admin",
+      "use_case": "large groups, stay updated when relevant"
+    },
+    "muted": {
+      "level": 1,
+      "behavior": "no notifications, unread badge still visible",
+      "use_case": "archived/low-priority groups"
+    }
+  },
+  "notification_settings_ui": {
+    "access": "long-press group in list → 'Notification settings'",
+    "options": [
+      {
+        "level": "All messages",
+        "icon": "🔔"
+      },
+      {
+        "level": "Mentions only",
+        "icon": "🔕"
+      },
+      {
+        "level": "Muted",
+        "icon": "🔇"
+      }
+    ]
+  },
+  "mute_durations": {
+    "pre_set": [
+      "30 minutes",
+      "1 hour (default suggestion)",
+      "8 hours",
+      "1 day",
+      "7 days",
+      "Until I unmute"
+    ],
+    "storage": "mute_until TIMESTAMP in group_members"
+  },
+  "mute_behavior": {
+    "notifications_silenced": "no push, no in-app banner, no badge activity",
+    "unread_count": "still visible in group list (so you see messages arrived)",
+    "messages_readable": "can still read messages in group (mute is notifications only)"
+  },
+  "mentions_notification": {
+    "triggers": [
+      "@user_name (direct mention)",
+      "@everyone (group-wide)",
+      "@admin (admin mentions)",
+      "reply to user's message"
+    ],
+    "overrides_mute": "if group muted, mentions still notify (unless globally disabled)"
+  },
+  "admin_default_setting": {
+    "feature": "admin sets default notification level for new members",
+    "access": "group settings → 'Default notifications'",
+    "applies_to": "new members joining after setting change",
+    "effect": "new member gets this level on join (can change later)"
+  },
+  "do_not_disturb_override": {
+    "global_dnd": "user has 'DND 10pm-8am' enabled",
+    "group_mention": "group mention still notifies during DND (if override enabled)",
+    "setting": "per-group ignore DND toggle"
+  },
+  "notification_settings_migration": {
+    "when_migrating_from_b78": "if user has global 'muted', apply to all existing groups",
+    "per_conversation_override": "user can customize per group"
+  },
+  "database_schema": {
+    "group_members_additions": {
+      "notification_level": "ENUM (all, mentions, muted)",
+      "mute_until": "TIMESTAMP (null if not muted, or 'forever' for manual mute)",
+      "ignore_dnd": "BOOLEAN (mention overrides DND)"
+    }
+  },
+  "api_endpoints": {
+    "set_notification_level": {
+      "endpoint": "PATCH /v1/conversations/{id}/notification-settings",
+      "payload": {
+        "notification_level": "mentions"
+      },
+      "response": {
+        "notification_level": "mentions"
+      }
+    },
+    "mute_group": {
+      "endpoint": "POST /v1/conversations/{id}/mute",
+      "payload": {
+        "mute_until": "2026-02-15T17:35:00Z",
+        "duration_minutes": 60
+      },
+      "response": {
+        "muted_until": "2026-02-15T17:35:00Z"
+      }
+    },
+    "unmute_group": {
+      "endpoint": "DELETE /v1/conversations/{id}/mute"
+    },
+    "set_default_notification_level": {
+      "endpoint": "PATCH /v1/conversations/{id}/settings/default-notification-level",
+      "payload": {
+        "level": "mentions"
+      },
+      "response": {
+        "default_notification_level": "mentions"
+      }
+    }
+  },
+  "testing": {
+    "scenarios": [
+      "set group to 'mentions only' → no new message notifications",
+      "someone mentioned in group → notification received (overrides muted)",
+      "mute group for 1 hour → no notifications for 1h",
+      "1 hour passes → auto-unmutes, notifications resume",
+      "DND enabled 10pm-8am, send message at 11pm → no notif",
+      "mention user at 11pm during DND → notif sent anyway (if override)",
+      "admin sets default 'mentions' for new members → new members get that level",
+      "unmute group → normal notifications resume"
+    ]
+  },
+  "monitoring": {
+    "metrics": [
+      "group_notifications.muted_percent",
+      "group_notifications.mentions_only_percent",
+      "mute_duration.avg_minutes",
+      "notification_settings.changes_per_day"
+    ],
+    "alerts": [
+      ">50% of members muted (group too noisy?)",
+      "mention override fails > 5%"
+    ]
+  }
+}

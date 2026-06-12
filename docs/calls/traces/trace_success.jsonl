@@ -1,0 +1,7 @@
+{"v":1,"type":"HELLO","msgId":"00000000-0000-0000-0000-000000000001","ts":0,"seq":1,"payload":{"client":{"platform":"web","appVersion":"dev","deviceId":"devA"},"resume":{}}}
+{"v":1,"type":"WELCOME","msgId":"00000000-0000-0000-0000-000000000002","ts":1,"seq":1,"payload":{"serverTime":1,"heartbeatSec":10,"resumeToken":"rt1","features":{"wsSeqRequired":true,"e2eeRequiredDefault":true}}}
+{"v":1,"type":"AUTH","msgId":"00000000-0000-0000-0000-000000000003","ts":2,"seq":2,"payload":{"accessToken":"sb_dev_token_xxxxxxxxxxxxxxxxx"}}
+{"v":1,"type":"AUTH_OK","msgId":"00000000-0000-0000-0000-000000000004","ts":3,"seq":2,"payload":{"userId":"uA","deviceId":"devA"}}
+{"v":1,"type":"E2EE_CAPS","msgId":"00000000-0000-0000-0000-000000000005","ts":4,"seq":3,"payload":{"deviceId":"devA","platform":"web","caps":{"supportsE2ee":true,"mode":"web_insertable_streams","protocolVersion":1,"ciphers":["AES_256_GCM"],"signatures":["ED25519"]}}}
+{"v":1,"type":"ROOM_CREATE","msgId":"00000000-0000-0000-0000-000000000006","ts":5,"seq":4,"payload":{"e2eeRequired":true,"preferredRegion":"tr"}}
+{"v":1,"type":"ROOM_CREATED","msgId":"00000000-0000-0000-0000-000000000007","ts":6,"seq":3,"payload":{"roomId":"R","callId":"C","region":"tr","nodeId":"tr-sfu-2","epoch":0,"memberSetVersion":0}}

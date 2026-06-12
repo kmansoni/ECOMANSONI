@@ -1,0 +1,19 @@
+{
+  "file": "B-136-message-version-stream-edit-delete-restore.json",
+  "id": "B-136",
+  "title": "Message Version Stream for Edit Delete Restore",
+  "description": "Formalizes edit/delete/restore as ordered version events with auditability and deterministic replay.",
+  "priority": "P0",
+  "complexity": "M",
+  "must_have": [
+    "dialog_message_versions table",
+    "edit_seq monotonic per dialog",
+    "tombstone delete semantics",
+    "restore from latest non-null body"
+  ],
+  "acceptance": [
+    "Concurrent edits preserve order",
+    "Delete keeps sequence integrity",
+    "History can be reconstructed for moderation"
+  ]
+}

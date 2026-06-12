@@ -1,0 +1,71 @@
+{
+  "version": 1,
+  "generated_at": "2026-02-19",
+  "error_strategies": {
+    "messaging.send_failure": {
+      "policy": "retry_exponential",
+      "max_retries": 5,
+      "initial_backoff_ms": 100,
+      "max_backoff_ms": 30000,
+      "jitter_fraction": 0.1,
+      "idempotency": "required_client_msg_id",
+      "fallback": "queue_locally_and_sync_on_reconnect",
+      "user_message": "Сообщение не отправлено. Повтор..."
+    },
+    "sync_failure": {
+      "policy": "retry_exponential",
+      "max_retries": 3,
+      "initial_backoff_ms": 500,
+      "max_backoff_ms": 10000,
+      "jitter_fraction": 0.2,
+      "circuit_breaker": {
+        "failure_threshold": 5,
+        "timeout_ms": 60000,
+        "half_open_requests": 1
+      },
+      "fallback": "use_cached_sync_watermark"
+    },
+    "auth_failure": {
+      "policy": "no_retry",
+      "circuit_breaker": false,
+      "fallback": "force_relogin",
+      "user_message": "Сеанс истёк. Пожалуйста, войдите заново."
+    },
+    "rate_limit_exceeded": {
+      "policy": "retry_with_backoff",
+      "max_retries": 3,
+      "backoff_type": "exponential",
+      "initial_delay_ms": 1000,
+      "respect_retry_after": true,
+      "fallback": "queue_and_retry_later"
+    },
+    "server_error_5xx": {
+      "policy": "retry_exponential",
+      "max_retries": 3,
+      "initial_backoff_ms": 500,
+      "fallback": "use_stale_cached_data"
+    },
+    "network_timeout": {
+      "policy": "retry_exponential",
+      "max_retries": 5,
+      "initial_backoff_ms": 100,
+      "idempotency": "required",
+      "fallback": "offline_mode"
+    }
+  },
+  "circuit_breaker_config": {
+    "default": {
+      "failure_threshold": 5,
+      "success_threshold": 2,
+      "timeout_sec": 60,
+      "half_open_max_requests": 3
+    }
+  },
+  "retry_budgets": {
+    "messaging": {
+      "per_message_budget": 5,
+      "per_user_per_hour": 1000,
+      "total_system_per_second": 10000
+    }
+  }
+}

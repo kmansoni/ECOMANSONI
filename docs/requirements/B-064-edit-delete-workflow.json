@@ -1,0 +1,181 @@
+{
+  "req_id": "REQ-0064",
+  "title": "Edit & Delete Message Workflow",
+  "version": "1.0",
+  "status": "in-design",
+  "domain": "messaging",
+  "depends_on": ["REQ-0063"],
+  "use_cases": [
+    "User sends message, realizes typo, edits within 15 min",
+    "User deletes message (reason: spam, private info leak)",
+    "Admin moderates: removes abusive message from all clients",
+    "User attempts to edit/delete others' messages (should fail)"
+  ],
+  "message_lifecycle": {
+    "sent": "initial state, seq assigned",
+    "edited": "content changed, edit_count incremented, edit_timestamp recorded",
+    "deleted": "soft delete (invisible to clients but queryable by admins)",
+    "permanently_deleted": "hard delete after 30 days (compliance)"
+  },
+  "edit_workflow": {
+    "client_request": {
+      "fields": {
+        "message_id": "UUID (original message)",
+        "new_content": "string (max 10k chars)",
+        "edit_reason": "string (optional, for audit)"
+      },
+      "constraints": [
+        "sender_id must match original message sender",
+        "edit_within_minutes: 15 (configurable)",
+        "max_edit_count: 10 (prevent spam edits)"
+      ],
+      "idempotency": "if same edit_content sent twice, return same result"
+    },
+    "server_processing": {
+      "step_1": "Validate: sender_id == original sender",
+      "step_2": "Check: age < 15 min (else reject: EditWindowClosed)",
+      "step_3": "Check: edit_count < 10",
+      "step_4": "UPDATE messages SET content = new_content, edited_at = NOW(), edit_count += 1",
+      "step_5": "INSERT INTO message_edits (message_id, old_content, new_content, editor_id, timestamp)",
+      "step_6": "Emit MESSAGE_EDITED event to Kafka topic"
+    },
+    "client_notification": {
+      "via_websocket": "{ type: 'MESSAGE_EDITED', message_id, new_content, edited_at, edit_count }",
+      "via_polling": "included in next sync snapshot",
+      "ui_indicator": "show 'edited' badge with timestamp", 
+      "disclosure": "clicking badge shows edit history (when, old_content)"
+    }
+  },
+  "delete_workflows": {
+    "user_deletes_own": {
+      "permission": "only original sender can soft-delete own message",
+      "grace_period": "1 second (allow undo)",
+      "database": "UPDATE messages SET deleted_at = NOW(), is_visible = false",
+      "permanence": "hard delete after 30 days",
+      "client_sync": "MESSAGE_DELETED event, message disappears from UI",
+      "admin_view": "deleted messages hidden by default, visible to admins with filter"
+    },
+    "admin_deletes_any": {
+      "permission": "admin role only",
+      "log": "INSERT INTO moderation_actions (admin_id, message_id, reason, timestamp)",
+      "broadcast": "MESSAGE_DELETED_BY_ADMIN to all clients in convo",
+      "notification": "sender receives: 'Your message was removed by moderators' with reason",
+      "audit": "stored in audit.moderation_logs for 7 years"
+    },
+    "reporter_flags": {
+      "not_delete": "creates Abuse report, queued for human review",
+      "auto_moderate": "if ML abuse score > 0.95, auto-delete and send to admin queue"
+    }
+  },
+  "deletion_models": {
+    "soft_delete": {
+      "mechanics": "is_visible: false, content still in DB",
+      "advantages": ["undo possible", "audit trail preserved", "seq numbers stable"],
+      "query": "SELECT * WHERE deleted_at IS NULL (filters for clients)"
+    },
+    "hard_delete": {
+      "mechanics": "DELETE FROM messages WHERE id = ...",
+      "when": "after 30 days (GDPR retention)",
+      "consequences": ["cannot undo", "seq gaps visible in admin logs"],
+      "implementation": "batch job runs daily at 2am UTC"
+    }
+  },
+  "edge_cases": {
+    "case_1_delete_then_react": {
+      "scenario": "message deleted, but client tries to add reaction",
+      "handling": "server checks is_visible=false, rejects with MESSAGE_NOT_FOUND",
+      "client_ui": "reaction button disabled on deleted messages"
+    },
+    "case_2_edit_then_search": {
+      "scenario": "message edited, but full-text search index has old content",
+      "handling": "async job updates ES index <5s latency",
+      "sla": "search finds edited content within 1 minute"
+    },
+    "case_3_delete_forwarded": {
+      "scenario": "message deleted in original convo, but copied to another",
+      "handling": "forwarded copy is independent (not affected by delete)",
+      "transparency": "forwarded message shows 'copied from [conversation]' link"
+    },
+    "case_4_concurrent_edit_delete": {
+      "scenario": "user A edits message while user B (admin) deletes it",
+      "handling": "database transaction: first wins, second gets error",
+      "ui_feedback": "both users see final state (deleted message)"
+    }
+  },
+  "database_schema": {
+    "messages_table_additions": [
+      "edited_at: TIMESTAMP NULL",
+      "edit_count: INT DEFAULT 0",
+      "deleted_at: TIMESTAMP NULL",
+      "is_visible: BOOLEAN DEFAULT true",
+      "delete_reason: ENUM(user_deleted, admin_moderated, gdpr_expiry)"
+    ],
+    "message_edits_table": {
+      "columns": [
+        "id: UUID PRIMARY KEY",
+        "message_id: UUID FOREIGN KEY",
+        "old_content: TEXT",
+        "new_content: TEXT",
+        "editor_id: UUID",
+        "edit_timestamp: TIMESTAMP",
+        "edit_reason: TEXT"
+      ],
+      "retention": "7 years (audit)"
+    },
+    "moderation_actions_table": {
+      "columns": [
+        "id: UUID PRIMARY KEY",
+        "message_id: UUID",
+        "admin_id: UUID",
+        "action: ENUM(delete, shadow_ban, warning)",
+        "reason: TEXT",
+        "timestamp: TIMESTAMP",
+        "appeal_status: ENUM(none, submitted, approved, rejected)"
+      ]
+    }
+  },
+  "event_stream": {
+    "message_edited": {
+      "key": "conversation_id",
+      "value": {
+        "event_type": "message_edited",
+        "message_id": "UUID",
+        "editor_id": "UUID",
+        "old_content_hash": "SHA256 (for privacy)",
+        "new_content_hash": "SHA256",
+        "timestamp": "ISO8601"
+      }
+    },
+    "message_deleted": {
+      "key": "conversation_id",
+      "value": {
+        "event_type": "message_deleted",
+        "message_id": "UUID",
+        "deleter_id": "UUID",
+        "reason": "user|admin|system",
+        "timestamp": "ISO8601"
+      }
+    }
+  },
+  "compliance": {
+    "gdpr": {
+      "right_to_rectification": "user can edit message within 15 min",
+      "right_to_erasure": "hard delete of own messages after 30 days",
+      "audit_trail": "all edits/deletes logged for data subject access requests"
+    },
+    "content_moderation": {
+      "appeals": "user can appeal admin deletion within 30 days",
+      "transparency": "notify user of reason and moderation policy"
+    }
+  },
+  "testing": {
+    "scenarios": [
+      "user edits message, all clients see new content within 500ms",
+      "user deletes within grace period, can undo via UI",
+      "admin deletes user message, creates moderation log entry",
+      "edit beyond 15 min returns error",
+      "concurrent edit + delete: database transaction resolves correctly",
+      "deleted message invisible to clients, visible to admins"
+    ]
+  }
+}

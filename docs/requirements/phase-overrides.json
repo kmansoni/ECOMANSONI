@@ -1,0 +1,112 @@
+{
+  "generated_at": "2026-02-22T19:52:42.259Z",
+  "notes": "Overrides for unresolved TBD requirements. Keeps base telegram-500.yaml immutable while enabling phased execution.",
+  "overrides": [
+    {
+      "req_id": "REQ-0131",
+      "title": "B-131: Durable Delivery Outbox Worker Contract",
+      "domain_id": "delivery",
+      "deliverable": "docs/requirements/B-131-delivery-outbox-worker-contract.json",
+      "deps": [
+        "REQ-0061",
+        "REQ-0062",
+        "REQ-0129"
+      ],
+      "status": "in-progress"
+    },
+    {
+      "req_id": "REQ-0132",
+      "title": "B-132: WebSocket Gateway Auth and Room ACL",
+      "domain_id": "gateway",
+      "deliverable": "docs/requirements/B-132-ws-gateway-auth-room-acl.json",
+      "deps": [
+        "REQ-0131",
+        "REQ-0110",
+        "REQ-0129"
+      ]
+    },
+    {
+      "req_id": "REQ-0133",
+      "title": "B-133: Internal Event HMAC and Replay Protection",
+      "domain_id": "security",
+      "deliverable": "docs/requirements/B-133-internal-events-hmac-replay-protection.json",
+      "deps": [
+        "REQ-0131",
+        "REQ-0014",
+        "REQ-0129"
+      ]
+    },
+    {
+      "req_id": "REQ-0134",
+      "title": "B-134: Push Routing and Token Hygiene",
+      "domain_id": "notifications",
+      "deliverable": "docs/requirements/B-134-push-routing-token-hygiene.json",
+      "deps": [
+        "REQ-0110",
+        "REQ-0131",
+        "REQ-0132"
+      ]
+    },
+    {
+      "req_id": "REQ-0135",
+      "title": "B-135: Dialog Snapshot Diff Recovery Contract",
+      "domain_id": "messaging-core",
+      "deliverable": "docs/requirements/B-135-dialog-snapshot-diff-recovery-contract.json",
+      "deps": [
+        "REQ-0062",
+        "REQ-0063"
+      ]
+    },
+    {
+      "req_id": "REQ-0136",
+      "title": "B-136: Message Version Stream for Edit Delete Restore",
+      "domain_id": "messaging-core",
+      "deliverable": "docs/requirements/B-136-message-version-stream-edit-delete-restore.json",
+      "deps": [
+        "REQ-0064",
+        "REQ-0063"
+      ]
+    },
+    {
+      "req_id": "REQ-0137",
+      "title": "B-137: Deterministic DM Pair and Idempotent Create",
+      "domain_id": "dialogs",
+      "deliverable": "docs/requirements/B-137-deterministic-dm-pair-idempotent-create.json",
+      "deps": [
+        "REQ-0091",
+        "REQ-0061"
+      ]
+    },
+    {
+      "req_id": "REQ-0138",
+      "title": "B-138: Read Cursor Semantics and Unread Counters",
+      "domain_id": "messaging-core",
+      "deliverable": "docs/requirements/B-138-read-cursor-semantics-unread-counters.json",
+      "deps": [
+        "REQ-0067",
+        "REQ-0063"
+      ]
+    },
+    {
+      "req_id": "REQ-0139",
+      "title": "B-139: Media Attachment Integrity and Signed URL Access",
+      "domain_id": "media",
+      "deliverable": "docs/requirements/B-139-media-attachment-integrity-signed-url-access.json",
+      "deps": [
+        "REQ-0073",
+        "REQ-0129"
+      ]
+    },
+    {
+      "req_id": "REQ-0140",
+      "title": "B-140: Call Signaling State Machine and Race Safety",
+      "domain_id": "calls",
+      "deliverable": "docs/requirements/B-140-call-signaling-state-machine-race-safety.json",
+      "deps": [
+        "REQ-0110",
+        "REQ-0061",
+        "REQ-0129"
+      ]
+    }
+  ]
+}

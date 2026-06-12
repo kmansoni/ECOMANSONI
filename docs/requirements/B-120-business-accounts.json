@@ -1,0 +1,90 @@
+{
+  "req_id": "REQ-0120",
+  "title": "Business Accounts (Verified Business Profiles with Greeting & Away Messages)",
+  "version": "1.0",
+  "status": "in-design",
+  "domain": "accounts",
+  "priority": "P2",
+  "depends_on": ["REQ-0094"],
+  "description": "A tiered account type for businesses: verified badge, extended bio, business hours, location, website, greeting message (sent automatically on first contact), and away message (sent when outside business hours). Powered by a configurable automation layer, not bots — no Turing test required.",
+  "account_types": {
+    "personal": "Default. No business features.",
+    "business": "Self-serve upgrade. No verification badge by default.",
+    "verified_business": "Requires human review + document submission. Gets blue checkmark."
+  },
+  "data_model": {
+    "business_profiles": {
+      "table": "business_profiles",
+      "schema": {
+        "user_id": "UUID PK FK → users.id",
+        "business_name": "VARCHAR(128)",
+        "category": "VARCHAR(64)",
+        "description": "TEXT(512)",
+        "website_url": "TEXT",
+        "phone_number": "VARCHAR(32)",
+        "address": "JSONB",
+        "location_lat": "FLOAT8 (optional, for Maps integration)",
+        "location_lon": "FLOAT8",
+        "business_hours": "JSONB (7-element array, per-day open/close times in UTC)",
+        "timezone": "VARCHAR(64) (IANA tz name)",
+        "greeting_message_enabled": "BOOLEAN DEFAULT FALSE",
+        "greeting_message_text": "TEXT(1024)",
+        "away_message_enabled": "BOOLEAN DEFAULT FALSE",
+        "away_message_text": "TEXT(1024)",
+        "quick_replies": "JSONB[] (array of {shortcut, text} pairs, max 10)",
+        "verified_at": "TIMESTAMPTZ (NULL = not verified)",
+        "verification_document_id": "UUID (internal, trust_safety_role only)"
+      },
+      "rls": "SELECT open (public profile). INSERT/UPDATE restricted to owner user_id."
+    }
+  },
+  "greeting_message_automation": {
+    "trigger": "First DM from a user who has never messaged this business before (first_contact = no row in user_business_contacts table).",
+    "server_flow": [
+      "1. Message received from user_id to business user_id.",
+      "2. Query user_business_contacts: SELECT 1 WHERE user_id=X AND business_id=Y.",
+      "3. If no row → greeting_message_enabled=true → enqueue greeting send job.",
+      "4. INSERT user_business_contacts (user_id, business_id, first_contact_at).",
+      "5. Greeting sent as system-automated message, attributed to business (not a bot user)."
+    ],
+    "idempotency": "user_business_contacts has UNIQUE constraint on (user_id, business_id) — prevents duplicate greetings under concurrent first messages (race condition resolved via INSERT ... ON CONFLICT DO NOTHING)."
+  },
+  "away_message_automation": {
+    "trigger": "Inbound message arrives outside current business_hours window.",
+    "server_evaluation": [
+      "Compute is_open = current UTC time falls within today's business_hours window adjusted for timezone.",
+      "If not is_open AND away_message_enabled → send away message.",
+      "Cooldown: send away message at most once per 8h per user to avoid spamming."
+    ]
+  },
+  "quick_replies": {
+    "description": "Business owner pre-defines shortcuts (e.g., '/hours' → 'We are open Mon-Fri 9am-6pm'). When typing in composer, matching shortcuts expand automatically.",
+    "scope": "Only visible to business account owner in their composer — not exposed to customers."
+  },
+  "verification_flow": {
+    "steps": [
+      "User submits business registration document via secure upload.",
+      "Document stored encrypted (AES-256), accessible only to trust_safety_role.",
+      "Manual review by Trust & Safety team within 5 business days.",
+      "On approval: SET verified_at = now(), emit verification badge event.",
+      "On rejection: notification with reason code."
+    ]
+  },
+  "security": {
+    "impersonation": "Verified badge requires human review — prevents trivial impersonation of brands.",
+    "message_injection": "Greeting/away message text HTML-escaped and length-limited — no script injection.",
+    "location_privacy": "lat/lon only returned to users who follow/contact the business, not publicly indexed."
+  },
+  "ui": {
+    "business_profile_page": "Extended profile card: name, category, hours, 'Open now' badge, website, location map, 'Message' CTA.",
+    "admin_settings": "Settings → Business → toggle greeting/away, edit text, set hours, quick replies manager.",
+    "verified_badge": "Checkmark icon in chat list and profile header."
+  },
+  "observability": {
+    "metrics": [
+      "counter: business.greeting_sent",
+      "counter: business.away_message_sent",
+      "counter: business.verification.submitted | approved | rejected"
+    ]
+  }
+}

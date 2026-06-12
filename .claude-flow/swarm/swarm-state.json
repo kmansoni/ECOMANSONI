@@ -1,0 +1,33 @@
+{
+  "swarms": {
+    "swarm-1781210382687-mjkprx": {
+      "swarmId": "swarm-1781210382687-mjkprx",
+      "topology": "hierarchical",
+      "maxAgents": 20,
+      "status": "running",
+      "agents": [
+        "mansoni-queen",
+        "mansoni-architect",
+        "mansoni-debugger",
+        "mansoni-reviewer",
+        "mansoni-security",
+        "mansoni-tester",
+        "mansoni-performance",
+        "mansoni-e2ee"
+      ],
+      "tasks": [],
+      "config": {
+        "topology": "hierarchical",
+        "maxAgents": 20,
+        "strategy": "specialized",
+        "communicationProtocol": "message-bus",
+        "autoScaling": true,
+        "consensusMechanism": "majority"
+      },
+      "createdAt": "2026-06-11T20:39:42.687Z",
+      "updatedAt": "2026-06-11T20:39:42.687Z",
+      "pid": 18060
+    }
+  },
+  "version": "3.0.0"
+}

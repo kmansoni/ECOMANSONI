@@ -1,0 +1,22 @@
+{
+  "sessions": {
+    "term-1781224344249-y26y0m": {
+      "id": "term-1781224344249-y26y0m",
+      "name": "restore-check",
+      "status": "active",
+      "createdAt": "2026-06-12T00:32:24.250Z",
+      "lastActivity": "2026-06-12T00:32:58.261Z",
+      "workingDir": "C:/Users/manso/Desktop/разработка/mansoni",
+      "history": [
+        {
+          "command": "git status --short",
+          "output": "?? .claude-flow/\n",
+          "timestamp": "2026-06-12T00:32:58.261Z",
+          "exitCode": 0
+        }
+      ],
+      "env": {}
+    }
+  },
+  "version": "3.0.0"
+}

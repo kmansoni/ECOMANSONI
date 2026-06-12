@@ -1,0 +1,59 @@
+{
+  "version": 1,
+  "generated_at": "2026-02-19",
+  "security_compliance_checklist": {
+    "authentication": [
+      "✓ Password minimum 8 chars, mixed case + digit required",
+      "✓ Passwords hashed with bcrypt + salt",
+      "✓ Login rate limit: 5 attempts per 5 minutes",
+      "✓ Account lockout after 3 failed attempts",
+      "✓ Session timeout: 30 days for remember-me, 4 hours idle",
+      "✓ Logout clears all sessions across devices"
+    ],
+    "authorization": [
+      "✓ RLS (Row-Level Security) enforced at database layer",
+      "✓ Users can only read/write own messages",
+      "✓ Group members can only access group messages",
+      "✓ Admins have elevated privileges (tested)",
+      "✓ No privilege escalation possible via API"
+    ],
+    "encryption": [
+      "✗ TLS 1.3+ for all data in transit (HTTP strict, HSTS header)",
+      "✗ End-to-end encryption for messages (optional feature flag)",
+      "✓ Sensitive data encrypted at rest (PII in database)"
+    ],
+    "data_protection": [
+      "✓ Message deletion hard-deletes after 30 days",
+      "✓ User export: 30-day request processing (GDPR compliance)",
+      "✓ Account deletion wipes all personal data",
+      "✓ Audit log kept for 1 year (compliance reporting)"
+    ],
+    "abuse_prevention": [
+      "✓ Spam detection: heuristic + ML-based flagging",
+      "✓ Message content moderation (CSAM, violence, hate speech)",
+      "✓ Account suspension for repeated violations",
+      "✓ User reporting workflow and moderator review"
+    ],
+    "infrastructure_security": [
+      "✓ Database behind private VPC, no public internet",
+      "✓ API gateway with WAF (SQL injection, XSS protection)",
+      "✓ Dependency scanning (snyk) for known CVEs",
+      "✓ Secrets management: never in code (use sealed secrets)",
+      "✓ Code signing for releases",
+      "✓ Signed commits required for main branch"
+    ],
+    "compliance": [
+      "✓ GDPR: data subject rights (access, deletion, portability)",
+      "✓ SOC2: audit trail, change control, incident response",
+      "✓ Security policy documented and accessible",
+      "✓ Third-party pen testing quarterly",
+      "✓ Privacy policy updated annually"
+    ],
+    "monitoring_and_response": [
+      "✓ Suspicious activity alerts (multiple login attempts, etc)",
+      "✓ Incident response playbook defined",
+      "✓ Data breach notification plan (48h notification)",
+      "✓ Security team on-call rotation"
+    ]
+  }
+}

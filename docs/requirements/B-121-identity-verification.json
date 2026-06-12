@@ -1,0 +1,75 @@
+{
+  "req_id": "REQ-0121",
+  "title": "In-Chat Identity Verification (Platform Passport)",
+  "version": "1.0",
+  "status": "in-design",
+  "domain": "identity",
+  "priority": "P3",
+  "depends_on": [],
+  "description": "Allows users to securely share verified identity data (name, DoB, address, ID document scans) with third-party services via the platform interface. Data is end-to-end encrypted between user and requesting service — the platform server never has plaintext access to identity documents. Architecturally equivalent to Telegram Passport but with stronger cryptographic guarantees.",
+  "cryptographic_design": {
+    "model": "Client-side encryption with service public key",
+    "flow": [
+      "1. User stores identity data locally, encrypted with a user-controlled symmetric key (AES-256-GCM, derived from passphrase via Argon2id).",
+      "2. Requesting service provides its RSA-4096 or X25519 public key in the authorization request.",
+      "3. Client decrypts local data, re-encrypts with service's public key (hybrid: ECDH-derived AES key + RSA/X25519 wrapper).",
+      "4. Encrypted payload transmitted through platform relay to service.",
+      "5. Platform relay sees only ciphertext — zero plaintext access."
+    ],
+    "key_derivation": {
+      "algorithm": "Argon2id",
+      "parameters": { "memory": "64 MiB", "iterations": 3, "parallelism": 4 },
+      "salt": "User-specific, stored server-side (non-secret, used to reproduce key on any device)"
+    },
+    "forward_secrecy": "Each sharing session generates a fresh ephemeral key pair. Old sessions cannot be decrypted even if user's master key is later compromised."
+  },
+  "data_types_supported": [
+    "personal_details (name, DoB, nationality)",
+    "passport_document (number, expiry, issuing country, scan)",
+    "national_id",
+    "drivers_license",
+    "address (street, city, postal code, country)",
+    "proof_of_address (utility bill scan)",
+    "phone_number (verified)",
+    "email (verified)"
+  ],
+  "server_role": {
+    "stores": "Encrypted blobs only. Schema: { user_id, data_type, encrypted_blob BYTEA, iv BYTEA, created_at, updated_at }",
+    "does_not_store": "Any plaintext identity data, key material, or decryption capability",
+    "audit_log": "service_id + user_id + data_types_shared + timestamp stored for user's own audit trail (not shared with service)"
+  },
+  "authorization_request_flow": {
+    "service_sends": "Deep link or QR: platform://passport?auth={signed_jwt_from_service}",
+    "jwt_payload": {
+      "service_id": "UUID",
+      "service_name": "string",
+      "requested_fields": "string[]",
+      "public_key": "base64 (X25519 or RSA-4096)",
+      "nonce": "hex32 (replay protection)",
+      "callback_url": "string",
+      "exp": "unix timestamp (max 15 minutes)"
+    },
+    "server_validates": [
+      "JWT signature against registered service's signing key (pre-registered, not from JWT itself).",
+      "nonce not seen before (Redis SET NX with TTL=15min).",
+      "requested_fields are subset of supported types.",
+      "callback_url matches registered service redirect whitelist."
+    ]
+  },
+  "security": {
+    "man_in_middle": "Platform relay cannot intercept: ciphertext opaque. TLS in transit.",
+    "replay_attack": "JWT nonce validated with Redis idempotency. Each authorization request is single-use.",
+    "malicious_service": "Service cannot request more fields than user authorizes. User sees exact list of requested fields before sharing.",
+    "data_at_rest": "Encrypted blobs at rest (Postgres column encrypted with pgcrypto + column-level key in key management service).",
+    "gdpr_right_to_erasure": "DELETE /v1/passport/data → wipes all blobs immediately. Service does not get notified (platform has no plaintext to 'un-share')."
+  },
+  "ui": {
+    "setup": "Settings → Privacy → Platform Passport → Set up → Passphrase entry → Add identity fields one by one",
+    "sharing_flow": "Authorization request arrives → bottom sheet shows: service name, requested fields, 'Share' / 'Deny'. Passphrase re-entry for high-sensitivity fields.",
+    "audit_log": "Settings → Passport → 'Sharing history' — list of past authorizations with date and service name"
+  },
+  "compliance": {
+    "gdpr": "User is data controller for their own identity data. Platform is processor (encrypted storage only).",
+    "pci_dss": "No payment card data in this flow. Payments handled separately (B-122)."
+  }
+}

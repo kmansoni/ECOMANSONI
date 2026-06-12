@@ -1,0 +1,145 @@
+{
+  "req_id": "REQ-0076",
+  "title": "Disappearing Messages (Ephemeral Messages)",
+  "version": "1.0",
+  "status": "in-design",
+  "domain": "messaging",
+  "depends_on": ["REQ-0064"],
+  "use_cases": [
+    "user sends sensitive message with 30-second disappear timer",
+    "message deletes automatically after 30s, even if recipient didn't read it",
+    "group conversation: all members see timer countdown",
+    "user can turn off disappear on message or per-conversation"
+  ],
+  "disappear_timers": {
+    "options": [
+      "off (normal message, no disappear)",
+      "30s",
+      "1m",
+      "5m",
+      "1h",
+      "1d",
+      "7d"
+    ],
+    "default_selection": "off",
+    "custom_timer": "allow user to set custom duration (future v2)"
+  },
+  "message_lifecycle": {
+    "compose": {
+      "ui_element": "toggle/dropdown in composer: 'Disappear after 30s'",
+      "selection": "tap to choose timer interval",
+      "preview": "shows 'Message will disappear in 30s'"
+    },
+    "send": {
+      "payload": {
+        "content": "message text",
+        "disappear_in_seconds": 30,
+        "conversation_id": "UUID"
+      },
+      "database_storage": {
+        "disappear_at": "timestamp = now() + 30s",
+        "disappear_timer": 30
+      }
+    },
+    "display_receiving": {
+      "initial": "message shows with 'will disappear in 29s' countdown",
+      "countdown": "timer counts down visually: 29s → 28s → ... → 1s",
+      "disappear_ui": "clock icon ⏱ + timestamp, red if <5s remaining"
+    },
+    "disappear_action": {
+      "trigger": "timestamp >= disappear_at",
+      "mechanism": "server-side job (Postgres scheduled task OR background worker)",
+      "action": [
+        "1. soft-delete message (is_visible=false)",
+        "2. publish MESSAGE_DISAPPEAR event to Kafka",
+        "3. all connected clients receive event → remove message from UI"
+      ]
+    }
+  },
+  "disappear_notification": {
+    "before_disappear": "if message unread at expiry, recipient gets notification 'Message from Alice disappeared'",
+    "no_screenshot_warning": "app warns user 'this message will disappear', not actual detection (no screenshot blocking)"
+  },
+  "disappear_constraints": {
+    "cannot_forward": "disappearing messages cannot be forwarded (error: 'this message is ephemeral')",
+    "cannot_reply_stored": "replies to disappearing messages are normal (not ephemeral by default)",
+    "cannot_pin": "disappearing messages cannot be pinned"
+  },
+  "database_schema": {
+    "messages_table_additions": {
+      "disappear_in_seconds": "integer (null if no disappear, e.g., 30)",
+      "disappear_at": "timestamp (when message will be soft-deleted)",
+      "disappear_notified": "boolean (user was notified before disappear)"
+    }
+  },
+  "background_job_mechanism": {
+    "approach": "Postgres scheduled task (pg_cron) OR AsyncJob queue",
+    "query": "SELECT id FROM messages WHERE disappear_at <= now() AND is_visible=true",
+    "batch_size": "1000 messages per run",
+    "run_interval": "every 10 seconds",
+    "action_per_batch": [
+      "1. UPDATE messages SET is_visible=false WHERE id IN (...)",
+      "2. INSERT INTO message_deletion_log (for audit)",
+      "3. Publish MESSAGE_DISAPPEAR to Kafka (async fanout)"
+    ]
+  },
+  "group_conversation_behavior": {
+    "timer_independent": "each recipient's countdown starts when they receive the message",
+    "example": [
+      "Alice sends disappearing message at 15:00:00 (30s timer)",
+      "Bob receives at 15:00:01, his countdown: 15:00:31",
+      "Charlie joins conversation at 15:00:10, his countdown: 15:00:40",
+      "Alice sees hers disappear at 15:00:30, Bob at 15:00:31, Charlie at 15:00:40"
+    ]
+  },
+  "disappear_privacy": {
+    "feature": "disable feature per-conversation or globally",
+    "setting_location": "conversation settings: 'Allow ephemeral messages'",
+    "group_admin": "only admin can toggle this setting",
+    "dm_both_users": "both must agree (mutual trust)"
+  },
+  "api_endpoints": {
+    "send_disappearing_message": {
+      "endpoint": "POST /v1/conversations/{id}/messages",
+      "payload": {
+        "content": "Secret message",
+        "disappear_in_seconds": 30
+      },
+      "response": {
+        "message_id": "UUID",
+        "disappear_at": "2026-02-15T15:35:30Z",
+        "seq": 1024
+      }
+    },
+    "extend_disappear_timer": {
+      "endpoint": "PATCH /v1/messages/{id}/extend-disappear",
+      "payload": {
+        "new_disappear_in_seconds": 60
+      },
+      "note": "can extend before message disappears (option for v2)"
+    }
+  },
+  "testing": {
+    "scenarios": [
+      "send message with 5s disappear timer → counts down 5s, disappears",
+      "disappearing message in group: different timers per receiver (independent)",
+      "receive disappearing message unread → gets notification when it disappears",
+      "attempt to forward disappearing message → API error 403",
+      "attempt to pin disappearing message → API error 403",
+      "disable ephemeral in conversation settings → option grayed out",
+      "hard-delete log: verify message_deletion_log does not expose content"
+    ]
+  },
+  "monitoring": {
+    "metrics": [
+      "disappearing_messages.sent_per_day",
+      "disappearing_messages.avg_timer_seconds",
+      "disappearing_job.execution_latency_ms",
+      "disappearing_job.failure_rate"
+    ],
+    "alerts": [
+      "disappear job latency > 1min (messages not disappearing on time)",
+      "disappear job fails > 5%"
+    ]
+  }
+}

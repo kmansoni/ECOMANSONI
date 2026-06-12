@@ -1,0 +1,82 @@
+machine: ServerRoomCoordinator
+initial: IDLE
+
+timers:
+  T_JOIN_TOKEN_TTL: 120000
+  T_ROOM_TTL_IDLE: 3600000
+  T_REKEY_QUORUM: 8000
+  T_HEALTH_POLL: 2000
+  T_NODE_FAIL_DEBOUNCE: 1500
+
+states:
+  IDLE:
+    on:
+      ROOM_CREATE_REQUEST:
+        actions: [selectRegionByClientRtt, allocateRoom, bindRoomToNode, initEpoch0]
+        target: ROOM_ACTIVE
+
+  ROOM_ACTIVE:
+    on:
+      ROOM_JOIN_REQUEST:
+        guards: [authOK, aclAllowsRoom, e2eeCapsSatisfyIfRequired]
+        actions:
+          - issueJoinToken
+          - prepareTransportOptions
+          - addParticipant
+          - bumpMemberSetVersion
+          - emitPeerJoined
+          - ifMembershipChangeThenStartRekey
+        target: ROOM_ACTIVE
+
+      PEER_LEFT_EVENT:
+        actions:
+          - markParticipantLeft
+          - bumpMemberSetVersion
+          - emitPeerLeft
+          - startRekey
+          - ifRoomEmptyStartIdleTimer
+        target: ROOM_ACTIVE
+
+      TIMER_T_ROOM_TTL_IDLE:
+        guards: [roomEmpty]
+        actions: [closeRoom, cleanupDirectory]
+        target: IDLE
+
+      HEALTH_NODE_UNHEALTHY:
+        actions: [debounceFail, maybeMigrateRoom]
+        target: MIGRATING
+
+  MIGRATING:
+    on:
+      ENTER:
+        actions:
+          - pickNewHealthyNodeSameRegionOrNearby
+          - updateDirectory
+          - emitRoomMigrate
+      CLIENT_REJOIN_OK:
+        target: ROOM_ACTIVE
+      CLIENT_REJOIN_TIMEOUT:
+        actions: [forceCloseRoomOrRetryMigrate]
+        target: ROOM_ACTIVE
+
+  REKEYING:
+    on:
+      START_REKEY:
+        actions:
+          - newEpoch
+          - electLeaderDevice
+          - emitRekeyBegin
+          - startTimer(T_REKEY_QUORUM)
+        target: REKEYING
+
+      KEY_PACKAGE:
+        actions: [validateEpochAndMembership, storeMailbox, forwardToRecipient]
+        target: REKEYING
+
+      KEY_ACK:
+        actions: [recordAck, maybeCommit]
+        target: REKEYING
+
+      TIMER_T_REKEY_QUORUM:
+        actions: [emitRekeyAbort, markDegradedOrEnd]
+        target: ROOM_ACTIVE

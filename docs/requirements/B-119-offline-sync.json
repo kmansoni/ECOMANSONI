@@ -1,0 +1,376 @@
+{
+  "id": "B-119",
+  "title": "Offline-First Architecture & Message Sync",
+  "description": "Enable users to send/read messages offline, with automatic sync on reconnect; local message queue, conflict-free sync, and network resilience",
+  "status": "draft",
+  "priority": "P1",
+  "complexity": "M",
+  "domain": "resilience",
+  "technologies": ["IndexedDB (browser)", "SQLite (mobile)", "Sync engine", "Operational Transform"],
+
+  "overview": {
+    "purpose": "Seamless messaging experience even when network is unavailable",
+    "target_scale": "100M+ mobile users with frequent connection switching",
+    "key_requirements": [
+      "Offline message composition + sending queue",
+      "Auto-sync on reconnect with conflict resolution",
+      "Unread badge sync across devices",
+      "Typing indicators in offline mode (optimistic UI)",
+      "Synchronization within 5s of reconnect",
+      "Smart retry with exponential backoff",
+      "Storage limit (5MB local for messages/metadata)"
+    ]
+  },
+
+  "client_storage": {
+    "browser_indexeddb": {
+      "databases": {
+        "messages": {
+          "stores": [
+            {
+              "name": "local_messages",
+              "key_path": "local_message_id",
+              "indexes": [
+                "conversation_id",
+                "user_id",
+                "created_at",
+                "[conversation_id, created_at]"
+              ],
+              "fields": {
+                "local_message_id": "unique client-generated UUID",
+                "conversation_id": "which group/DM",
+                "user_id": "sender",
+                "content": "message text",
+                "attachments": "media URLs (downloaded for offline preview)",
+                "created_at": "timestamp",
+                "sync_status": "pending/synced/failed",
+                "server_message_id": "once server confirms",
+                "retry_count": "0-3",
+                "last_retry_at": "timestamp"
+              }
+            },
+            {
+              "name": "message_cache",
+              "key_path": "server_message_id",
+              "description": "Server messages cached for offline reading",
+              "size_limit_mb": 3
+            },
+            {
+              "name": "sync_metadata",
+              "key_path": "conversation_id",
+              "fields": {
+                "last_synced_server_seq": "highest message seq from server",
+                "local_seq": "client-side seq for ordering",
+                "unread_count": "denormalized for UI",
+                "last_sync_at": "timestamp"
+              }
+            }
+          ]
+        }
+      }
+    },
+    "mobile_sqlite": {
+      "description": "Same structure as IndexedDB but more performant on mobile",
+      "additional": "Room Database (Android), FMDB (iOS) wrappers"
+    }
+  },
+
+  "sync_protocol": {
+    "pre_reconnect": {
+      "step1": "User composes message offline",
+      "step2": "Message added to IndexedDB local_messages (sync_status=pending)",
+      "step3": "App shows message in UI with retry icon",
+      "step4": "Optimistic UI updates (show as 'sending...')"
+    },
+    "on_reconnect": {
+      "step1": "Network detected (NetworkInformation API or WebSocket connected event)",
+      "step2": "Fetch sync_metadata → get last_synced_server_seq, local_seq",
+      "step3": "Replay local_messages in order to server (batch: POST /v1/messages/batch)",
+      "step4": "Server validates, assigns server_message_id, returns in response",
+      "step5": "Update IndexedDB: sync_status=synced, server_message_id=...",
+      "step6": "Fetch missing server messages since last_sync (via cursor)",
+      "step7": "Merge into message_cache, update UI"
+    },
+    "batch_sync_endpoint": {
+      "method": "POST",
+      "path": "/v1/messages/batch-sync",
+      "request": {
+        "messages": [
+          {
+            "local_message_id": "...",
+            "conversation_id": "...",
+            "content": "...",
+            "created_at": "ISO8601",
+            "attachments": []
+          }
+        ],
+        "last_synced_seq": 450
+      },
+      "response": {
+        "synced_messages": [
+          {
+            "local_message_id": "...",
+            "server_message_id": "...",
+            "server_seq": 451,
+            "conflict": false
+          }
+        ],
+        "server_messages_since_seq": [
+          {
+            "server_message_id": "...",
+            "seq": 449,
+            "content": "..."
+          }
+        ],
+        "conflicts": []
+      }
+    }
+  },
+
+  "conflict_resolution": {
+    "scenario1": "User composes offline, another user sends message before sync completes",
+    "resolution": "Sequence-based ordering (server_seq), client ops inserted at correct position",
+    "scenario2": "Same message sent twice (network retry + user resend)",
+    "resolution": "Deduplicate via client_message_id uniqueness (database constraint)",
+    "scenario3": "User edits message offline, edit again online before first sync",
+    "resolution": "Queue both edits, apply in order using message edit_seq counter"
+  },
+
+  "retry_strategy": {
+    "algorithm": "Exponential backoff with jitter",
+    "intervals": [0.1, 0.5, 2, 10, 60],
+    "logic": "delay = base * (2 ^ retry_count) + random(0, 1s)",
+    "max_retries": 5,
+    "max_queue_age": "1 week (auto-delete if can't sync after 1 week)"
+  },
+
+  "database_schema": {
+    "tables": [
+      {
+        "name": "sync_session",
+        "purpose": "Track sync state per device",
+        "columns": [
+          {"name": "sync_session_id", "type": "BIGINT PRIMARY KEY"},
+          {"name": "user_id", "type": "UUID NOT NULL"},
+          {"name": "device_id", "type": "VARCHAR NOT NULL"},
+          {"name": "last_synced_at", "type": "TIMESTAMP"},
+          {"name": "last_synced_seq_per_conversation", "type": "JSONB", "description": "{\"conv_1\": 450, \"conv_2\": 230}"},
+          {"name": "pending_message_count", "type": "INT"},
+          {"name": "offline_since_at", "type": "TIMESTAMP", "description": "For analytics"},
+          {"name": "last_online_at", "type": "TIMESTAMP"}
+        ]
+      },
+      {
+        "name": "offline_message_queue",
+        "purpose": "Server-side queue for pending offline messages",
+        "columns": [
+          {"name": "queue_id", "type": "BIGINT PRIMARY KEY"},
+          {"name": "user_id", "type": "UUID NOT NULL"},
+          {"name": "device_id", "type": "VARCHAR"},
+          {"name": "local_message_id", "type": "VARCHAR NOT NULL"},
+          {"name": "conversation_id", "type": "UUID NOT NULL"},
+          {"name": "content", "type": "TEXT"},
+          {"name": "created_at", "type": "TIMESTAMP NOT NULL"},
+          {"name": "synced_at", "type": "TIMESTAMP"},
+          {"name": "sync_attempts", "type": "INT", "default": 0}
+        ],
+        "indexes": ["INDEX(user_id, created_at)"]
+      },
+      {
+        "name": "message_sync_log",
+        "purpose": "Audit trail for sync events",
+        "columns": [
+          {"name": "log_id", "type": "BIGINT PRIMARY KEY"},
+          {"name": "user_id", "type": "UUID NOT NULL"},
+          {"name": "device_id", "type": "VARCHAR"},
+          {"name": "event_type", "type": "VARCHAR", "enum": ["sync_start", "sync_complete", "sync_error", "conflict_detected"]},
+          {"name": "message_count", "type": "INT"},
+          {"name": "duration_ms", "type": "INT"},
+          {"name": "error_message", "type": "TEXT"},
+          {"name": "occurred_at", "type": "TIMESTAMP NOT NULL"}
+        ]
+      }
+    ]
+  },
+
+  "api_specification": {
+    "endpoints": [
+      {
+        "method": "POST",
+        "path": "/v1/messages/batch-sync",
+        "description": "Batch sync local messages + receive server updates",
+        "auth": "user",
+        "request": {
+          "messages": [
+            {"local_message_id": "...", "conversation_id": "...", "content": "..."}
+          ],
+          "last_synced_seq": 450
+        },
+        "response": {
+          "synced_messages": [...],
+          "server_messages": [...],
+          "unread_counts": {"conv_1": 2, "conv_2": 0}
+        }
+      },
+      {
+        "method": "GET",
+        "path": "/v1/user/sync-status",
+        "description": "Check if synced",
+        "response": {
+          "is_synced": true,
+          "pending_messages": 0,
+          "last_sync_at": "2026-02-19T14:30:00Z"
+        }
+      },
+      {
+        "method": "DELETE",
+        "path": "/v1/messages/{local_message_id}",
+        "description": "Cancel pending offline message",
+        "response": 200
+      }
+    ]
+  },
+
+  "implementation_details": {
+    "client_library": {
+      "framework": "Separate sync library (SDK) for React Native, Web, Flutter",
+      "api": {
+        "SyncEngine.sendMessage(msg)": "Writes to local DB, returns immediately, syncs later",
+        "SyncEngine.onReconnect()": "Triggers batch sync",
+        "SyncEngine.onConflict()": "Callback for manual conflict resolution if needed",
+        "SyncEngine.getOfflineMessages()": "Query local pending messages"
+      }
+    },
+    "network_detection": {
+      "browser": "NavigatorOnLine API + WebSocket heartbeat",
+      "mobile": "Connectivity plugin (react-native-netinfo)",
+      "trigger": "Any transition from offline → online initiates sync"
+    },
+    "storage_management": {
+      "quota": "5MB per app (browser) / 50MB (mobile)",
+      "eviction_policy": "LRU: delete oldest message cache if over quota",
+      "local_messages": "Keep indefinitely (small) until synced"
+    },
+    "typing_indicators_offline": {
+      "approach": "Optimistic: show 'User is typing' locally, don't send indicator packet",
+      "on_sync": "Discard old indicators (outdated)",
+      "purpose": "Better perceived responsiveness"
+    }
+  },
+
+  "monitoring": {
+    "metrics": [
+      "offline_user_percentage (% without network at any time)",
+      "avg_sync_latency_p95_ms",
+      "offline_message_queue_size",
+      "conflict_rate_per_sync",
+      "max_local_queue_age_hours"
+    ],
+    "alerts": [
+      "offline_message_queue_size > 10k (people offline too long?)",
+      "sync_latency_p95 > 10s (network issue?)",
+      "conflict_rate > 1% (unusual)"
+    ]
+  },
+
+  "testing_scenarios": [
+    {
+      "id": "T-119-1",
+      "title": "Send message offline, sync on reconnect",
+      "steps": ["Go offline", "Send message (stored local)", "Reconnect", "Sync"],
+      "expected": "Message appears on server with server_message_id"
+    },
+    {
+      "id": "T-119-2",
+      "title": "Read messages offline from cache",
+      "steps": ["Download messages, go offline", "Open conversation"],
+      "expected": "Cached messages visible, no network error"
+    },
+    {
+      "id": "T-119-3",
+      "title": "Batch sync multiple pending messages",
+      "steps": ["Compose 5 messages offline", "Reconnect"],
+      "expected": "All 5 synced in single batch request"
+    },
+    {
+      "id": "T-119-4",
+      "title": "Deduplication: message sent twice (retry + user resend)",
+      "steps": ["Send message", "Lose connectivity", "Retry automatically", "User hits send again"],
+      "expected": "Only one message created (deduplicated by client_message_id)"
+    },
+    {
+      "id": "T-119-5",
+      "title": "Conflict detection: message from someone else arrives between offline compose and sync",
+      "steps": ["User A offline composes message", "User B sends message", "A reconnects and syncs"],
+      "expected": "No conflict (sequence-based ordering handles)"
+    },
+    {
+      "id": "T-119-6",
+      "title": "Local queue persistence across app restart",
+      "steps": ["Compose offline", "Close app", "Reopen", "Messages still in queue"],
+      "expected": "Local storage (IndexedDB) persists across sessions"
+    },
+    {
+      "id": "T-119-7",
+      "title": "Exponential backoff on retry",
+      "steps": ["Message fails to send", "Check retry schedule (0.1s, 0.5s, 2s, ...)"],
+      "expected": "Retries with exponential delays"
+    },
+    {
+      "id": "T-119-8",
+      "title": "Edit message offline",
+      "steps": ["Edit pending message offline", "Make another edit", "Reconnect"],
+      "expected": "Both edits applied in order"
+    },
+    {
+      "id": "T-119-9",
+      "title": "Unread count sync",
+      "steps": ["Mark messages read offline", "Sync", "Check unread badge"],
+      "expected": "Unread count updated on all devices"
+    },
+    {
+      "id": "T-119-10",
+      "title": "Typing indicator shows locally (no network)",
+      "steps": ["Go offline, start typing"],
+      "expected": "Typing indicator shows locally, no network request sent"
+    },
+    {
+      "id": "T-119-11",
+      "title": "Storage quota limit (5MB)",
+      "steps": ["Cache 10MB of messages", "Eviction policy triggered"],
+      "expected": "LRU evicts oldest messages to stay within 5MB"
+    },
+    {
+      "id": "T-119-12",
+      "title": "Sync metadata consistency",
+      "steps": ["Sync", "Check last_synced_seq matches server"],
+      "expected": "Metadata up to date"
+    },
+    {
+      "id": "T-119-13",
+      "title": "Device offline for 1 week, messages still in queue",
+      "steps": ["Messages queued 7+ days", "Sync triggered"],
+      "expected": "Auto-delete after 7 days with notification to user"
+    },
+    {
+      "id": "T-119-14",
+      "title": "Sync error (server down)",
+      "steps": ["Sync fails temporarily", "Retry on next reconnect"],
+      "expected": "Message retried, eventually succeeds when server healthy"
+    },
+    {
+      "id": "T-119-15",
+      "title": "Cross-device sync: send offline on mobile, read on desktop",
+      "steps": ["Mobile: offline message sent", "Desktop: update message appears"],
+      "expected": "Devices sync via shared user state"
+    }
+  ],
+
+  "dependencies": ["B-061", "B-108"],
+  "future_enhancements": [
+    "Selective sync (user chooses which conversations to cache)",
+    "Peer-to-peer sync (sync between devices without server for small messages)",
+    "Encryption at rest for local storage",
+    "Background sync API (service workers for web)"
+  ]
+}

@@ -1,0 +1,92 @@
+{
+  "req_id": "REQ-0123",
+  "title": "Web Login Widget (OAuth2-Compatible Third-Party Authentication via Platform Identity)",
+  "version": "1.0",
+  "status": "in-design",
+  "domain": "auth",
+  "priority": "P2",
+  "depends_on": [],
+  "description": "Embeddable JavaScript widget allowing third-party websites to use the platform as an identity provider. User clicks 'Login with [Platform]', authorizes on a platform-hosted consent screen, and the website receives a signed JWT with the user's public profile. Follows OAuth 2.0 Authorization Code flow with PKCE. Never exposes internal session tokens to third-party origin.",
+  "security_model": {
+    "flow": "Authorization Code + PKCE (RFC 7636). Implicit flow EXPLICITLY PROHIBITED.",
+    "pkce": {
+      "code_verifier": "Client-generated 64-byte random, base64url-encoded.",
+      "code_challenge": "SHA-256(code_verifier), base64url-encoded.",
+      "binding": "Server stores code_challenge alongside auth_code. On token exchange, verifier hash must match — eliminates auth code interception attacks."
+    },
+    "state_parameter": "CSRF protection: client generates 32-byte random state, server validates on callback.",
+    "nonce": "Optional: client sets nonce in auth request; server includes in id_token — prevents id_token replay.",
+    "token_types": {
+      "access_token": "Short-lived JWT (1h). Signed with ES256 (ECDSA P-256). Contains: sub (user_id hash), name, username, photo_url, iat, exp, aud (client_id).",
+      "refresh_token": "Opaque 256-bit token. Stored hashed (SHA-256) in DB. TTL 30 days. Rotation on each use.",
+      "id_token": "OIDC-compatible JWT with user profile claims."
+    },
+    "token_security": [
+      "Access token signed with per-environment ES256 key (rotated quarterly, JWKS endpoint published).",
+      "Refresh token rotation: each use invalidates previous token (chained rotation). Stolen token detection via reuse of invalidated token.",
+      "Refresh token family invalidation: if reuse detected → entire refresh token family revoked for that user+client."
+    ]
+  },
+  "client_registration": {
+    "table": "oauth_clients",
+    "schema": {
+      "id": "UUID PK",
+      "client_id": "VARCHAR(64) UNIQUE (public, non-secret)",
+      "client_secret_hash": "BYTEA (bcrypt, for confidential clients only)",
+      "name": "VARCHAR(128)",
+      "website_url": "TEXT",
+      "logo_url": "TEXT",
+      "redirect_uris": "TEXT[] (exact match only — no wildcard)",
+      "allowed_scopes": "TEXT[]",
+      "is_verified": "BOOLEAN (for 'Verified App' badge on consent screen)",
+      "created_at": "TIMESTAMPTZ"
+    },
+    "redirect_uri_policy": "Exact match only. Wildcard redirect URIs are a critical OAuth vulnerability — categorically rejected at registration."
+  },
+  "authorization_endpoints": {
+    "authorize": {
+      "endpoint": "GET /oauth/authorize",
+      "params": "client_id, redirect_uri, scope, response_type=code, state, code_challenge, code_challenge_method=S256",
+      "server_validation": [
+        "client_id exists",
+        "redirect_uri exact-matches registered URI",
+        "scope ⊆ allowed_scopes",
+        "code_challenge_method = S256 (plain REJECTED)"
+      ],
+      "consent_screen": "Platform-hosted. Shows: requesting app name, logo, permissions. User approves or denies."
+    },
+    "token": {
+      "endpoint": "POST /oauth/token",
+      "body": "grant_type=authorization_code, code, redirect_uri, code_verifier, client_id",
+      "server_validation": [
+        "code not expired (TTL 5 min)",
+        "code not previously used (mark as used atomically)",
+        "code_verifier hashes to stored code_challenge",
+        "redirect_uri matches"
+      ]
+    },
+    "jwks": "GET /.well-known/jwks.json — public key set for token verification. Cached by clients, rotated via kid field."
+  },
+  "scopes": {
+    "basic": "user_id, display_name, username, avatar_url",
+    "phone": "verified phone number (requires explicit user consent dialog)",
+    "email": "verified email (requires explicit user consent dialog)"
+  },
+  "widget_security": {
+    "csp": "Widget JS loaded from platform CDN with SRI hash. Third-party sites must include script with integrity attribute.",
+    "frame_origin": "Consent popup opened in platform domain window — never iframed (clickjacking prevention).",
+    "postmessage": "Widget communicates result via window.postMessage with origin validation."
+  },
+  "rate_limiting": {
+    "authorize_endpoint": "20 req/min per IP, 5 req/min per client_id",
+    "token_endpoint": "10 req/min per client_id + IP combination"
+  },
+  "observability": {
+    "metrics": [
+      "counter: oauth.authorize.{outcome=approved|denied|error}",
+      "counter: oauth.token.exchange.{outcome=success|invalid_pkce|expired|replayed}",
+      "counter: oauth.refresh_token.reuse_detected{client_id}"
+    ],
+    "alerts": ["oauth.refresh_token.reuse_detected > 5/min → PagerDuty P1 (possible token theft campaign)"]
+  }
+}

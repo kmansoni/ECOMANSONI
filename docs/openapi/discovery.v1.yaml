@@ -1,0 +1,162 @@
+openapi: 3.1.0
+info:
+  title: Mansoni Discovery API
+  version: v1
+  description: |
+    Minimal API surface for Explore/Hashtag discovery, plus internal ops contracts.
+    Payload contracts are defined in docs/contracts/schemas/.
+servers:
+  - url: https://api.example.com
+paths:
+  /v1/explore: 
+    post:
+      operationId: exploreResolveV1
+      summary: Resolve Explore page (server-side)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ../contracts/schemas/explore-request.v1.schema.json
+      responses:
+        '200':
+          description: Explore page payload
+          content:
+            application/json:
+              schema:
+                $ref: ../contracts/schemas/explore-page.v1.schema.json
+        '400':
+          description: Invalid request
+  /v1/hashtag:
+    post:
+      operationId: hashtagResolveV1
+      summary: Resolve Hashtag page (server-side)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ../contracts/schemas/hashtag-request.v1.schema.json
+      responses:
+        '200':
+          description: Hashtag page payload
+          content:
+            application/json:
+              schema:
+                $ref: ../contracts/schemas/hashtag-page.v1.schema.json
+        '400':
+          description: Invalid request
+  /v1/internal/trends/run:
+    post:
+      operationId: trendsRunV1
+      summary: Start/publish a trend computation run (internal)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: X-Idempotency-Key
+          in: header
+          required: false
+          schema:
+            type: string
+          description: Optional idempotency key for safely retrying run starts.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ../contracts/schemas/trend-run.v1.schema.json
+      responses:
+        '200':
+          description: Accepted run state
+          content:
+            application/json:
+              schema:
+                $ref: ../contracts/schemas/trend-run.v1.schema.json
+        '401':
+          description: Missing bearer token
+        '403':
+          description: Forbidden
+        '500':
+          description: Server error
+
+  /v1/internal/trends/worker:
+    post:
+      operationId: trendsWorkerV1
+      summary: Claim and execute pending trend runs (internal worker)
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ../contracts/schemas/trend-worker-request.v1.schema.json
+      responses:
+        '200':
+          description: Worker execution result
+          content:
+            application/json:
+              schema:
+                $ref: ../contracts/schemas/trend-worker-response.v1.schema.json
+        '401':
+          description: Missing bearer token
+        '403':
+          description: Forbidden
+        '500':
+          description: Server error
+
+  /v1/internal/admin/actions:
+    post:
+      operationId: adminActionsV1
+      summary: Admin action gateway (internal)
+      description: |
+        Backed by Supabase Edge Function `admin-api`.
+        The request is an action + params envelope. Responses are `{ ok: true, data }` or `{ error }`.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ../contracts/schemas/admin-api-action-request.v1.schema.json
+      responses:
+        '200':
+          description: Action result
+          content:
+            application/json:
+              schema:
+                $ref: ../contracts/schemas/admin-api-action-response.v1.schema.json
+        '400':
+          description: Invalid request
+        '401':
+          description: Missing/invalid bearer token
+        '403':
+          description: Forbidden (not admin / missing scope)
+        '429':
+          description: Rate limited
+        '500':
+          description: Server error
+  /v1/internal/rollouts/decision:
+    post:
+      operationId: rolloutDecisionV1
+      summary: Publish an auto-rollback decision (internal)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ../contracts/schemas/auto-rollback-decision.v1.schema.json
+      responses:
+        '200':
+          description: Decision recorded
+          content:
+            application/json:
+              schema:
+                $ref: ../contracts/schemas/auto-rollback-decision.v1.schema.json
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: opaque

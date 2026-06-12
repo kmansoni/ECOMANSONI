@@ -1,0 +1,140 @@
+{
+  "agents": {
+    "mansoni-queen": {
+      "agentId": "mansoni-queen",
+      "agentType": "orchestrator",
+      "status": "idle",
+      "health": 1,
+      "taskCount": 0,
+      "config": {
+        "description": "Главный оркестратор проекта Mansoni — 7 внутренних персон, роевой мозг",
+        "skills": [
+          ".github/skills/swarm-brain/SKILL.md",
+          ".github/skills/skills-catalog.md",
+          ".github/skills/infinite-context-protocol.md",
+          ".github/skills/orchestrator-laws/SKILL.md",
+          ".github/skills/swarm-protocol/SKILL.md",
+          ".github/skills/swarm-debate-protocol/SKILL.md"
+        ],
+        "model": "opus"
+      },
+      "createdAt": "2026-06-11T20:39:54.568Z",
+      "domain": "orchestration",
+      "model": "opus",
+      "modelRoutedBy": "explicit"
+    },
+    "mansoni-architect": {
+      "agentId": "mansoni-architect",
+      "agentType": "specialist",
+      "status": "idle",
+      "health": 1,
+      "taskCount": 0,
+      "config": {
+        "description": "Архитектор — ADR, модели данных, API контракты, edge cases",
+        "model": "sonnet",
+        "maxTokens": 1000000
+      },
+      "createdAt": "2026-06-11T20:40:47.869Z",
+      "domain": "architecture",
+      "model": "sonnet",
+      "modelRoutedBy": "explicit"
+    },
+    "mansoni-debugger": {
+      "agentId": "mansoni-debugger",
+      "agentType": "specialist",
+      "status": "idle",
+      "health": 1,
+      "taskCount": 0,
+      "config": {
+        "description": "Debugger — REPRODUCE → ISOLATE → ROOT CAUSE → FIX → VERIFY",
+        "model": "sonnet",
+        "maxTokens": 1000000
+      },
+      "createdAt": "2026-06-11T20:40:53.084Z",
+      "domain": "debugging",
+      "model": "sonnet",
+      "modelRoutedBy": "explicit"
+    },
+    "mansoni-reviewer": {
+      "agentId": "mansoni-reviewer",
+      "agentType": "specialist",
+      "status": "idle",
+      "health": 1,
+      "taskCount": 0,
+      "config": {
+        "description": "Reviewer — аудит по 8 направлениям: correctness, security, typing, performance",
+        "model": "sonnet",
+        "maxTokens": 1000000
+      },
+      "createdAt": "2026-06-11T20:40:58.120Z",
+      "domain": "review",
+      "model": "sonnet",
+      "modelRoutedBy": "explicit"
+    },
+    "mansoni-security": {
+      "agentId": "mansoni-security",
+      "agentType": "specialist",
+      "status": "idle",
+      "health": 1,
+      "taskCount": 0,
+      "config": {
+        "description": "Security Engineer — OWASP Top 10, RLS audit, E2EE, threat modeling",
+        "model": "fable",
+        "maxTokens": 1000000
+      },
+      "createdAt": "2026-06-11T20:41:02.596Z",
+      "domain": "security",
+      "model": "sonnet",
+      "modelRoutedBy": "explicit"
+    },
+    "mansoni-tester": {
+      "agentId": "mansoni-tester",
+      "agentType": "specialist",
+      "status": "idle",
+      "health": 1,
+      "taskCount": 0,
+      "config": {
+        "description": "Tester — E2E, integration, security, performance тестирование",
+        "model": "sonnet",
+        "maxTokens": 1000000
+      },
+      "createdAt": "2026-06-11T20:41:07.314Z",
+      "domain": "testing",
+      "model": "sonnet",
+      "modelRoutedBy": "explicit"
+    },
+    "mansoni-performance": {
+      "agentId": "mansoni-performance",
+      "agentType": "specialist",
+      "status": "idle",
+      "health": 1,
+      "taskCount": 0,
+      "config": {
+        "description": "Performance Engineer — Core Web Vitals, bundle, N+1, profiling",
+        "model": "sonnet",
+        "maxTokens": 1000000
+      },
+      "createdAt": "2026-06-11T20:41:07.660Z",
+      "domain": "performance",
+      "model": "sonnet",
+      "modelRoutedBy": "explicit"
+    },
+    "mansoni-e2ee": {
+      "agentId": "mansoni-e2ee",
+      "agentType": "specialist",
+      "status": "idle",
+      "health": 1,
+      "taskCount": 0,
+      "config": {
+        "description": "E2EE Specialist — ECDH+HKDF+AES-KW, Insertable Streams, ECDSA identity, forward secrecy",
+        "model": "fable",
+        "maxTokens": 1000000
+      },
+      "createdAt": "2026-06-11T20:44:11.938Z",
+      "domain": "e2ee",
+      "model": "sonnet",
+      "modelRoutedBy": "explicit"
+    }
+  },
+  "version": "3.0.0"
+}

@@ -1,0 +1,216 @@
+{
+  "req_id": "REQ-0078",
+  "title": "Message Notifications (Push, In-app, Email)",
+  "version": "1.0",
+  "status": "in-design",
+  "domain": "messaging",
+  "depends_on": ["REQ-0065"],
+  "use_cases": [
+    "user receives push notification when Alice sends message while app is closed",
+    "notification shows preview: 'Alice: Check out this link'",
+    "user opens notification → navigates to conversation",
+    "mute conversation for 1 hour → no notifications"
+  ],
+  "notification_channels": {
+    "push": {
+      "platform": "Firebase Cloud Messaging (FCM) for Android & iOS, APNs for iOS",
+      "trigger": "message received, app not in foreground OR conversation not open",
+      "content": {
+        "title": "Alice",
+        "body": "First 100 chars of message",
+        "sound": "default",
+        "icon": "app_icon"
+      }
+    },
+    "in_app": {
+      "trigger": "message received, app in foreground",
+      "display": "banner notification at top (auto-dismiss in 5s) OR toast in corner",
+      "content": "preview of message"
+    },
+    "email": {
+      "trigger": "user doesn't read message for 1 hour + email enabled",
+      "frequency": "digest (batch multiple messages, send once per day)"
+    }
+  },
+  "notification_preferences": {
+    "global_toggle": {
+      "push_enabled": true,
+      "in_app_enabled": true,
+      "email_enabled": false
+    },
+    "per_conversation_settings": {
+      "notifications_level": "all (default) | mentions_only | muted",
+      "mute_until": "timestamp (mute for X hours/days/permanently)",
+      "sound_enabled": true,
+      "vibration_enabled": true
+    },
+    "time_based_do_not_disturb": {
+      "enabled": false,
+      "from": "22:00",
+      "to": "08:00",
+      "override_mentions": true,
+      "description": "silence notifications during sleeping hours"
+    }
+  },
+  "notification_content": {
+    "text_message": {
+      "format": "{sender_name}: {message_preview}",
+      "example": "Alice: Check out this project spec!"
+    },
+    "media_message": {
+      "format": "{sender_name}: [Image]",
+      "image": "show media thumbnail if possible"
+    },
+    "reply_notification": {
+      "format": "{sender_name} replied: {quoted_snippet}",
+      "example": "Alice replied: Check out this idea"
+    },
+    "reaction_notification": {
+      "format": "{sender_name} reacted with 👍",
+      "optional": "only if user has notifications for reactions enabled"
+    },
+    "group_notification": {
+      "format": "{sender_name} in {group_name}: {message_preview}",
+      "avatar": "sender's avatar thumbnail"
+    }
+  },
+  "notification_grouping": {
+    "android": "messages from same conversation bundled into 1 expanded notification",
+    "ios_badge": "badge count = total unread messages",
+    "grouping_key": "conversation_id (bundle by conversation)"
+  },
+  "notification_delivery": {
+    "trigger": [
+      "1. MESSAGE_SENT event from Kafka",
+      "2. check if recipient is online (WebSocket active?)",
+      "3. if offline or conversation closed: generate push notification",
+      "4. queue to FCM/APNs provider",
+      "5. wait for delivery confirmation"
+    ],
+    "retry": "if push fails (provider down), retry with exponential backoff (1s, 2s, 5s, 10s)"
+  },
+  "notification_deduplication": {
+    "mechanism": "dedup_key based on (conversation_id, message_id, recipient_id)",
+    "purpose": "if user receives duplicate MESSAGE_SENT events, don't send duplicate push"
+  },
+  "mute_feature": {
+    "mute_conversation": {
+      "ui": "long-press conversation → 'Mute' → select duration",
+      "storage": "user_muted_conversations table (mute_until timestamp)"
+    },
+    "mute_group": {
+      "feature": "mute group notifications except @mentions",
+      "implementation": "filter notifications if content doesn't contain @user"
+    }
+  },
+  "notification_actions": {
+    "ios_actions": [
+      "Reply (quick reply from notification)",
+      "Mark as read",
+      "Mute this conversation"
+    ],
+    "android_actions": [
+      "Reply (full reply, opens app)",
+      "Mark as read (background action)"
+    ]
+  },
+  "database_schema": {
+    "user_notification_settings_table": {
+      "columns": [
+        "user_id UUID PK FK",
+        "push_enabled BOOLEAN",
+        "in_app_enabled BOOLEAN",
+        "email_enabled BOOLEAN",
+        "email_digest_frequency ENUM (immediate, daily, weekly)",
+        "do_not_disturb_enabled BOOLEAN",
+        "dnd_from TIME",
+        "dnd_to TIME",
+        "dnd_override_mentions BOOLEAN",
+        "PRIMARY KEY (user_id)"
+      ]
+    },
+    "conversation_muted_table": {
+      "columns": [
+        "user_id UUID",
+        "conversation_id UUID",
+        "mute_until TIMESTAMP (null = permanently muted)",
+        "notification_level ENUM (all, mentions_only, muted)",
+        "PRIMARY KEY (user_id, conversation_id)"
+      ]
+    },
+    "notification_log_table": {
+      "columns": [
+        "notification_id UUID PK",
+        "user_id UUID",
+        "message_id UUID",
+        "channel ENUM (push, in_app, email)",
+        "sent_at TIMESTAMP",
+        "delivered_at TIMESTAMP",
+        "read_at TIMESTAMP",
+        "PRIMARY KEY (notification_id)",
+        "INDEX (user_id, sent_at)"
+      ]
+    }
+  },
+  "api_endpoints": {
+    "get_notification_settings": {
+      "endpoint": "GET /v1/user/notification-settings",
+      "response": {
+        "push_enabled": true,
+        "in_app_enabled": true,
+        "email_enabled": false,
+        "do_not_disturb": {
+          "enabled": false,
+          "from": "22:00",
+          "to": "08:00",
+          "override_mentions": true
+        }
+      }
+    },
+    "update_notification_settings": {
+      "endpoint": "PATCH /v1/user/notification-settings",
+      "payload": {
+        "push_enabled": true,
+        "do_not_disturb_enabled": true,
+        "dnd_from": "22:00",
+        "dnd_to": "08:00"
+      }
+    },
+    "mute_conversation": {
+      "endpoint": "POST /v1/conversations/{id}/mute",
+      "payload": {
+        "mute_until": "2026-02-15T23:00:00Z",
+        "notification_level": "muted"
+      }
+    },
+    "unmute_conversation": {
+      "endpoint": "DELETE /v1/conversations/{id}/mute"
+    }
+  },
+  "testing": {
+    "scenarios": [
+      "send message to closed app → push notification received on device",
+      "notification shows correct sender + preview",
+      "tap notification → app opens conversation at correct message",
+      "mute conversation for 1h → no notifications received",
+      "unmute → notifications resume",
+      "DND enabled (10pm-8am) → no notifications during this window",
+      "mention @user during DND → notification sent anyway (if override enabled)",
+      "quick reply from notification → message sent without opening app"
+    ]
+  },
+  "monitoring": {
+    "metrics": [
+      "notifications.sent_per_hour",
+      "notifications.delivery_latency_p95_ms",
+      "notifications.delivery_failure_rate",
+      "notifications.user_open_rate (opened/sent)",
+      "muted_conversations.percent"
+    ],
+    "alerts": [
+      "notification delivery > 2s (FCM/APNs latency)",
+      "delivery failures > 5%",
+      "notification volume anomaly (10x normal)"
+    ]
+  }
+}

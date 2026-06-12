@@ -1,0 +1,65 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mansoni.com/schemas/ws/ROOM_JOIN_OK.schema.json",
+  "title": "ROOM_JOIN_OK",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "roomId",
+    "callId",
+    "region",
+    "nodeId",
+    "epoch",
+    "memberSetVersion",
+    "joinToken",
+    "mediasoup",
+    "turn"
+  ],
+  "properties": {
+    "roomId": { "$ref": "https://mansoni.com/schemas/ws/types.schema.json#/properties/roomId" },
+    "callId": { "$ref": "https://mansoni.com/schemas/ws/types.schema.json#/properties/callId" },
+    "region": { "$ref": "https://mansoni.com/schemas/ws/types.schema.json#/properties/region" },
+    "nodeId": { "$ref": "https://mansoni.com/schemas/ws/types.schema.json#/properties/nodeId" },
+    "epoch": { "type": "integer", "minimum": 0 },
+    "memberSetVersion": { "type": "integer", "minimum": 0 },
+    "joinToken": { "type": "string", "minLength": 20, "maxLength": 4096 },
+    "mediasoup": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["routerRtpCapabilities", "sendTransportOptions", "recvTransportOptions"],
+      "properties": {
+        "routerRtpCapabilities": { "type": "object" },
+        "sendTransportOptions": { "type": "object" },
+        "recvTransportOptions": { "type": "object" }
+      }
+    },
+    "turn": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["iceServers", "forceRelayAfterMs"],
+      "properties": {
+        "iceServers": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["urls"],
+            "properties": {
+              "urls": {
+                "oneOf": [
+                  { "type": "string" },
+                  { "type": "array", "items": { "type": "string" }, "minItems": 1 }
+                ]
+              },
+              "username": { "type": "string", "minLength": 1, "maxLength": 256 },
+              "credential": { "type": "string", "minLength": 1, "maxLength": 256 },
+              "credentialType": { "type": "string", "enum": ["password"], "default": "password" }
+            }
+          }
+        },
+        "forceRelayAfterMs": { "type": "integer", "minimum": 1000, "maximum": 20000 }
+      }
+    }
+  }
+}

@@ -1,0 +1,94 @@
+{
+  "req_id": "REQ-0115",
+  "title": "Live Location (Real-Time Position Broadcasting)",
+  "version": "1.0",
+  "status": "in-design",
+  "domain": "messaging",
+  "priority": "P1",
+  "depends_on": ["REQ-0073"],
+  "description": "Users can voluntarily share their real-time GPS position to one or more conversations for a configurable TTL (15m / 1h / 8h). Recipients see a live-updating map pin. Sharing stops automatically at TTL expiry or when user explicitly stops. Designed for zero metadata leakage beyond the sharing window.",
+  "privacy_threat_model": {
+    "threats": [
+      "Stalking: recipient saves location stream outside the TTL window.",
+      "Server-side surveillance: unbounded retention of location history.",
+      "Inference attacks: correlation of speed/direction with home/work addresses.",
+      "Replay: old location updates replayed after session expires."
+    ],
+    "mitigations": [
+      "Location updates stored in Redis only (TTL-bound, no PostgreSQL persistence by default). No durable location log.",
+      "Each update packet signed with HMAC-SHA256(session_key, lat|lon|ts) — server validates before broadcast. Prevents spoofed location injection.",
+      "Replay protection: each update includes monotonically increasing sequence_number per session; server rejects seq ≤ last_accepted.",
+      "After TTL expiry or stop: Redis key deleted immediately, no further updates broadcast.",
+      "Optional: user can configure 'approximate location' (±500m fuzzing via Gaussian noise applied server-side)."
+    ]
+  },
+  "data_model": {
+    "live_location_sessions": {
+      "storage": "Redis + PostgreSQL (metadata only)",
+      "postgres_schema": {
+        "id": "UUID PK",
+        "user_id": "UUID FK → users.id",
+        "conversation_id": "UUID FK → conversations.id",
+        "started_at": "TIMESTAMPTZ",
+        "expires_at": "TIMESTAMPTZ (started_at + TTL)",
+        "stopped_at": "TIMESTAMPTZ (NULL = active)",
+        "ttl_seconds": "INTEGER (900 | 3600 | 28800)",
+        "approximate_mode": "BOOLEAN DEFAULT FALSE"
+      },
+      "redis_key": "liveloc:session:{session_id}",
+      "redis_value": {
+        "lat": "float64",
+        "lon": "float64",
+        "heading": "float32 (optional)",
+        "speed_kmh": "float32 (optional)",
+        "accuracy_meters": "float32",
+        "sequence_number": "uint64",
+        "ts": "unix_ms"
+      },
+      "redis_ttl": "expires_at - now() + 60s grace"
+    }
+  },
+  "update_protocol": {
+    "transport": "WebSocket (preferred) or HTTP polling fallback (30s interval)",
+    "update_rate": "Client sends every 5s minimum (server throttles more frequent updates). Battery/accuracy trade-off configuration.",
+    "server_pipeline": [
+      "1. Receive update via WS message type: LIVE_LOCATION_UPDATE",
+      "2. Validate JWT → extract user_id",
+      "3. Load session from Redis → verify not expired, sequence_number valid",
+      "4. Apply Gaussian fuzzing if approximate_mode=true",
+      "5. Validate HMAC signature",
+      "6. Atomically SET new value in Redis + EXPIRE refresh",
+      "7. Fanout via pub/sub to all subscribers of conversation_id",
+      "8. Subscribers (recipients) receive WS event: LIVE_LOCATION_UPDATED"
+    ],
+    "stop_sharing": {
+      "explicit": "User taps 'Stop' → DELETE Redis key → UPDATE sessions.stopped_at → emit LIVE_LOCATION_STOPPED event",
+      "ttl_expiry": "Redis key expires → server detects via keyspace notifications → emit LIVE_LOCATION_EXPIRED event"
+    }
+  },
+  "api": {
+    "start": {
+      "endpoint": "POST /v1/live-location/sessions",
+      "body": { "conversation_id": "UUID", "ttl_seconds": "integer", "approximate": "boolean" },
+      "response": { "session_id": "UUID", "expires_at": "ISO8601", "session_key": "hex32 (for HMAC)" }
+    },
+    "update": "WebSocket channel — message type LIVE_LOCATION_UPDATE",
+    "stop": "DELETE /v1/live-location/sessions/{session_id}"
+  },
+  "scalability": {
+    "fanout": "Redis pub/sub channel per conversation_id. At 10M users, expected active live-location sessions: ~0.01% = 1000 concurrent. Trivially handled by single Redis cluster.",
+    "update_frequency": "5s × 1000 sessions = 200 updates/s. Sub-millisecond Redis writes. No DB write per update."
+  },
+  "ui": {
+    "sender_view": "Active sharing indicator in composer area with countdown timer. 'Stop Sharing' button.",
+    "recipient_view": "Map card in conversation with animated pin. Shows heading arrow if available. Tapping opens full-screen map.",
+    "expired_state": "Pin becomes grey, label shows 'Location expired {time_ago}'"
+  },
+  "observability": {
+    "metrics": [
+      "gauge: liveloc.active_sessions",
+      "counter: liveloc.update.total{result=accepted|rejected_replay|rejected_expired}",
+      "counter: liveloc.session.started | stopped | expired"
+    ]
+  }
+}

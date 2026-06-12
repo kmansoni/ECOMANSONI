@@ -1,0 +1,46 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "mansoni://contracts/auto-rollback-decision.v1",
+  "title": "Auto Rollback Decision v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "decision_id",
+    "version_id",
+    "stage",
+    "baseline_version_id",
+    "decided_at",
+    "action",
+    "reason_codes"
+  ],
+  "properties": {
+    "decision_id": { "type": "string", "minLength": 1 },
+    "version_id": { "type": "string", "minLength": 1 },
+    "stage": {
+      "type": "string",
+      "enum": [
+        "rollout.stage_1pct",
+        "rollout.stage_10pct",
+        "rollout.stage_50pct",
+        "rollout.stage_100pct"
+      ]
+    },
+    "baseline_version_id": { "type": "string", "minLength": 1 },
+    "decided_at": { "type": "string", "format": "date-time" },
+    "action": { "type": "string", "enum": ["continue", "rollback", "activate_killswitch"] },
+    "reason_codes": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "type": "string", "pattern": "^(feed|rank|event|create|mod|abuse|rollout|ads|svc)\\.[a-z0-9_]+$" }
+    },
+    "guardrail_snapshot": {
+      "type": "object",
+      "additionalProperties": { "type": ["number", "integer", "boolean", "string", "null"] }
+    },
+    "thresholds": {
+      "type": ["object", "null"],
+      "additionalProperties": { "type": ["number", "integer", "boolean", "string", "null"] }
+    },
+    "notes": { "type": ["string", "null"], "maxLength": 500 }
+  }
+}

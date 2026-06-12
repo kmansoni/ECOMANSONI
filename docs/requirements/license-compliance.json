@@ -1,0 +1,1 @@
+{"req_id":"REQ-0044","title":"License Compliance","check_tool":"snyk","licenses_allowed":["MIT","Apache-2.0","BSD-3-Clause"],"licenses_forbidden":["GPL"]}

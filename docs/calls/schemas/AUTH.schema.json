@@ -1,0 +1,11 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mansoni.com/schemas/ws/AUTH.schema.json",
+  "title": "AUTH",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["accessToken"],
+  "properties": {
+    "accessToken": { "type": "string", "minLength": 20, "maxLength": 8192 }
+  }
+}

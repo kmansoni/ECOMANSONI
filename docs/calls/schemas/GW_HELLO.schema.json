@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mansoni.com/schemas/ws/GW_HELLO.schema.json",
+  "title": "GW_HELLO",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["degraded", "storage", "features"],
+  "properties": {
+    "degraded": { "type": "boolean" },
+    "storage": { "type": "string", "enum": ["redis", "in-memory"] },
+    "features": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["offlineMailbox", "rekeyCommit"],
+      "properties": {
+        "offlineMailbox": { "type": "boolean" },
+        "rekeyCommit": { "type": "boolean" }
+      }
+    }
+  }
+}

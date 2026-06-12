@@ -1,0 +1,1 @@
+{"req_id":"REQ-0035","title":"Error Reporting System","platforms":["web","ios","android"],"collection":["crash_logs","stack_traces","user_context"],"sampling":0.1,"retention_days":30}

@@ -1,0 +1,408 @@
+{
+  "id": "B-117",
+  "title": "User Reputation & Badges System",
+  "description": "User reputation scoring, achievement badges, verification badges, contributor rankings, and community trust levels with visual indicators",
+  "status": "draft",
+  "priority": "P1",
+  "complexity": "M",
+  "domain": "user-engagement",
+  "technologies": ["Postgres", "Redis", "Ranking algorithms"],
+
+  "overview": {
+    "purpose": "Build community trust and recognize contributions through reputation and badges",
+    "target_scale": "10M+ users with dynamic reputation",
+    "key_requirements": [
+      "Real-time reputation scoring",
+      "Achievement-based badges",
+      "Verification badges (blue checkmark)",
+      "Leaderboards (top contributors)",
+      "Reputation decay (activity-based)",
+      "Anti-gaming mechanics (prevent manipulation)"
+    ]
+  },
+
+  "database_schema": {
+    "tables": [
+      {
+        "name": "user_reputation",
+        "purpose": "User reputation metrics",
+        "columns": [
+          {"name": "reputation_id", "type": "UUID PRIMARY KEY"},
+          {"name": "user_id", "type": "UUID NOT NULL UNIQUE"},
+          {"name": "total_score", "type": "INT", "description": "Sum of all contributions"},
+          {"name": "level", "type": "INT", "description": "0-based level (0=newbie, 1=regular, 2=contributor, etc)"},
+          {"name": "level_progress_pct", "type": "INT", "description": "% to next level (0-100)"},
+          {"name": "messages_sent", "type": "INT", "description": "Total lifetime"},
+          {"name": "helpful_count", "type": "INT", "description": "'Helpful' reaction count"},
+          {"name": "reply_rate", "type": "NUMERIC", "description": "% of messages replied to"},
+          {"name": "avg_engagement_score", "type": "NUMERIC", "description": "Avg reactions + replies per message"},
+          {"name": "trust_level", "type": "VARCHAR", "enum": ["untrusted", "trusted", "verified", "contributor"], "default": "untrusted"},
+          {"name": "last_activity_at", "type": "TIMESTAMP"},
+          {"name": "last_recalc_at", "type": "TIMESTAMP"}
+        ],
+        "indexes": ["INDEX(total_score DESC)", "INDEX(level DESC)"]
+      },
+      {
+        "name": "user_badges",
+        "purpose": "Badges earned by users",
+        "columns": [
+          {"name": "badge_award_id", "type": "BIGINT PRIMARY KEY"},
+          {"name": "user_id", "type": "UUID NOT NULL"},
+          {"name": "badge_id", "type": "VARCHAR NOT NULL", "description": "verified, top10_contributor, helpful_responder, etc"},
+          {"name": "badge_name", "type": "VARCHAR"},
+          {"name": "badge_emoji", "type": "VARCHAR", "description": "✅, 🏆, 💡, etc"},
+          {"name": "badge_tier", "type": "VARCHAR", "enum": ["bronze", "silver", "gold"], "description": "For tiered badges"},
+          {"name": "awarded_at", "type": "TIMESTAMP NOT NULL"},
+          {"name": "awarded_by", "type": "VARCHAR", "enum": ["auto", "manual_admin", "contest"]},
+          {"name": "expires_at", "type": "TIMESTAMP", "description": "Optional: auto-revoked if inactivity"}
+        ],
+        "indexes": ["UNIQUE(user_id, badge_id) WHERE badge_tier IS NULL", "INDEX(user_id)"]
+      },
+      {
+        "name": "badge_definitions",
+        "purpose": "Badge catalog",
+        "columns": [
+          {"name": "badge_id", "type": "VARCHAR PRIMARY KEY"},
+          {"name": "badge_name", "type": "VARCHAR NOT NULL"},
+          {"name": "description", "type": "TEXT"},
+          {"name": "badge_emoji", "type": "VARCHAR"},
+          {"name": "badge_color", "type": "VARCHAR", "description": "Hex color for UI"},
+          {"name": "category", "type": "VARCHAR", "enum": ["verification", "achievement", "recognition"]},
+          {"name": "criteria", "type": "JSONB", "description": "{\"type\": \"messages_count\", \"threshold\": 100}"},
+          {"name": "auto_award", "type": "BOOLEAN", "description": "Auto-awarded when criteria met"},
+          {"name": "award_frequency", "type": "VARCHAR", "enum": ["once", "repeatable"], "description": "Can user earn multiple?"},
+          {"name": "display_order", "type": "INT"}
+        ]
+      },
+      {
+        "name": "reputation_activity_log",
+        "purpose": "Track reputation changes (audit trail)",
+        "columns": [
+          {"name": "log_id", "type": "BIGINT PRIMARY KEY"},
+          {"name": "user_id", "type": "UUID NOT NULL"},
+          {"name": "activity_type", "type": "VARCHAR", "enum": ["message_sent", "helpful_reaction", "badge_awarded", "trust_level_changed", "decay_applied"]},
+          {"name": "points_delta", "type": "INT"},
+          {"name": "reason", "type": "VARCHAR"},
+          {"name": "reference_id", "type": "VARCHAR", "description": "message_id, badge_id, etc"},
+          {"name": "occurred_at", "type": "TIMESTAMP NOT NULL"}
+        ],
+        "indexes": ["INDEX(user_id, occurred_at DESC)"]
+      },
+      {
+        "name": "reputation_leaderboards",
+        "purpose": "Cached leaderboard rankings (denormalized)",
+        "columns": [
+          {"name": "leaderboard_id", "type": "BIGINT PRIMARY KEY"},
+          {"name": "leaderboard_type", "type": "VARCHAR", "enum": ["global", "monthly", "conversation_specific"]},
+          {"name": "period_end_at", "type": "TIMESTAMP", "description": "For monthly boards"},
+          {"name": "user_id", "type": "UUID NOT NULL"},
+          {"name": "rank", "type": "INT"},
+          {"name": "score", "type": "INT"},
+          {"name": "generated_at", "type": "TIMESTAMP"}
+        ],
+        "indexes": ["UNIQUE(leaderboard_type, period_end_at, user_id)"]
+      },
+      {
+        "name": "reputation_anti_gaming",
+        "purpose": "Track potential gaming/abuse patterns",
+        "columns": [
+          {"name": "flag_id", "type": "BIGINT PRIMARY KEY"},
+          {"name": "user_id", "type": "UUID NOT NULL"},
+          {"name": "flag_type", "type": "VARCHAR", "enum": ["spam_reactions", "self_replies", "alt_account_voting", "sudden_score_spike"]},
+          {"name": "evidence", "type": "JSONB", "description": "Details of suspicious activity"},
+          {"name": "severity", "type": "VARCHAR", "enum": ["low", "medium", "high"]},
+          {"name": "flagged_at", "type": "TIMESTAMP NOT NULL"},
+          {"name": "reviewed_status", "type": "VARCHAR", "enum": ["pending", "approved", "rejected"]},
+          {"name": "action_taken", "type": "VARCHAR", "description": "reputation_penalty (score -10), badge_revoked, etc"}
+        ]
+      }
+    ]
+  },
+
+  "badge_definitions": [
+    {
+      "badge_id": "verified",
+      "badge_name": "Verified",
+      "emoji": "✅",
+      "category": "verification",
+      "criteria": {"type": "manual_review", "requires_payment": true},
+      "auto_award": false,
+      "description": "Verified identity or official account"
+    },
+    {
+      "badge_id": "top_10_contributor",
+      "badge_name": "Top 10 Contributor",
+      "emoji": "🏆",
+      "category": "achievement",
+      "criteria": {"type": "leaderboard_rank", "threshold": 10},
+      "auto_award": true,
+      "award_frequency": "repeatable",
+      "description": "Top 10 highest reputation in platform"
+    },
+    {
+      "badge_id": "helpful_responder",
+      "badge_name": "Helpful Responder",
+      "emoji": "💡",
+      "category": "recognition",
+      "criteria": {"type": "helpful_reactions", "threshold": 100},
+      "auto_award": true,
+      "description": "Received 100+ 'Helpful' reactions"
+    },
+    {
+      "badge_id": "conversation_starter",
+      "badge_name": "Conversation Starter",
+      "emoji": "💬",
+      "criteria": {"type": "reply_initiated_count", "threshold": 50},
+      "auto_award": true
+    },
+    {
+      "badge_id": "content_creator",
+      "badge_name": "Content Creator",
+      "emoji": "🎨",
+      "criteria": {"type": "media_messages_sent", "threshold": 200},
+      "auto_award": true
+    }
+  ],
+
+  "reputation_scoring": {
+    "points_model": {
+      "message_sent": 1,
+      "reply_received": 2,
+      "reaction_received": 0.5,
+      "helpful_reaction": 3,
+      "badge_awarded": 10
+    },
+    "level_thresholds": [
+      {"level": 0, "min_score": 0, "name": "Newbie"},
+      {"level": 1, "min_score": 50, "name": "Regular"},
+      {"level": 2, "min_score": 250, "name": "Contributor"},
+      {"level": 3, "min_score": 1000, "name": "Expert"},
+      {"level": 4, "min_score": 5000, "name": "Legend"}
+    ],
+    "decay": {
+      "mechanism": "Optional: reduce score 5% per 6 months of inactivity",
+      "purpose": "Encourage ongoing engagement, prevent 'reputation inflation'",
+      "trigger": "last_activity_at < 6 months ago"
+    }
+  },
+
+  "anti_gaming": {
+    "rules": [
+      {"rule": "User posts message, alt account immediately reacts 'helpful'", "flag": "alt_account_voting", "weight": 0.95},
+      {"rule": "Same user sends 10 messages in 1 min, all receive 'helpful' from same actor", "flag": "spam_reactions", "weight": 0.8},
+      {"rule": "User reputation increases 100pts in 1 day (suspicious spike)", "flag": "sudden_score_spike", "weight": 0.7}
+    ],
+    "penalties": {
+      "low": "Manual review, no action unless confirmed",
+      "medium": "Reputation -5 points per incident, flag for review",
+      "high": "Reputation reset to 0, badges suspended pending review"
+    }
+  },
+
+  "api_specification": {
+    "endpoints": [
+      {
+        "method": "GET",
+        "path": "/v1/users/{user_id}/reputation",
+        "description": "Get user reputation and badges",
+        "response": {
+          "total_score": 425,
+          "level": 2,
+          "level_progress_pct": 68,
+          "trust_level": "trusted",
+          "badges": [
+            {"badge_id": "helpful_responder", "badge_emoji": "💡", "awarded_at": "2026-01-15"},
+            {"badge_id": "conversation_starter", "badge_emoji": "💬", "awarded_at": "2026-02-01"}
+          ]
+        }
+      },
+      {
+        "method": "GET",
+        "path": "/v1/leaderboards/global",
+        "description": "Global leaderboard",
+        "request": {"query": {"period": "enum[all_time, monthly]", "limit": 100}},
+        "response": {
+          "leaderboard": [
+            {"rank": 1, "user_id": "...", "display_name": "Alice", "score": 5230, "badges_count": 8}
+          ]
+        }
+      },
+      {
+        "method": "GET",
+        "path": "/v1/users/{user_id}/reputation/history",
+        "description": "Reputation change audit log",
+        "response": [
+          {"activity_type": "message_sent", "points": 1, "occurred_at": "2026-02-19T14:30:00Z"},
+          {"activity_type": "helpful_reaction", "points": 3, "occurred_at": "2026-02-19T15:00:00Z"}
+        ]
+      },
+      {
+        "method": "POST",
+        "path": "/v1/users/{user_id}/request-verification",
+        "description": "Request verified badge",
+        "auth": "user",
+        "request": {
+          "verification_type": "identity",
+          "government_id_url": "s3://...",
+          "selfie_url": "s3://..."
+        },
+        "response": {"verification_id": "...", "status": "pending"}
+      },
+      {
+        "method": "GET",
+        "path": "/v1/badges",
+        "description": "List all badge definitions",
+        "response": [
+          {
+            "badge_id": "helpful_responder",
+            "badge_name": "Helpful Responder",
+            "criteria": {"type": "helpful_reactions", "threshold": 100},
+            "progress": {"current": 45, "threshold": 100}
+          }
+        ]
+      }
+    ]
+  },
+
+  "implementation_details": {
+    "reputation_recalc": {
+      "frequency": "Real-time on each activity (small delta), batch recalc daily",
+      "batch_job": "Recalculate all levels, decay scores, update leaderboards",
+      "schedule": "Daily 02:00 UTC"
+    },
+    "badge_awarding": {
+      "trigger": "Auto-award on criteria met (e.g., 100 helpful reactions)",
+      "notification": "In-app notification + email 'You earned a badge!'",
+      "edge_case": "User earns same badge twice? allow_repeatable=true for tiered badges"
+    },
+    "leaderboard_caching": {
+      "storage": "Redis (leaderboards:global:all_time → sorted_set user_id -> score)",
+      "refresh": "Daily batch job updates all boards",
+      "real_time_rank": "Query Redis sorted_set (O(log N) for get rank)"
+    },
+    "anti_gaming_detection": {
+      "job": "Hourly scan for suspicious patterns",
+      "action": "Flag scores: low (monitor), medium (penalty), high (manual review + suspension)"
+    },
+    "verification_flow": {
+      "manual": "Admin reviews ID + selfie",
+      "approval": "Grant 'verified' badge + badge != game-able (manual only)",
+      "revocation": "If user violates TOS, revoke verification"
+    }
+  },
+
+  "monitoring": {
+    "metrics": [
+      "median_reputation_score",
+      "badge_award_frequency (badges/day)",
+      "leaderboard_page_load_time_ms",
+      "anti_gaming_flag_count (anomalies/day)",
+      "verification_approval_rate"
+    ],
+    "alerts": [
+      "anti_gaming_flag_count > 100/day (potential attack)",
+      "reputation_recalc_latency > 30min (batch job slow)"
+    ]
+  },
+
+  "testing_scenarios": [
+    {
+      "id": "T-117-1",
+      "title": "Reputation points award for new message",
+      "steps": ["User sends message", "Check reputation_activity_log"],
+      "expected": "1 point added, total_score incremented"
+    },
+    {
+      "id": "T-117-2",
+      "title": "Level up from 1 to 2",
+      "steps": ["User at 49 points (level 0)", "Receive 2 replies (4pts total)", "Now at 53 points"],
+      "expected": "User level promoted to 1"
+    },
+    {
+      "id": "T-117-3",
+      "title": "Auto-award badge on threshold",
+      "steps": ["User receives 100th helpful reaction", "Batch badge-award job runs"],
+      "expected": "'Helpful Responder' badge auto-awarded"
+    },
+    {
+      "id": "T-117-4",
+      "title": "Verification badge request",
+      "steps": ["User requests verification", "Admin reviews ID", "Approves"],
+      "expected": "Verified badge granted, user shows checkmark"
+    },
+    {
+      "id": "T-117-5",
+      "title": "Leaderboard ranking accuracy",
+      "steps": ["Top 10 users with highest scores", "Query leaderboard"],
+      "expected": "Rankings match scores (descending)"
+    },
+    {
+      "id": "T-117-6",
+      "title": "Reputation decay after inactivity",
+      "steps": ["User inactive for 6 months", "Daily decay job runs"],
+      "expected": "Score reduced by 5% (if decay enabled)"
+    },
+    {
+      "id": "T-117-7",
+      "title": "Anti-gaming: alt account voting detection",
+      "steps": ["User A posts, alt account 'alt_b' immediately reacts 'helpful'", "Pattern detection runs"],
+      "expected": "Flagged as alt_account_voting, suspicious"
+    },
+    {
+      "id": "T-117-8",
+      "title": "Anti-gaming: sudden score spike",
+      "steps": ["User reputation +100 in 1 day", "Anomaly detection"],
+      "expected": "Flagged as sudden_score_spike, pending review"
+    },
+    {
+      "id": "T-117-9",
+      "title": "Reputation history audit trail",
+      "steps": ["User queries /reputation/history", "Should see all activities"],
+      "expected": "Complete log of all reputation changes with timestamps"
+    },
+    {
+      "id": "T-117-10",
+      "title": "Badge tier progression (bronze→silver→gold)",
+      "steps": ["User earns 'Top Contributor' (bronze) month 1, (silver) month 2"],
+      "expected": "Badge tier updated, only latest tier shown"
+    },
+    {
+      "id": "T-117-11",
+      "title": "Trust level elevation",
+      "steps": ["User reaches level 2, 250 points", "Trust level auto-promoted"],
+      "expected": "trust_level=trusted (was untrusted)"
+    },
+    {
+      "id": "T-117-12",
+      "title": "Badge expiration on inactivity",
+      "steps": ["Badge with expires_at set", "User inactive past expiry"],
+      "expected": "Badge automatically revoked"
+    },
+    {
+      "id": "T-117-13",
+      "title": "Monthly leaderboard reset",
+      "steps": ["Query leaderboards and note monthly board", "Next month arrives"],
+      "expected": "Monthly board refreshed, previous month archived"
+    },
+    {
+      "id": "T-117-14",
+      "title": "Reputation penalty for gaming",
+      "steps": ["Anti-gaming high severity flag approved", "Penalty applied"],
+      "expected": "Reputation reset to 0, badges suspended pending review"
+    },
+    {
+      "id": "T-117-15",
+      "title": "Live reputation bar (next level progress)",
+      "steps": ["User at 75/100 points to level 1", "Send 5 messages", "Progress bar updates"],
+      "expected": "Progress shown as 80/100 (80%)"
+    }
+  ],
+
+  "dependencies": ["B-061", "B-100"],
+  "future_enhancements": [
+    "Specialized badges per conversation (SME badges)",
+    "Community voting on badges (earn/revoke by votes)",
+    "Reputation marketplaces (trade badges)",
+    "Skill endorsements (similar to LinkedIn)"
+  ]
+}

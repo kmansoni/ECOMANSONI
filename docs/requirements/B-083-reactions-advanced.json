@@ -1,0 +1,139 @@
+{
+  "req_id": "REQ-0083",
+  "title": "Message Reactions Advanced (Custom Emojis, Animations)",
+  "version": "1.0",
+  "status": "in-design",
+  "domain": "messaging",
+  "depends_on": ["REQ-0065"],
+  "use_cases": [
+    "user long-presses reaction button → sees 8 emoji options + 'more' button",
+    "taps 'more' → search/select custom emoji (future)",
+    "reaction animates with pop effect when added",
+    "user sees 'Alice, Bob + 8 more reacted' on hover"
+  ],
+  "emoji_set_expansion": {
+    "v1_standard": [
+      "👍 ❤️ 😂 😮 😢 🙏 🔥 💯"
+    ],
+    "v2_custom": "allow users to upload custom emoji (per-group) (future)",
+    "emoji_search": "user can search emoji in reaction picker"
+  },
+  "reaction_ui_enhancements": {
+    "reaction_bubble": {
+      "display": "emoji + count: 👍 3",
+      "animation": "pop-in effect when first reaction added",
+      "hover_popover": "shows names of reactors: 'Alice, Bob, Charlie'"
+    },
+    "reaction_picker": {
+      "trigger": "long-press message → emoji row appears",
+      "row_items": "8 quick buttons + '+' for more (custom/search)",
+      "custom_emoji": "users can add custom emoji to their profile (future)"
+    }
+  },
+  "reaction_animation": {
+    "add_reaction": [
+      "1. user taps emoji",
+      "2. emoji pops up at tap location (confetti animation, 500ms)",
+      "3. emoji slides to bubble position",
+      "4. count updates: 2 → 3"
+    ],
+    "remove_reaction": [
+      "1. user taps emoji to remove",
+      "2. count decrements: 3 → 2",
+      "3. if last reactor: bubble disappears (shrink animation)"
+    ],
+    "performance": "60fps on mobile (no jank)"
+  },
+  "reaction_grouping_ui": {
+    "message_reactions": [
+      "👍 3  ❤️ 2  😂 5  ... [+2 more]"
+    ],
+    "tap_emoji": "shows popover: 'Alice, Bob, Charlie'",
+    "tap_count": "shows all reactors (scrollable list)"
+  },
+  "reaction_notifications": {
+    "notify_first_reaction": "user notified when first person reacts",
+    "notify_subsequent": "no notification but counter updates in real-time",
+    "notify_removal": "user notified if specific person removes their reaction (optional)"
+  },
+  "custom_emoji_future": {
+    "v2_feature": "users/groups can upload custom emoji",
+    "storage": "s3://custom-emojis/{group_id}/{emoji_id}.png",
+    "size_limits": "64×64 px, 50KB max",
+    "moderation": "custom emojis reviewed by admins (no offensive images)"
+  },
+  "reaction_filtering": {
+    "feature": "view only messages with specific reaction",
+    "search": "has:emoji:👍 (returns messages with thumbs up)",
+    "filter_by_user": "reacted:alice (messages alice reacted to)"
+  },
+  "reaction_export": {
+    "feature": "include reaction aggregates in message export (B-075)",
+    "format": "JSON: {message_id, reactions: {👍: 5, ❤️: 3}}"
+  },
+  "database_schema_v2": {
+    "reaction_aggregates_enhanced": {
+      "columns": [
+        "message_id UUID",
+        "emoji TEXT (👍)",
+        "reactor_ids JSONB array (list of user IDs who reacted)",
+        "count INTEGER",
+        "last_reacted_at TIMESTAMP",
+        "PRIMARY KEY (message_id, emoji)"
+      ]
+    }
+  },
+  "api_endpoints": {
+    "add_reaction_animated": {
+      "endpoint": "POST /v1/messages/{id}/reactions",
+      "payload": {
+        "emoji": \"👍\",
+        "animate": true
+      },
+      "response": {
+        "reaction_id": "UUID",
+        "count": 3,
+        "animation": {
+          "type": "pop-in",
+          "duration_ms": 500
+        }
+      }
+    },
+    "get_reaction_popover": {
+      "endpoint": "GET /v1/messages/{id}/reactions/{emoji}",
+      "response": {
+        "emoji": \"👍\",
+        "count": 3,
+        "reactors": [
+          {
+            "user_id": "UUID",
+            "display_name": "Alice",
+            "reacted_at": "2026-02-15T15:35:00Z"
+          }
+        ]
+      }
+    }
+  },
+  "testing": {
+    "scenarios": [
+      "add reaction → animation pops up (500ms)",
+      "second user adds same emoji → count increments, no animation spam",
+      "remove reaction → count decrements, bubble shrinks if last",
+      "hover reaction → popover shows 'Alice, Bob + 1 more'",
+      "search emoji in picker → custom emoji appears",
+      "bulk add reactions (1000 users tap 👍) → each +1 counted, no dedup"
+    ]
+  },
+  "monitoring": {
+    "metrics": [
+      "reaction.animation_frame_drop_percent",
+      "reaction.add_latency_p95_ms",
+      "custom_emoji.upload_success_rate",
+      "reaction_picker.response_latency_p95_ms"
+    ],
+    "alerts": [
+      "animation frame drop > 10% (performance issue)",
+      "add reaction latency > 200ms p95"
+    ]
+  }
+}

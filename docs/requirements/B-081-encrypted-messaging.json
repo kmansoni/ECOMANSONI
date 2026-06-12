@@ -1,0 +1,147 @@
+{
+  "req_id": "REQ-0081",
+  "title": "Encrypted Messaging (Optional E2E Encryption)",
+  "version": "1.0",
+  "status": "in-design",
+  "domain": "messaging",
+  "depends_on": ["REQ-0064"],
+  "use_cases": [
+    "group conversation: admin enables 'secret chat' mode",
+    "all messages auto-encrypted with group's shared key",
+    "recipients see encrypted badge \\ud83d\\udd10 on messages",
+    "after leaving group, cannot decrypt old messages (key rotation)"
+  ],
+  "encryption_approach": {
+    "strategy": "Optional per-conversation, not default (user opt-in)",
+    "type": "AES-256-GCM (symmetric encryption, shared key model)",
+    "key_derivation": "PBKDF2 from shared passphrase (group password)"
+  },
+  "encrypted_vs_default": {
+    "default_messaging": [
+      "NO encryption (messages in plaintext on server)",
+      "Server can read, analyze, index messages",
+      "Suitable for most use cases"
+    ],
+    "encrypted_messaging": [
+      "All messages encrypted before leaving client",
+      "Server stores ciphertext, cannot read content",
+      "Cannot search in encrypted messages",
+      "Key shared among conversation members"
+    ]
+  },
+  "encryption_enable_flow": {
+    "group_admin": {
+      "action": "group settings → 'Enable encryption' toggle",
+      "effect": "all new messages encrypted, old messages unaffected",
+      "notification": "all members notified 'encryption enabled'"
+    },
+    "key_generation": {
+      "mechanism": "PBKDF2(passphrase, salt, 100k iterations) → 256-bit key",
+      "passphrase": "group name + creation timestamp + random",
+      "storage": "shared_encryption_keys table (encrypted backup)"
+    }
+  },
+  "encryption_database": {
+    "shared_encryption_keys_table": {
+      "columns": [
+        "key_id UUID PK",
+        "conversation_id UUID FK",
+        "key_version INTEGER (for rotation)",
+        "encrypted_key BYTEA (key encrypted with user master key)",
+        "created_at TIMESTAMP",
+        "PRIMARY KEY (conversation_id, key_version)"
+      ]
+    },
+    "encrypted_messages_schema": {
+      "additional_columns": [
+        "is_encrypted BOOLEAN",
+        "ciphertext BYTEA (encrypted content)",
+        "encryption_key_version INTEGER (which key was used)",
+        "iv BYTEA (initialization vector, unique per message)",
+        "auth_tag BYTEA (AEAD authentication tag)"
+      ]
+    }
+  },
+  "message_encryption_flow": {
+    "send": [
+      "1. client loads encryption key for conversation",
+      "2. generate random IV (16 bytes)",
+      "3. AES-256-GCM encrypt message content → ciphertext + auth_tag",
+      "4. send {ciphertext, iv, auth_tag, key_version, is_encrypted=true}",
+      "5. server stores as-is (never decrypts)"
+    ],
+    "receive": [
+      "1. client receives {ciphertext, iv, auth_tag, key_version}",
+      "2. load encryption key from shared_encryption_keys",
+      "3. AES-256-GCM decrypt with IV + auth_tag verification",
+      "4. if auth fails, discard (message tampered)"
+    ]
+  },
+  "key_rotation": {
+    "trigger": "member leaves conversation (security)",
+    "flow": [
+      "1. generate new key",
+      "2. all members receive new key (encrypted with their master key)",
+      "3. future messages use new key_version",
+      "4. old messages unreadable to departed member (by design)"
+    ],
+    "explicit_rotation": "admin can manually rotate key (paranoia mode)"
+  },
+  "constraints_encrypted": {
+    "cannot_search": "encrypted messages not full-text searchable",
+    "cannot_forward": "forwarding encrypted message loses encryption (unencrypted copy)",
+    "cannot_edit": "if encrypted message edited, new version encrypted with same key",
+    "cannot_reply_quote": "reply to encrypted message shows '[encrypted message]' placeholder"
+  },
+  "master_key_protection": {
+    "mechanism": "user's master key (derived from password) encrypts all group keys",
+    "storage": "group keys stored encrypted in shared_encryption_keys.encrypted_key",
+    "scenario": "even if server DB leaked, group keys encrypted (useless without user master key)"
+  },
+  "client_library": {
+    "technology": "libsodium (NaCl) or crypto-js for browser implementation",
+    "mobile": "native iOS/Android encryption libraries",
+    "performance": "AES-256-GCM ~1ms per message (negligible)"
+  },
+  "api_endpoints": {
+    "enable_encryption": {
+      "endpoint": "PATCH /v1/conversations/{id}/encryption",
+      "payload": {
+        "encryption_enabled": true
+      },
+      "response": {
+        "key_id": "UUID",
+        "key_version": 1
+      }
+    },
+    "rotate_key": {
+      "endpoint": "POST /v1/conversations/{id}/encryption/rotate",
+      "response": {
+        "new_key_version": 2
+      }
+    }
+  },
+  "testing": {
+    "scenarios": [
+      "enable encryption → new messages encrypted, old unencrypted",
+      "send encrypted message → ciphertext in DB, plaintext on client",
+      "receive encrypted message → decrypt and verify auth tag",
+      "rotate key → new messages use new key version",
+      "member leaves → cannot decrypt old messages (key rotated)",
+      "tamper with ciphertext → auth tag fails, message rejected",
+      "attempt to search encrypted message → no results (not indexed)"
+    ]
+  },
+  "monitoring": {
+    "metrics": [
+      "encrypted_conversations.count",
+      "encrypted_messages.encryption_latency_p95_ms",
+      "encryption_key_rotation.success_rate",
+      "auth_tag_failures (tampering attempts)"
+    ],
+    "alerts": [
+      "auth_tag failures > 10 (active tampering?)",
+      "key rotation failures > 5%"
+    ]
+  }
+}

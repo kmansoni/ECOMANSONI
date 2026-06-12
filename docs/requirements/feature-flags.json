@@ -1,0 +1,174 @@
+{
+  "version": 1,
+  "generated_at": "2026-02-19",
+  "flags": [
+    {
+      "flag_id": "FF-001",
+      "flag_key": "chat_send_message",
+      "feature_id": "F-001",
+      "name": "Send Direct Messages",
+      "owner": "@backend",
+      "status": "released",
+      "enabled_default": true,
+      "rollout_strategy": "gradual",
+      "rollout_percentage": 100,
+      "rollout_targeting": {
+        "platforms": ["web", "ios", "android", "desktop"],
+        "regions": ["*"],
+        "user_tiers": ["free", "premium"],
+        "gradual_increment_per_day": 10
+      },
+      "description": "Enable/disable direct message sending"
+    },
+    {
+      "flag_id": "FF-002",
+      "flag_key": "chat_forward",
+      "feature_id": "F-002",
+      "name": "Forward Messages",
+      "owner": "@backend",
+      "status": "released",
+      "enabled_default": true,
+      "rollout_strategy": "gradual",
+      "rollout_percentage": 100,
+      "rollout_targeting": {
+        "platforms": ["web", "ios", "android"],
+        "regions": ["*"]
+      },
+      "description": "Allow message forwarding with optional signature"
+    },
+    {
+      "flag_id": "FF-003",
+      "flag_key": "chat_delete_message",
+      "feature_id": "F-003",
+      "name": "Delete Message",
+      "owner": "@backend",
+      "status": "released",
+      "enabled_default": true,
+      "rollout_strategy": "immediate",
+      "rollout_percentage": 100,
+      "description": "Soft-delete sent messages within 15 minutes"
+    },
+    {
+      "flag_id": "FF-004",
+      "flag_key": "chat_read_receipt",
+      "feature_id": "F-004",
+      "name": "Read Receipts",
+      "owner": "@backend",
+      "status": "released",
+      "enabled_default": true,
+      "rollout_strategy": "immediate",
+      "rollout_percentage": 100,
+      "description": "Show read status for direct messages"
+    },
+    {
+      "flag_id": "FF-005",
+      "flag_key": "sync_message_delta",
+      "feature_id": "F-005",
+      "name": "Delta Sync Protocol",
+      "owner": "@backend",
+      "status": "released",
+      "enabled_default": true,
+      "rollout_strategy": "gradual",
+      "rollout_percentage": 100,
+      "rollout_targeting": {
+        "platforms": ["web", "ios", "android"],
+        "user_cohort": "beta_testers"
+      },
+      "description": "Efficiently sync only changed messages"
+    },
+    {
+      "flag_id": "FF-006",
+      "flag_key": "group_create",
+      "feature_id": "F-006",
+      "name": "Create Groups",
+      "owner": "@backend",
+      "status": "released",
+      "enabled_default": true,
+      "rollout_strategy": "immediate",
+      "rollout_percentage": 100,
+      "description": "Allow creation of group chats"
+    },
+    {
+      "flag_id": "FF-007",
+      "flag_key": "group_invite",
+      "feature_id": "F-007",
+      "name": "Invite to Groups",
+      "owner": "@backend",
+      "status": "released",
+      "enabled_default": true,
+      "rollout_strategy": "immediate",
+      "rollout_percentage": 100,
+      "description": "Invite members to existing groups"
+    },
+    {
+      "flag_id": "FF-008",
+      "flag_key": "channel_create",
+      "feature_id": "F-008",
+      "name": "Create Channels",
+      "owner": "@backend",
+      "status": "released",
+      "enabled_default": true,
+      "rollout_strategy": "immediate",
+      "rollout_percentage": 100,
+      "description": "Allow channel broadcast creation"
+    },
+    {
+      "flag_id": "FF-009",
+      "flag_key": "auth_login_password",
+      "feature_id": "F-009",
+      "name": "Password Login",
+      "owner": "@security",
+      "status": "released",
+      "enabled_default": true,
+      "rollout_strategy": "immediate",
+      "rollout_percentage": 100,
+      "description": "Traditional email/password authentication"
+    },
+    {
+      "flag_id": "FF-010",
+      "flag_key": "privacy_last_seen",
+      "feature_id": "F-010",
+      "name": "Last Seen Visibility Control",
+      "owner": "@security",
+      "status": "released",
+      "enabled_default": true,
+      "rollout_strategy": "immediate",
+      "rollout_percentage": 100,
+      "description": "Allow users to hide their online status"
+    },
+    {
+      "flag_id": "FF-011",
+      "flag_key": "voip_calls_beta",
+      "feature_id": "F-007",
+      "name": "VoIP Calls (Beta)",
+      "owner": "@backend",
+      "status": "beta",
+      "enabled_default": false,
+      "rollout_strategy": "gradual",
+      "rollout_percentage": 5,
+      "rollout_targeting": {
+        "platforms": ["ios", "android"],
+        "user_cohort": "beta_testers",
+        "regions": ["RU", "US", "EU"]
+      },
+      "description": "Voice and video call support (limited rollout)"
+    },
+    {
+      "flag_id": "FF-012",
+      "flag_key": "e2e_encryption",
+      "feature_id": "F-010",
+      "name": "End-to-End Encryption (Experimental)",
+      "owner": "@security",
+      "status": "experimental",
+      "enabled_default": false,
+      "rollout_strategy": "manual",
+      "rollout_percentage": 0,
+      "description": "Opt-in E2E encryption for direct messages"
+    }
+  ],
+  "rollout_stages": {
+    "experimental": "Early testing, 0-5% of users, breaks expected",
+    "beta": "Wider testing, 5-50% of users, bugs possible",
+    "released": "Production, 100% of eligible users"
+  }
+}

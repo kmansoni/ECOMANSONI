@@ -1,0 +1,377 @@
+{
+  "id": "B-121",
+  "section": "B",
+  "title": "User Profiles & Identity Management",
+  "description": "Comprehensive user profile system with verification, badges, and identity management",
+  "priority": "P1",
+  "complexity": "M",
+  "database": {
+    "tables": [
+      {
+        "name": "user_profiles",
+        "columns": [
+          {"name": "user_id", "type": "uuid", "required": true, "pk": true},
+          {"name": "display_name", "type": "varchar(255)", "required": true, "indexed": true},
+          {"name": "bio", "type": "text", "length_limit": 500},
+          {"name": "avatar_url", "type": "varchar(2048)"},
+          {"name": "banner_url", "type": "varchar(2048)"},
+          {"name": "website_url", "type": "varchar(2048)"},
+          {"name": "location", "type": "varchar(255)"},
+          {"name": "pronouns", "type": "varchar(50)"},
+          {"name": "birth_date", "type": "date"},
+          {"name": "created_at", "type": "timestamp", "default": "now()"},
+          {"name": "updated_at", "type": "timestamp", "default": "now()"}
+        ],
+        "indexes": [
+          "user_id (pk)",
+          "display_name (fulltext search)",
+          "created_at (recent profiles)"
+        ]
+      },
+      {
+        "name": "user_verification",
+        "columns": [
+          {"name": "id", "type": "uuid", "pk": true},
+          {"name": "user_id", "type": "uuid", "required": true, "fk": "user_profiles"},
+          {"name": "verification_type", "type": "enum(email,phone,github,twitter,custom)", "required": true},
+          {"name": "verified_value", "type": "varchar(255)", "required": true},
+          {"name": "verified_at", "type": "timestamp"},
+          {"name": "token", "type": "varchar(255)", "unique": true},
+          {"name": "token_expires_at", "type": "timestamp"},
+          {"name": "status", "type": "enum(pending,verified,rejected)", "default": "pending"},
+          {"name": "rejection_reason", "type": "text"}
+        ],
+        "indexes": [
+          "user_id",
+          "verification_type, verified_at",
+          "token (for verification links)"
+        ]
+      },
+      {
+        "name": "identity_documents",
+        "columns": [
+          {"name": "id", "type": "uuid", "pk": true},
+          {"name": "user_id", "type": "uuid", "required": true, "fk": "user_profiles"},
+          {"name": "document_type", "type": "enum(government_id,passport,drivers_license,business_license)", "required": true},
+          {"name": "document_url", "type": "varchar(2048)"},
+          {"name": "verified_by", "type": "uuid", "fk": "users (moderator)"},
+          {"name": "verification_status", "type": "enum(pending,approved,rejected)", "default": "pending"},
+          {"name": "verified_at", "type": "timestamp"},
+          {"name": "reason", "type": "text"},
+          {"name": "created_at", "type": "timestamp", "default": "now()"}
+        ],
+        "indexes": [
+          "user_id",
+          "verification_status, created_at"
+        ]
+      },
+      {
+        "name": "profile_visibility",
+        "columns": [
+          {"name": "id", "type": "uuid", "pk": true},
+          {"name": "user_id", "type": "uuid", "required": true, "fk": "user_profiles"},
+          {"name": "visibility_level", "type": "enum(public,verified_users_only,followers_only,private)", "default": "public"},
+          {"name": "public_fields", "type": "jsonb", "default": "{\"display_name\": true, \"avatar\": true, \"joined_date\": true}"},
+          {"name": "hide_online_status", "type": "bool", "default": false},
+          {"name": "hide_last_seen", "type": "bool", "default": false},
+          {"name": "allow_dms", "type": "bool", "default": true},
+          {"name": "allow_group_invites", "type": "bool", "default": true},
+          {"name": "updated_at", "type": "timestamp", "default": "now()"}
+        ],
+        "indexes": ["user_id"]
+      },
+      {
+        "name": "blocked_users",
+        "columns": [
+          {"name": "id", "type": "uuid", "pk": true},
+          {"name": "blocker_id", "type": "uuid", "required": true, "fk": "user_profiles"},
+          {"name": "blocked_user_id", "type": "uuid", "required": true, "fk": "user_profiles"},
+          {"name": "reason", "type": "text"},
+          {"name": "blocked_at", "type": "timestamp", "default": "now()"}
+        ],
+        "indexes": [
+          "blocker_id",
+          "blocked_user_id"
+        ],
+        "constraints": ["unique(blocker_id, blocked_user_id)"]
+      }
+    ],
+    "retention": {
+      "user_profiles": "indefinite",
+      "user_verification": "3 years after verification",
+      "identity_documents": "5 years (compliance)",
+      "profile_visibility": "indefinite",
+      "blocked_users": "indefinite"
+    }
+  },
+  "api": {
+    "endpoints": [
+      {
+        "path": "GET /v1/users/{user_id}/profile",
+        "description": "Fetch user profile with visibility rules applied",
+        "auth": "optional (affects fields)",
+        "rateLimit": "100/min",
+        "response": {
+          "user_id": "uuid",
+          "display_name": "string",
+          "bio": "string",
+          "avatar_url": "string",
+          "verified_badges": ["email", "phone", "github"],
+          "reputation_level": "int (1-5)",
+          "joined_date": "timestamp",
+          "is_blocked": "bool"
+        }
+      },
+      {
+        "path": "PUT /v1/users/{user_id}/profile",
+        "description": "Update own profile fields",
+        "auth": "required (own profile only)",
+        "body": {
+          "display_name": "string",
+          "bio": "string (max 500)",
+          "avatar_url": "string",
+          "location": "string",
+          "pronouns": "string"
+        },
+        "returns": "updated profile"
+      },
+      {
+        "path": "POST /v1/users/{user_id}/verify",
+        "description": "Request verification (email, phone, social, document)",
+        "auth": "required",
+        "body": {
+          "verification_type": "email|phone|github|twitter|custom",
+          "value": "string"
+        },
+        "returns": {
+          "verification_id": "uuid",
+          "token": "string (for email/phone)",
+          "redirect_url": "string (for OAuth)"
+        }
+      },
+      {
+        "path": "POST /v1/users/{user_id}/verify-confirm",
+        "description": "Confirm verification with token",
+        "auth": "required",
+        "body": {
+          "verification_id": "uuid",
+          "token": "string"
+        },
+        "returns": {"verified": true, "badge": "email"}
+      },
+      {
+        "path": "PUT /v1/users/{user_id}/visibility",
+        "description": "Update profile visibility settings",
+        "auth": "required",
+        "body": {
+          "visibility_level": "public|followers_only|private",
+          "hide_online_status": "bool",
+          "allow_dms": "bool",
+          "allow_group_invites": "bool"
+        },
+        "returns": "visibility settings"
+      },
+      {
+        "path": "GET /v1/users/search",
+        "description": "Search users by display_name (public profiles only, respects visibility)",
+        "auth": "optional",
+        "query": {
+          "q": "string (3+ chars)",
+          "limit": "int (10-100, default 20)",
+          "offset": "int"
+        },
+        "returns": {
+          "results": [{"user_id": "uuid", "display_name": "string", "avatar_url": "string", "verified_count": "int"}],
+          "total": "int"
+        }
+      },
+      {
+        "path": "POST /v1/users/{user_id}/block",
+        "description": "Block a user (hide from view, prevent DMs, mentions)",
+        "auth": "required",
+        "body": {"reason": "string (optional)"},
+        "returns": {"blocked_user_id": "uuid", "blocked_at": "timestamp"}
+      },
+      {
+        "path": "GET /v1/users/{user_id}/blocked",
+        "description": "List blocked users",
+        "auth": "required (own list only)",
+        "returns": [{"blocked_user_id": "uuid", "blocked_at": "timestamp", "reason": "string"}]
+      }
+    ]
+  },
+  "features": {
+    "verification_types": [
+      {
+        "type": "email",
+        "description": "Email address verification via OTP link",
+        "duration": "2 hours",
+        "display_in_profile": true,
+        "weight_in_trust_score": 0.3
+      },
+      {
+        "type": "phone",
+        "description": "Phone number verification via SMS OTP",
+        "duration": "24 hours",
+        "display_in_profile": false,
+        "weight_in_trust_score": 0.4
+      },
+      {
+        "type": "github",
+        "description": "OAuth verification via GitHub account",
+        "duration": "indefinite (until revoked)",
+        "display_in_profile": true,
+        "weight_in_trust_score": 0.5,
+        "data_retrieved": ["login", "public_repos", "followers"]
+      },
+      {
+        "type": "twitter",
+        "description": "OAuth verification via Twitter account",
+        "display_in_profile": true,
+        "weight_in_trust_score": 0.4
+      },
+      {
+        "type": "document",
+        "description": "Government ID/Passport verification (manual review)",
+        "duration": "3 years",
+        "display_in_profile": "partial (age, location only)",
+        "weight_in_trust_score": 0.9
+      }
+    ],
+    "visibility_levels": {
+      "public": "anyone can view full profile",
+      "verified_users_only": "verified users can view",
+      "followers_only": "followers only can view",
+      "private": "only self can view (accounts from may see display_name)"
+    },
+    "trust_score_calculation": {
+      "formula": "sum(verification_weights) + (reputation_level * 0.2) - (blocked_count * 0.1)",
+      "range": "0-5",
+      "threshold_for_sensitive_features": 1.5
+    },
+    "profile_completion_score": {
+      "formula": "(fields_filled / total_fields) * 100",
+      "fields": ["display_name", "avatar", "bio", "verification", "pronouns", "location"],
+      "affects": "search ranking, recommendation visibility"
+    }
+  },
+  "monitoring": {
+    "metrics": [
+      {
+        "name": "verification_rate",
+        "target": ">60% users verified (email+1)",
+        "alert": "24h rolling <50%"
+      },
+      {
+        "name": "profile_completion",
+        "target": "avg >50%",
+        "alert": "<30% average"
+      },
+      {
+        "name": "verification_latency",
+        "target": "p95 <5s",
+        "alert": "p95 >10s"
+      },
+      {
+        "name": "block_abuse",
+        "target": "<1% of profile views",
+        "alert": ">5% false blocks per day"
+      },
+      {
+        "name": "identity_review_queue",
+        "target": "<8hr avg wait",
+        "alert": ">24hr p95 wait"
+      },
+      {
+        "name": "verification_fraud_attempts",
+        "target": "detect via pattern (same phone 5+ users, email +3 accounts)",
+        "alert": "flag for manual review"
+      }
+    ],
+    "sla": {
+      "verification_email_delivery": "p99 <10s",
+      "oauth_redirect": "p99 <2s",
+      "profile_fetch": "p95 <100ms (cached)",
+      "identity_document_review": "5 business days (target 2 days)"
+    }
+  },
+  "testing": {
+    "test_scenarios": [
+      {
+        "name": "Create and complete profile",
+        "steps": ["Create account", "Upload avatar", "Add bio", "Verify email", "Set visibility"],
+        "expected": "Profile 100% complete, email badge visible"
+      },
+      {
+        "name": "Email verification flow",
+        "steps": ["Request email verification", "Receive OTP link", "Click link", "Confirm"],
+        "expected": "Email verified within 30s, badge appears immediately"
+      },
+      {
+        "name": "OAuth verification (GitHub)",
+        "steps": ["Click 'Connect GitHub'", "Authorize on GitHub", "Redirect back"],
+        "expected": "GitHub repos and followers loaded, badge visible"
+      },
+      {
+        "name": "Identity document verification",
+        "steps": ["Upload government ID", "Submit for review", "Moderator approves/rejects"],
+        "expected": "Status changes to approved/rejected within 5 days, notification sent"
+      },
+      {
+        "name": "Visibility privacy levels",
+        "steps": ["Set profile to followers_only", "Log out", "Search for user as stranger"],
+        "expected": "Stranger cannot see full profile, only display_name"
+      },
+      {
+        "name": "Block user functionality",
+        "steps": ["Block user A", "Try to DM user A", "User A checks if can see blocker's profile"],
+        "expected": "DM sends error, user A sees blocklist note"
+      },
+      {
+        "name": "Search ranking by verification",
+        "steps": ["Search 'john'", "Compare results (verified vs unverified)"],
+        "expected": "Verified accounts rank higher, profile_completion_score affects order"
+      },
+      {
+        "name": "Trust score impact on features",
+        "steps": ["Create new account (score 0)", "Verify email (score 0.3)", "Try to use premium feature"],
+        "expected": "Feature unlocked only after trust_score >1.5"
+      },
+      {
+        "name": "Multiple verification types",
+        "steps": ["Verify email (0.3) + phone (0.4) + GitHub (0.5)"],
+        "expected": "Trust score ~1.2, all badges visible"
+      },
+      {
+        "name": "Verification fraud detection",
+        "steps": ["Try to verify same phone for 6 accounts"],
+        "expected": "6th attempt flagged, manual review required, previous 5 user accounts suspended"
+      },
+      {
+        "name": "Profile visibility with blocked users",
+        "steps": ["User A blocks User B", "User B tries to view User A's profile"],
+        "expected": "User B sees 'User not found' or 'You're blocked' message"
+      },
+      {
+        "name": "Search respects visibility",
+        "steps": ["Private user searches for 'alice'", "Alice set to 'private' visibility"],
+        "expected": "Alice not in search results, or appears as 'private account'"
+      },
+      {
+        "name": "Handle concurrent verification requests",
+        "steps": ["Request email + phone verification simultaneously"],
+        "expected": "Both succeed, no race conditions, both tokens valid"
+      },
+      {
+        "name": "Profile update while verified",
+        "steps": ["Verify email", "Update display_name", "Update bio"],
+        "expected": "Email badge persists, profile changes immediately visible to followers"
+      },
+      {
+        "name": "Export verified identity data",
+        "steps": ["User requests data export", "Download includes all verification records"],
+        "expected": "GDPR compliance, timestamps and verification methods included"
+      }
+    ]
+  }
+}

@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "mansoni://contracts/create-reel-intent.v1",
+  "title": "Create Reel Intent v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["client_publish_id", "owner_id", "visibility"],
+  "properties": {
+    "client_publish_id": { "type": "string", "minLength": 1 },
+    "owner_id": { "type": "string", "minLength": 1 },
+    "visibility": { "type": "string", "enum": ["public"] },
+    "caption": { "type": ["string", "null"], "maxLength": 2000 },
+    "music_title": { "type": ["string", "null"], "maxLength": 200 },
+    "storage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["bucket", "path"],
+      "properties": {
+        "bucket": { "type": "string", "enum": ["reels-media"] },
+        "path": { "type": "string", "minLength": 1 }
+      }
+    },
+    "created_at": { "type": ["string", "null"], "format": "date-time" }
+  }
+}

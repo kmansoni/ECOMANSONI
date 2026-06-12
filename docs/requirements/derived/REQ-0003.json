@@ -1,0 +1,341 @@
+{
+  "req_id": "REQ-0003",
+  "task_id": 3,
+  "section": "A",
+  "title": "A-3: Для каждой Capability завести capability_id, владельца и версионирование (major/minor)",
+  "derived_count": 15,
+  "scenarios": [
+    {
+      "scenario_id": "REQ-0003.S001",
+      "platform": "Web",
+      "network": "Wi-Fi",
+      "device": "desktop",
+      "auth": "oauth",
+      "privacy": "everyone",
+      "chatState": "online",
+      "status": "done",
+      "acceptance_test": "src/test/requirements/REQ-0003.S001.test.ts"
+    },
+    {
+      "scenario_id": "REQ-0003.S002",
+      "platform": "Android",
+      "network": "5G",
+      "device": "high-end",
+      "auth": "phone",
+      "privacy": "contacts",
+      "chatState": "online",
+      "status": "done",
+      "acceptance_test": "src/test/requirements/REQ-0003.S002.test.ts"
+    },
+    {
+      "scenario_id": "REQ-0003.S003",
+      "platform": "iOS",
+      "network": "LTE",
+      "device": "mid-end",
+      "auth": "oauth",
+      "privacy": "off",
+      "chatState": "syncing",
+      "status": "done",
+      "acceptance_test": "src/test/requirements/REQ-0003.S003.test.ts"
+    },
+    {
+      "scenario_id": "REQ-0003.S004",
+      "platform": "Desktop",
+      "network": "Wi-Fi",
+      "device": "desktop",
+      "auth": "oauth",
+      "privacy": "contacts",
+      "chatState": "online",
+      "status": "done",
+      "acceptance_test": "src/test/requirements/REQ-0003.S004.test.ts"
+    },
+    {
+      "scenario_id": "REQ-0003.S005",
+      "platform": "Web",
+      "network": "3G",
+      "device": "low-end",
+      "auth": "phone",
+      "privacy": "everyone",
+      "chatState": "offline",
+      "status": "done",
+      "acceptance_test": "src/test/requirements/REQ-0003.S005.test.ts"
+    },
+    {
+      "scenario_id": "REQ-0003.S006",
+      "platform": "Android",
+      "network": "Wi-Fi",
+      "device": "mid-end",
+      "auth": "oauth",
+      "privacy": "contacts",
+      "chatState": "online",
+      "status": "done",
+      "acceptance_test": "src/test/requirements/REQ-0003.S006.test.ts"
+    },
+    {
+      "scenario_id": "REQ-0003.S007",
+      "platform": "iOS",
+      "network": "5G",
+      "device": "high-end",
+      "auth": "oauth",
+      "privacy": "off",
+      "chatState": "online",
+      "status": "done",
+      "acceptance_test": "src/test/requirements/REQ-0003.S007.test.ts"
+    },
+    {
+      "scenario_id": "REQ-0003.S008",
+      "platform": "Desktop",
+      "network": "LTE",
+      "device": "low-end",
+      "auth": "phone",
+      "privacy": "everyone",
+      "chatState": "syncing",
+      "status": "done",
+      "acceptance_test": "src/test/requirements/REQ-0003.S008.test.ts"
+    },
+    {
+      "scenario_id": "REQ-0003.S009",
+      "platform": "Web",
+      "network": "5G",
+      "device": "high-end",
+      "auth": "oauth",
+      "privacy": "contacts",
+      "chatState": "online",
+      "status": "done",
+      "acceptance_test": "src/test/requirements/REQ-0003.S009.test.ts"
+    },
+    {
+      "scenario_id": "REQ-0003.S010",
+      "platform": "Android",
+      "network": "3G",
+      "device": "low-end",
+      "auth": "phone",
+      "privacy": "off",
+      "chatState": "offline",
+      "status": "done",
+      "acceptance_test": "src/test/requirements/REQ-0003.S010.test.ts"
+    },
+    {
+      "scenario_id": "REQ-0003.S011",
+      "platform": "iOS",
+      "network": "Wi-Fi",
+      "device": "low-end",
+      "auth": "oauth",
+      "privacy": "everyone",
+      "chatState": "online",
+      "status": "done",
+      "acceptance_test": "src/test/requirements/REQ-0003.S011.test.ts"
+    },
+    {
+      "scenario_id": "REQ-0003.S012",
+      "platform": "Web",
+      "network": "LTE",
+      "device": "mid-end",
+      "auth": "phone",
+      "privacy": "contacts",
+      "chatState": "syncing",
+      "status": "done",
+      "acceptance_test": "src/test/requirements/REQ-0003.S012.test.ts"
+    },
+    {
+      "scenario_id": "REQ-0003.S013",
+      "platform": "Desktop",
+      "network": "Wi-Fi",
+      "device": "high-end",
+      "auth": "oauth",
+      "privacy": "off",
+      "chatState": "online",
+      "status": "done",
+      "acceptance_test": "src/test/requirements/REQ-0003.S013.test.ts"
+    },
+    {
+      "scenario_id": "REQ-0003.S014",
+      "platform": "Android",
+      "network": "5G",
+      "device": "mid-end",
+      "auth": "oauth",
+      "privacy": "everyone",
+      "chatState": "online",
+      "status": "done",
+      "acceptance_test": "src/test/requirements/REQ-0003.S014.test.ts"
+    },
+    {
+      "scenario_id": "REQ-0003.S015",
+      "platform": "iOS",
+      "network": "LTE",
+      "device": "high-end",
+      "auth": "phone",
+      "privacy": "contacts",
+      "chatState": "offline",
+      "status": "done",
+      "acceptance_test": "src/test/requirements/REQ-0003.S015.test.ts"
+    }
+  ]
+}
+    {
+      "scenario_id": "REQ-0003.S001",
+      "platform": "iOS",
+      "network": "Wi-Fi",
+      "device": "low-end",
+      "auth": "phone",
+      "privacy": "everyone",
+      "chatState": "creating",
+      "status": "todo",
+      "acceptance_test": "src/test/requirements/REQ-0003.S001.test.ts"
+    },
+    {
+      "scenario_id": "REQ-0003.S002",
+      "platform": "iOS",
+      "network": "Wi-Fi",
+      "device": "low-end",
+      "auth": "phone",
+      "privacy": "everyone",
+      "chatState": "syncing",
+      "status": "todo",
+      "acceptance_test": "src/test/requirements/REQ-0003.S002.test.ts"
+    },
+    {
+      "scenario_id": "REQ-0003.S003",
+      "platform": "iOS",
+      "network": "Wi-Fi",
+      "device": "low-end",
+      "auth": "phone",
+      "privacy": "everyone",
+      "chatState": "online",
+      "status": "todo",
+      "acceptance_test": "src/test/requirements/REQ-0003.S003.test.ts"
+    },
+    {
+      "scenario_id": "REQ-0003.S004",
+      "platform": "iOS",
+      "network": "Wi-Fi",
+      "device": "low-end",
+      "auth": "phone",
+      "privacy": "everyone",
+      "chatState": "offline",
+      "status": "todo",
+      "acceptance_test": "src/test/requirements/REQ-0003.S004.test.ts"
+    },
+    {
+      "scenario_id": "REQ-0003.S005",
+      "platform": "iOS",
+      "network": "Wi-Fi",
+      "device": "low-end",
+      "auth": "phone",
+      "privacy": "everyone",
+      "chatState": "degraded",
+      "status": "todo",
+      "acceptance_test": "src/test/requirements/REQ-0003.S005.test.ts"
+    },
+    {
+      "scenario_id": "REQ-0003.S006",
+      "platform": "iOS",
+      "network": "Wi-Fi",
+      "device": "low-end",
+      "auth": "phone",
+      "privacy": "contacts",
+      "chatState": "creating",
+      "status": "todo",
+      "acceptance_test": "src/test/requirements/REQ-0003.S006.test.ts"
+    },
+    {
+      "scenario_id": "REQ-0003.S007",
+      "platform": "iOS",
+      "network": "Wi-Fi",
+      "device": "low-end",
+      "auth": "phone",
+      "privacy": "contacts",
+      "chatState": "syncing",
+      "status": "todo",
+      "acceptance_test": "src/test/requirements/REQ-0003.S007.test.ts"
+    },
+    {
+      "scenario_id": "REQ-0003.S008",
+      "platform": "iOS",
+      "network": "Wi-Fi",
+      "device": "low-end",
+      "auth": "phone",
+      "privacy": "contacts",
+      "chatState": "online",
+      "status": "todo",
+      "acceptance_test": "src/test/requirements/REQ-0003.S008.test.ts"
+    },
+    {
+      "scenario_id": "REQ-0003.S009",
+      "platform": "iOS",
+      "network": "Wi-Fi",
+      "device": "low-end",
+      "auth": "phone",
+      "privacy": "contacts",
+      "chatState": "offline",
+      "status": "todo",
+      "acceptance_test": "src/test/requirements/REQ-0003.S009.test.ts"
+    },
+    {
+      "scenario_id": "REQ-0003.S010",
+      "platform": "iOS",
+      "network": "Wi-Fi",
+      "device": "low-end",
+      "auth": "phone",
+      "privacy": "contacts",
+      "chatState": "degraded",
+      "status": "todo",
+      "acceptance_test": "src/test/requirements/REQ-0003.S010.test.ts"
+    },
+    {
+      "scenario_id": "REQ-0003.S011",
+      "platform": "iOS",
+      "network": "Wi-Fi",
+      "device": "low-end",
+      "auth": "phone",
+      "privacy": "nobody",
+      "chatState": "creating",
+      "status": "todo",
+      "acceptance_test": "src/test/requirements/REQ-0003.S011.test.ts"
+    },
+    {
+      "scenario_id": "REQ-0003.S012",
+      "platform": "iOS",
+      "network": "Wi-Fi",
+      "device": "low-end",
+      "auth": "phone",
+      "privacy": "nobody",
+      "chatState": "syncing",
+      "status": "todo",
+      "acceptance_test": "src/test/requirements/REQ-0003.S012.test.ts"
+    },
+    {
+      "scenario_id": "REQ-0003.S013",
+      "platform": "iOS",
+      "network": "Wi-Fi",
+      "device": "low-end",
+      "auth": "phone",
+      "privacy": "nobody",
+      "chatState": "online",
+      "status": "todo",
+      "acceptance_test": "src/test/requirements/REQ-0003.S013.test.ts"
+    },
+    {
+      "scenario_id": "REQ-0003.S014",
+      "platform": "iOS",
+      "network": "Wi-Fi",
+      "device": "low-end",
+      "auth": "phone",
+      "privacy": "nobody",
+      "chatState": "offline",
+      "status": "todo",
+      "acceptance_test": "src/test/requirements/REQ-0003.S014.test.ts"
+    },
+    {
+      "scenario_id": "REQ-0003.S015",
+      "platform": "iOS",
+      "network": "Wi-Fi",
+      "device": "low-end",
+      "auth": "phone",
+      "privacy": "nobody",
+      "chatState": "degraded",
+      "status": "todo",
+      "acceptance_test": "src/test/requirements/REQ-0003.S015.test.ts"
+    }
+  ]
+}

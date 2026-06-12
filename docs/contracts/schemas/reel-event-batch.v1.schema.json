@@ -1,0 +1,45 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "mansoni://contracts/reel-event-batch.v1",
+  "title": "Reel Event Batch v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["events"],
+  "properties": {
+    "events": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 200,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["client_event_id", "event_type", "reel_id", "client_ts"],
+        "properties": {
+          "client_event_id": { "type": "string", "minLength": 1 },
+          "event_type": {
+            "type": "string",
+            "enum": [
+              "impression",
+              "view_start",
+              "viewed_2s",
+              "watched",
+              "complete",
+              "skip",
+              "not_interested",
+              "hide",
+              "report"
+            ]
+          },
+          "reel_id": { "type": "string", "minLength": 1 },
+          "viewer_id": { "type": ["string", "null"] },
+          "session_id": { "type": ["string", "null"] },
+          "request_id": { "type": ["string", "null"] },
+          "algorithm_version": { "type": ["string", "null"] },
+          "feed_position": { "type": ["integer", "null"], "minimum": 0 },
+          "client_ts": { "type": "string", "format": "date-time" },
+          "watched_seconds": { "type": ["integer", "null"], "minimum": 0 }
+        }
+      }
+    }
+  }
+}

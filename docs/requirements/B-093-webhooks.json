@@ -1,0 +1,302 @@
+{
+  "req_id": "REQ-0093",
+  "title": "Webhooks (Event-Driven Integration)",
+  "version": "1.0",
+  "status": "in-design",
+  "domain": "messaging",
+  "depends_on": ["REQ-0061"],
+  "use_cases": [
+    "admin creates webhook for #announcements → on_new_message event",
+    "when message posted, sends JSON POST to external URL (Slack, Discord, etc)",
+    "webhook retries on failure (exponential backoff) up to 5 times",
+    "admin can view webhook delivery logs and disable webhook"
+  ],
+  "webhook_creation": {
+    "flow": [
+      "1. admin goes to channel settings → 'Integrations' → 'Add Webhook'",
+      "2. enter webhook URL (HTTPS only)",
+      "3. select events: on_new_message, on_message_deleted, on_member_joined",
+      "4. optional: specify channel name (scope to channel), or global",
+      "5. system generates webhook_secret (for signature verification)",
+      "6. test webhook by sending ping"
+    ]
+  },
+  "event_types": [
+    {
+      "name": "message.created",
+      "trigger": "new message posted in channel/DM",
+      "payload": {
+        "event": "message.created",
+        "timestamp": "2026-02-15T15:35:00Z",
+        "conversation_id": "UUID",
+        "message": {
+          "message_id": "UUID",
+          "sender_id": "UUID",
+          "sender_name": "Alice",
+          "content": "Hello world",
+          "created_at": "2026-02-15T15:35:00Z"
+        }
+      }
+    },
+    {
+      "name": "message.edited",
+      "trigger": "message edited",
+      "payload": {
+        "event": "message.edited",
+        "message_id": "UUID",
+        "old_content": "Hello",
+        "new_content": "Hello world",
+        "edited_at": "2026-02-15T15:36:00Z"
+      }
+    },
+    {
+      "name": "message.deleted",
+      "trigger": "message deleted by user or admin",
+      "payload": {
+        "event": "message.deleted",
+        "message_id": "UUID",
+        "deleted_by": "UUID",
+        "deleted_at": "2026-02-15T15:37:00Z"
+      }
+    },
+    {
+      "name": "member.joined",
+      "trigger": "user joins group/channel",
+      "payload": {
+        "event": "member.joined",
+        "conversation_id": "UUID",
+        "user_id": "UUID",
+        "user_name": "Bob",
+        "joined_at": "2026-02-15T15:38:00Z"
+      }
+    },
+    {
+      "name": "member.left",
+      "trigger": "user leaves group/channel",
+      "payload": {
+        "event": "member.left",
+        "user_id": "UUID",
+        "left_at": "2026-02-15T15:39:00Z"
+      }
+    },
+    {
+      "name": "reaction.added",
+      "trigger": "user reacts to message",
+      "payload": {
+        "event": "reaction.added",
+        "message_id": "UUID",
+        "emoji": "👍",
+        "user_id": "UUID",
+        "count": 1
+      }
+    }
+  ],
+  "webhook_request_format": {
+    "method": "POST",
+    "headers": {
+      "Content-Type": "application/json",
+      "X-Webhook-Signature": "sha256=base64(HMAC-SHA256(secret, body))",
+      "X-Webhook-ID": "webhook_UUID",
+      "X-Delivery-Attempt": "1"
+    },
+    "body": "JSON payload for event"
+  },
+  "signature_verification": {
+    "algorithm": "HMAC-SHA256",
+    "process": [
+      "1. external service receives webhook POST",
+      "2. reads X-Webhook-Signature header (e.g., 'sha256=abc123...')",
+      "3. computes HMAC-SHA256(webhook_secret, request_body)",
+      "4. compares with signature in header",
+      "5. if match, process webhook; if not, reject (401)"
+    ]
+  },
+  "delivery_mechanism": {
+    "queue": "Kafka topic 'webhook-events' (partitioned by conversation_id)",
+    "processing": [
+      "1. when event triggered, enqueue to Kafka",
+      "2. webhook worker consumes event",
+      "3. reads webhook subscriptions for that event type",
+      "4. POST to each webhook URL"
+    ]
+  },
+  "retry_logic": {
+    "on_failure": {
+      "delay_ms": [
+        "1000 (1s)",
+        "5000 (5s)",
+        "30000 (30s)",
+        "300000 (5min)",
+        "3600000 (1h)"
+      ],
+      "max_attempts": 5,
+      "backoff": "exponential"
+    },
+    "success": "HTTP 2xx status code",
+    "timeout": "10 seconds"
+  },
+  "webhook_storage": {
+    "schema": {
+      "webhook_id": "UUID PK",
+      "conversation_id": "UUID FK (null = global)",
+      "admin_user_id": "UUID FK",
+      "url": "TEXT (HTTPS URL)",
+      "events": "ARRAY[message.created, message.deleted, ...]",
+      "secret": "encrypted TEXT",
+      "is_active": "BOOLEAN",
+      "created_at": "TIMESTAMP",
+      "last_triggered_at": "TIMESTAMP"
+    }
+  },
+  "webhook_delivery_log": {
+    "schema": {
+      "delivery_id": "UUID PK",
+      "webhook_id": "UUID FK",
+      "event_type": "TEXT",
+      "payload": "JSONB",
+      "http_status": "INTEGER (200, 500, etc)",
+      "response_body": "TEXT (first 1000 chars)",
+      "attempt_number": "INTEGER",
+      "delivered_at": "TIMESTAMP",
+      "next_retry_at": "TIMESTAMP (null if success)"
+    }
+  },
+  "webhook_management_ui": {
+    "location": "channel settings → 'Integrations' → 'Webhooks'",
+    "display": [
+      {
+        "webhook_url": "https://example.com/webhook",
+        "events": "message.created, message.deleted",
+        "is_active": true,
+        "created_at": "2026-02-01",
+        "actions": [
+          "View Delivery Logs",
+          "Test Webhook (send ping)",
+          "Edit",
+          "Disable/Enable",
+          "Delete"
+        ]
+      }
+    ]
+  },
+  "webhook_test_ping": {
+    "trigger": "admin clicks 'Test Webhook'",
+    "payload": {
+      "event": "webhook.test",
+      "timestamp": "2026-02-15T15:35:00Z",
+      "message": "This is a test webhook"
+    },
+    "response": "if POST succeeds, show 'Success' with HTTP status; if fails, show error"
+  },
+  "webhook_throttling": {
+    "per_webhook": "max 10 requests/sec",
+    "per_conversation": "max 100 webhook events/sec across all webhooks",
+    "backpressure": "if queue depth >10k, drop oldest events (alert admin)"
+  },
+  "security_considerations": {
+    "https_only": "webhook URLs must be HTTPS (no http://)",
+    "signature_verification": "external service must verify HMAC signature",
+    "secret_rotation": "admin can rotate webhook secret, old secret valid for 24h (grace period)"
+  },
+  "api_endpoints": {
+    "create_webhook": {
+      "endpoint": "POST /v1/conversations/{conversation_id}/webhooks",
+      "payload": {
+        "url": "https://example.com/webhook",
+        "events": [
+          "message.created",
+          "message.deleted"
+        ]
+      },
+      "response": {
+        "webhook_id": "UUID",
+        "secret": "webhook_secret_xyz (shown once, not recoverable)",
+        "created_at": "2026-02-15T15:35:00Z"
+      }
+    },
+    "list_webhooks": {
+      "endpoint": "GET /v1/conversations/{conversation_id}/webhooks",
+      "response": [
+        {
+          "webhook_id": "UUID",
+          "url": "https://example.com/webhook",
+          "events": ["message.created"],
+          "is_active": true
+        }
+      ]
+    },
+    "update_webhook": {
+      "endpoint": "PATCH /v1/webhooks/{webhook_id}",
+      "payload": {
+        "url": "new_url (optional)",
+        "events": ["message.created", "message.edited"],
+        "is_active": true
+      }
+    },
+    "delete_webhook": {
+      "endpoint": "DELETE /v1/webhooks/{webhook_id}"
+    },
+    "list_webhook_deliveries": {
+      "endpoint": "GET /v1/webhooks/{webhook_id}/deliveries",
+      "query": "?status=success&limit=20",
+      "response": [
+        {
+          "delivery_id": "UUID",
+          "event_type": "message.created",
+          "http_status": 200,
+          "delivered_at": "2026-02-15T15:35:00Z"
+        }
+      ]
+    },
+    "test_webhook": {
+      "endpoint": "POST /v1/webhooks/{webhook_id}/test",
+      "response": {
+        "status": "success",
+        "http_status": 200,
+        "response_time_ms": 125
+      }
+    }
+  },
+  "error_scenarios": {
+    "webhook_url_unreachable": {
+      "behavior": "retry 5 times with exponential backoff",
+      "final_action": "disable webhook, notify admin via email"
+    },
+    "webhook_timeout": {
+      "behavior": "after 10s, mark as failed, retry"
+    },
+    "malformed_response": {
+      "behavior": "if response is not JSON or missing fields, still count as 'attempted', monitor for pattern"
+    }
+  },
+  "testing": {
+    "scenarios": [
+      "create webhook for message.created event → webhook_id returned",
+      "post message to channel → webhook called with message payload",
+      "external service returns 500 → retry with exponential backoff",
+      "external service returns 3xx redirect → follow (up to 1 redirect)",
+      "webhook URL becomes invalid → after 5 retries, disable and notify admin",
+      "admin views delivery logs → see all webhook attempts, status, response",
+      "admin clicks 'Test Webhook' → ping event sent, response shown",
+      "rotate webhook secret → old secret works for 24h, then invalid",
+      "create 100 webhooks in same channel → all triggered on message (potential queue pressure)"
+    ]
+  },
+  "monitoring": {
+    "metrics": [
+      "webhooks.count_active",
+      "webhook_delivery.success_rate",
+      "webhook_delivery.latency_p95_ms",
+      "webhook_delivery.failed_attempts",
+      "webhook_queue.depth_kafka_topic"
+    ],
+    "alerts": [
+      "webhook delivery success rate <95% for endpoint (potential misconfiguration)",
+      "webhook queue depth >50k (backlog, may lose events if not processed)",
+      "webhook timeout rate >10% (external service slow)"
+    ]
+  },
+  "compliance": {
+    "payload_includes": "no sensitive data (passwords, api keys) in webhook payload"
+  }
+}

@@ -1,0 +1,59 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "mansoni://contracts/hashtag-page.v1",
+  "title": "Hashtag Page v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["hashtag", "generated_at", "sections"],
+  "properties": {
+    "hashtag": { "type": "string", "minLength": 2, "maxLength": 32 },
+    "generated_at": { "type": "string", "format": "date-time" },
+    "status": { "type": "string", "enum": ["normal", "restricted", "hidden"], "default": "normal" },
+    "sections": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["type", "items"],
+        "properties": {
+          "type": { "type": "string", "enum": ["top", "recent", "trending", "related_tags"] },
+          "items": { "type": "array", "items": { "type": "object", "additionalProperties": true } }
+        },
+        "allOf": [
+          {
+            "if": { "properties": { "type": { "enum": ["top", "recent", "trending"] } } },
+            "then": { "properties": { "items": { "items": { "$ref": "#/$defs/reel_ref" } } } }
+          },
+          {
+            "if": { "properties": { "type": { "const": "related_tags" } } },
+            "then": { "properties": { "items": { "items": { "$ref": "#/$defs/hashtag_ref" } } } }
+          }
+        ]
+      }
+    }
+  },
+  "$defs": {
+    "reel_ref": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["reel_id", "author_id", "created_at"],
+      "properties": {
+        "reel_id": { "type": "string", "minLength": 1 },
+        "author_id": { "type": "string", "minLength": 1 },
+        "thumbnail_url": { "type": ["string", "null"] },
+        "created_at": { "type": "string", "format": "date-time" }
+      }
+    },
+    "hashtag_ref": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["hashtag"],
+      "properties": {
+        "hashtag": { "type": "string", "minLength": 2, "maxLength": 32 },
+        "status": { "type": "string", "enum": ["normal", "restricted", "hidden"], "default": "normal" },
+        "post_count_approx": { "type": ["integer", "null"], "minimum": 0 }
+      }
+    }
+  }
+}

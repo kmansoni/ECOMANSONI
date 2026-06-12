@@ -1,0 +1,79 @@
+{
+  "version": 1,
+  "generated_at": "2026-02-19",
+  "schema_principles": {
+    "zero_downtime_migration": "All schema changes must support old and new code simultaneously",
+    "idempotency": "UUIDs, not auto-increment, for distributed consistency",
+    "soft_deletes": "Use deleted_at timestamp instead of hard delete for auditing",
+    "audit_log": "All sensitive operations logged with actor, timestamp, change"
+  },
+  "core_tables": [
+    {
+      "table": "conversations",
+      "description": "Direct message conversations (1:1 chats)",
+      "columns": {
+        "id": "UUID primary key",
+        "created_at": "TIMESTAMP with timezone",
+        "updated_at": "TIMESTAMP with timezone (bumped on new message)",
+        "last_message_seq": "BIGINT (for stable ordering)",
+        "is_deleted": "BOOLEAN"
+      },
+      "indexes": [
+        "updated_at DESC (for inbox sorting)",
+        "created_at DESC"
+      ]
+    },
+    {
+      "table": "messages",
+      "description": "Direct messages in conversations",
+      "columns": {
+        "id": "UUID primary key",
+        "conversation_id": "UUID foreign key -> conversations",
+        "sender_id": "UUID foreign key -> users",
+        "content": "TEXT (max 10000 chars)",
+        "client_msg_id": "UUID (idempotency dedup, nullable)",
+        "seq": "BIGINT (stable ordering per conversation)",
+        "media_url": "TEXT? (optional media)",
+        "media_type": "ENUM (image|voice|video|video_circle)",
+        "is_read": "BOOLEAN",
+        "created_at": "TIMESTAMP",
+        "deleted_at": "TIMESTAMP? (soft delete)"
+      },
+      "indexes": [
+        "UNIQUE(conversation_id, sender_id, client_msg_id) WHERE client_msg_id IS NOT NULL",
+        "UNIQUE(conversation_id, seq) WHERE seq IS NOT NULL",
+        "(conversation_id, seq) for reading messages in order",
+        "(sender_id, created_at) for user message history"
+      ]
+    },
+    {
+      "table": "group_chats",
+      "description": "Group conversations",
+      "columns": {
+        "id": "UUID primary key",
+        "name": "TEXT (1-100 chars)",
+        "owner_id": "UUID",
+        "created_at": "TIMESTAMP",
+        "updated_at": "TIMESTAMP",
+        "member_count": "INT"
+      }
+    },
+    {
+      "table": "channels",
+      "description": "Broadcast channels (one-way messaging)",
+      "columns": {
+        "id": "UUID primary key",
+        "name": "TEXT",
+        "owner_id": "UUID",
+        "is_public": "BOOLEAN",
+        "created_at": "TIMESTAMP",
+        "updated_at": "TIMESTAMP"
+      }
+    }
+  ],
+  "migration_strategy": {
+    "backwards_compat": "Always support old and new code for 1 release",
+    "feature_flags": "Gate new schema features behind kill-switch",
+    "rollback_plan": "All migrations must be reversible (down script)"
+  }
+}

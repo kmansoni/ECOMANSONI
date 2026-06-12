@@ -1,0 +1,13 @@
+{
+  "request_id": "hashtag_req_20260222_001",
+  "requested_at": "2026-02-22T11:12:00Z",
+  "auth_scope": "authenticated",
+  "viewer_id": "user_123",
+  "segment_id": "seg_default",
+  "locale": "ru-RU",
+  "country": "RU",
+  "hashtag": "cars",
+  "section": "top",
+  "pagination": { "limit": 20, "cursor": null },
+  "ab_buckets": { "hashtag_integrity": true }
+}

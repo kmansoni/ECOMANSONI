@@ -1,0 +1,78 @@
+{
+  "req_id": "REQ-0111",
+  "title": "Anonymous Forward (Forward Without Source Attribution)",
+  "version": "1.0",
+  "status": "in-design",
+  "domain": "messaging",
+  "priority": "P1",
+  "depends_on": ["REQ-0071"],
+  "description": "Allow a user to forward a message without revealing the original sender identity. The forwarded copy appears as if the forwarder authored it directly — no 'Forwarded from X' header. This is a privacy-preserving relay mechanism, not anonymization of the relay actor.",
+  "security_model": {
+    "threat": "Adversary uses anonymous forward to strip accountability from harmful/illegal content, enabling disinformation laundering.",
+    "mitigations": [
+      "Server-side: original_message_id and original_sender_id MUST be stored in a non-public shadow table (forward_provenance) — not exposed to recipients but available to trust & safety.",
+      "Trust & Safety retains full forward chain for CSAM/NCII/terrorism content under legal hold (immutable audit log).",
+      "Rate limit anonymous forwards per user_id: max 20/hour / 100/day via token bucket enforced at API gateway.",
+      "Zero-trust: client cannot assert 'anonymous=true' without server-side re-validation of user's current permission level (not banned, account age ≥ N days).",
+      "Replay protection: idempotency_key per forward request; duplicate attempts within 30s window rejected (HTTP 409)."
+    ],
+    "forward_provenance_table": {
+      "schema": {
+        "id": "UUID PK",
+        "forwarded_message_id": "UUID FK → messages.id",
+        "original_message_id": "UUID FK → messages.id (nullable if cross-platform)",
+        "original_sender_id": "UUID FK → users.id",
+        "forwarded_by_user_id": "UUID FK → users.id",
+        "forwarded_at": "TIMESTAMPTZ NOT NULL",
+        "is_anonymous": "BOOLEAN NOT NULL DEFAULT FALSE",
+        "idempotency_key": "UUID UNIQUE NOT NULL"
+      },
+      "rls": "SELECT restricted to service_role and trust_safety_role ONLY. No user-facing RLS SELECT policy.",
+      "indexes": ["idx_fp_forwarded_message_id", "idx_fp_original_sender_id", "idx_fp_forwarded_by_user_id", "idx_fp_forwarded_at"]
+    }
+  },
+  "api": {
+    "endpoint": "POST /v1/messages/forward",
+    "request": {
+      "original_message_id": "UUID",
+      "target_conversation_ids": "UUID[] (max 10)",
+      "anonymous": "boolean (default: false)",
+      "idempotency_key": "UUID"
+    },
+    "server_enforced_rules": [
+      "If anonymous=true: verify account_age ≥ 30 days, user not in restricted_users list.",
+      "Strip original_sender metadata from message payload sent to recipients.",
+      "Write provenance row regardless of anonymous flag.",
+      "Return 403 if original message's owner set allow_anonymous_forward=false (future: per-message privacy setting)."
+    ],
+    "response": {
+      "forwarded_message_ids": "UUID[]",
+      "failed_conversations": "UUID[] with error codes"
+    }
+  },
+  "ui": {
+    "trigger": "Long-press message → 'Forward' → Forward modal",
+    "modal_options": [
+      "Toggle: 'Hide source' (default: OFF)",
+      "Conversation selector (multi-select, max 10)",
+      "Confirm button"
+    ],
+    "attribution_display": {
+      "normal_forward": "Header: 'Forwarded from {display_name}'",
+      "anonymous_forward": "No header — message appears as original content from forwarder"
+    }
+  },
+  "observability": {
+    "metrics": [
+      "counter: forward.anonymous.total{result=success|rate_limited|forbidden}",
+      "histogram: forward.latency_ms"
+    ],
+    "alerts": [
+      "forward.anonymous.rate_limited > 500/min → PagerDuty P2 (potential abuse campaign)"
+    ]
+  },
+  "failure_handling": {
+    "partial_failure": "If forward succeeds to 3/5 selected conversations, return 207 Multi-Status with per-item results.",
+    "rollback": "Each forward is an independent DB write — no cross-conversation transaction. Failed items do not affect succeeded ones."
+  }
+}

@@ -1,0 +1,244 @@
+{
+  "req_id": "REQ-0086",
+  "title": "Group Conversations (Create, Invite, Members)",
+  "version": "1.0",
+  "status": "in-design",
+  "domain": "messaging",
+  "depends_on": ["REQ-0064"],
+  "use_cases": [
+    "user taps 'New group' → adds 3 people → creates conversation",
+    "group shows member list with online status",
+    "admin can invite more members via link or direct add",
+    "member can leave group anytime"
+  ],
+  "group_creation": {
+    "flow": {
+      "trigger": "user taps 'New group' in conversations",
+      "step_1_members": "select members from contacts (min 2, max 500)",
+      "step_2_naming": "enter group name (max 255 chars, optional emoji)",
+      "step_3_avatar": "upload group avatar or pick emoji",
+      "step_4_create": "tap create → INSERT conversations table"
+    },
+    "group_types": {
+      "private_group": "members selected explicitly, invitation link optional",
+      "public_channel": "anyone can join via public link (future)",
+      "restricted_channel": "invite-only, admin approval required (future)"
+    }
+  },
+  "group_database_schema": {
+    "conversations_table_for_groups": {
+      "columns": [
+        "conversation_id UUID PK",
+        "type ENUM (dm, private_group, public_channel, restricted_channel)",
+        "name TEXT (group name)",
+        "description TEXT (topic/purpose, optional)",
+        "avatar_url TEXT (S3 URL to group avatar)",
+        "owner_id UUID FK (creator)",
+        "created_at TIMESTAMP",
+        "updated_at TIMESTAMP",
+        "archived_at TIMESTAMP (null if active)",
+        "PRIMARY KEY (conversation_id)"
+      ]
+    },
+    "group_members_table": {
+      "columns": [
+        "group_member_id UUID PK",
+        "conversation_id UUID FK",
+        "user_id UUID FK",
+        "role ENUM (admin, moderator, member)",
+        "joined_at TIMESTAMP",
+        "muted BOOLEAN",
+        "notification_level ENUM (all, mentions, muted)",
+        "last_read_message_id UUID (for unread count)",
+        "PRIMARY KEY (conversation_id, user_id)",
+        "INDEX (conversation_id, joined_at)"
+      ]
+    }
+  },
+  "group_member_management": {
+    "invite_member": {
+      "methods": [
+        "1. direct add: admin selects user → sends invite",
+        "2. share link: admin generates invite link, user joins via link",
+        "3. auto-add: admin can auto-add contacts with permission"
+      ],
+      "invite_flow": [
+        "1. admin taps '+' in group members drawer",
+        "2. search/select users",
+        "3. tap 'Send invite'",
+        "4. INSERT group_members (role=member, pending=true)",
+        "5. user notified 'Alice invited you to {group}'"
+      ],
+      "join_option": "user can accept/decline invite"
+    },
+    "member_list": {
+      "display": [
+        {
+          "name": "Alice",
+          "avatar": "thumbnail",
+          "status": "online|offline",
+          "role": "admin",
+          "joined": "2026-02-15"
+        }
+      ],
+      "sorting": "online first, then by name",
+      "search": "search members by name in drawer"
+    },
+    "leave_group": {
+      "action": "member taps group name → settings → 'Leave group'",
+      "confirmation": "'Leave {group}? They'll see you left'",
+      "result": "DELETE FROM group_members WHERE user_id=current_user"
+    },
+    "remove_member": {
+      "permission": "only admin can remove other members",
+      "action": "admin long-presses member → 'Remove'",
+      "notification": "removed member notified 'You were removed from {group}'"
+    }
+  },
+  "invite_link_mechanism": {
+    "generate": {
+      "action": "admin taps 'Invite link' → generates unique URL",
+      "format": "app://join/conversation/{conversation_id}?token={invite_token}",
+      "storage": "conversation_invite_links table"
+    },
+    "join_via_link": {
+      "flow": [
+        "1. user clicks link or opens in app",
+        "2. app shows group preview (name, avatar, member count)",
+        "3. user taps 'Join'",
+        "4. INSERT INTO group_members, add to conversation"
+      ],
+      "verification": "verify invite_token is valid and not expired"
+    },
+    "link_expiry": {
+      "default": "no expiry (permanent)",
+      "admin_option": "set expiry: 1 day, 1 week, 1 month, or revoke"
+    }
+  },
+  "group_settings": {
+    "admin_only": {
+      "group_name": "edit name, description",
+      "group_avatar": "change group image",
+      "notification_defaults": "set default notification level for new members",
+      "member_approval": "require admin approval for new members (future)"
+    },
+    "member_visible": {
+      "notification_toggle": "mute/unmute this group",
+      "role_settings": "user assigned role (admin, mod, member) affects permissions"
+    }
+  },
+  "group_member_roles": {
+    "admin": {
+      "permissions": [
+        "invite members",
+        "remove members",
+        "edit group settings",
+        "pin messages",
+        "delete any message",
+        "manage roles"
+      ]
+    },
+    "moderator": {
+      "permissions": [
+        "delete inappropriate messages",
+        "mute members (silent, no notification)",
+        "pin messages"
+      ]
+    },
+    "member": {
+      "permissions": [
+        "send messages",
+        "react to messages",
+        "view member list",
+        "leave group"
+      ]
+    }
+  },
+  "scaling_large_groups": {
+    "members_500_plus": {
+      "considerations": [
+        "member list pagination (load 50, 'load more' pattern)",
+        "lazy-load member statuses (don't fetch all online status at once)",
+        "cache group members in Redis (ttl 1min)",
+        "denormalize member count on conversations table"
+      ]
+    },
+    "member_count_denormalization": "conversations.member_count updated async via Kafka"
+  },
+  "api_endpoints": {
+    "create_group": {
+      "endpoint": "POST /v1/conversations",
+      "payload": {
+        "type": "private_group",
+        "name": "Q4 Planning",
+        "member_ids": ["uuid1", "uuid2", "uuid3"],
+        "avatar_url": "https://..."
+      },
+      "response": {
+        "conversation_id": "UUID",
+        "created_at": "2026-02-15T15:35:00Z"
+      }
+    },
+    "invite_member": {
+      "endpoint": "POST /v1/conversations/{id}/members",
+      "payload": {
+        "user_ids": ["uuid1", "uuid2"]
+      },
+      "response": {
+        "invited_count": 2
+      }
+    },
+    "list_members": {
+      "endpoint": "GET /v1/conversations/{id}/members",
+      "params": {
+        "limit": 50,
+        "offset": 0,
+        "role": "all|admin|moderator"
+      },
+      "response": [
+        {
+          "user_id": "UUID",
+          "name": "Alice",
+          "role": "admin",
+          "status": "online",
+          "joined_at": "2026-02-15T15:35:00Z"
+        }
+      ]
+    },
+    "generate_invite_link": {
+      "endpoint": "POST /v1/conversations/{id}/invite-link",
+      "payload": {
+        "expires_in_days": null
+      },
+      "response": {
+        "invite_url": "app://join/...",
+        "created_at": "2026-02-15T15:35:00Z"
+      }
+    }
+  },
+  "testing": {
+    "scenarios": [
+      "create group with 3 members → conversation created, all members added",
+      "member list shows all users with online status",
+      "admin invites new member → user gets notification + appears in member list",
+      "member leaves group → removed from member list, group notified",
+      "admin removes member → member notified + removed",
+      "generate invite link → link is valid for any user to join",
+      "join via link → user added to group_members automatically",
+      "group with 1000 members: fetch first 50 members → fast (<100ms)"
+    ]
+  },
+  "monitoring": {
+    "metrics": [
+      "groups.created_per_day",
+      "groups.avg_member_count",
+      "groups.member_churn_percent",
+      "invite_link.generation_latency_p95_ms",
+      "member_list.fetch_latency_p95_ms"
+    ],
+    "alerts": [
+      "group creation fails > 2%",
+      "member fetch latency > 500ms p95 (N+1 queries?)"
+    ]
+  }
+}

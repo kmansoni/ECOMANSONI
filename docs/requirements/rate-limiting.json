@@ -1,0 +1,1 @@
+{"req_id":"REQ-0038","title":"Rate Limiting Rules","endpoints":{"send_message":{"limit":100,"window_sec":3600},"api_call":{"limit":1000,"window_sec":3600}},"redis_backend":true}

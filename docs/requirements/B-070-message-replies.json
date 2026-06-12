@@ -1,0 +1,158 @@
+{
+  "req_id": "REQ-0070",
+  "title": "Message Replies (Inline Quotes, Reply Threads)",
+  "version": "1.0",
+  "status": "in-design",
+  "domain": "messaging",
+  "depends_on": ["REQ-0063", "REQ-0064"],
+  "use_cases": [
+    "user taps a message → 'Reply' option appears",
+    "reply shows quoted snippet of original message above user's text",
+    "replying to message is atomic: original_message, quote_text, reply_text stored together",
+    "user can view all replies as a thread (collapsed by default, expand on tap)"
+  ],
+  "data_model": {
+    "messages_table_additions": {
+      "reply_to_message_id": "UUID (null if not a reply, FK to messages)",
+      "reply_to_sender_id": "UUID (cached sender of original message)"
+    },
+    "message_replies_table": {
+      "purpose": "denormalized view for fast thread reconstruction",
+      "schema": {
+        "reply_id": "UUID",
+        "original_message_id": "UUID FK",
+        "reply_message_id": "UUID FK",
+        "created_at": "timestamp",
+        "PRIMARY KEY": "(original_message_id, reply_message_id)",
+        "INDEX": "(original_message_id) for thread queries"
+      }
+    }
+  },
+  "reply_lifecycle": {
+    "compose": {
+      "trigger": "user taps message, taps 'reply'",
+      "state": "reply_ui shows: [quote_snippet] [input_box]",
+      "quote_text": "first 100 chars of original message or full content if < 100",
+      "ui_display": "indented gray box with original sender name + timestamp"
+    },
+    "send": {
+      "action": "user types reply + taps send",
+      "payload": {
+        "conversation_id": "UUID",
+        "reply_to_message_id": "UUID (original message)",
+        "content": "user's reply text",
+        "client_message_id": "UUID (for deduplication)"
+      },
+      "server_processing": [
+        "1. validate reply_to_message_id exists and is visible",
+        "2. create new message with reply_to_message_id set",
+        "3. insert into message_replies denormalization table",
+        "4. publish to Kafka (triggers consumers, fanout)",
+        "5. return message with seq assignment"
+      ]
+    },
+    "display": {
+      "in_conversation_view": "message appears with subtle reply indicator (e.g. quote icon)",
+      "tap_to_expand": "tapping shows quoted message inline or navigates to quoted message"
+    }
+  },
+  "thread_view": {
+    "purpose": "view all replies to a message in isolation",
+    "trigger": "user taps 'view X replies' badge on message",
+    "api": {
+      "endpoint": "GET /v1/messages/{message_id}/replies",
+      "params": {
+        "limit": 50,
+        "offset": 0
+      },
+      "response": [
+        {
+          "message_id": "UUID",
+          "reply_to_message_id": "UUID (original)",
+          "sender_id": "UUID",
+          "sender_name": "Alice",
+          "content": "I agree with this",
+          "timestamp": "2026-02-15T15:35:00Z",
+          "seq": 1024
+        }
+      ]
+    },
+    "closed_thread": "thread collapses back to showing only 'N replies' badge",
+    "unread_threads": "if thread has unread replies, badge shows count (e.g. '3 new replies')"
+  },
+  "reply_chain_depth": {
+    "rule": "reply can only reference direct message, not another reply",
+    "implementation": "reply_to_message_id must point to message with NULL reply_to_message_id",
+    "rationale": "prevents nested tree (threads stay flat, simpler UX and data model)"
+  },
+  "quote_snippet_extraction": {
+    "mechanism": "server extracts first 100 chars or full text if shorter",
+    "handling_media": {
+      "image_reply": "quote shows '[Image]' placeholder",
+      "voice_reply": "quote shows '[Voice message]'",
+      "video_reply": "quote shows '[Video message]'"
+    },
+    "emoji_preservation": "emojis included in snippet as-is",
+    "truncation_indicator": "if >100 chars, shows '...'"
+  },
+  "reply_notifications": {
+    "trigger": "user receives reply to message they sent",
+    "notification_text": "'Alice replied: I agree with this'",
+    "action_on_tap": "navigate to conversation and highlight quoted message + replies thread"
+  },
+  "editing_replies": {
+    "rule": "replies can be edited same as normal messages (15-min window, max 10 edits)",
+    "edit_affects_quote": "NO - quote text frozen at time of send, edit does NOT update displayed quote",
+    "rationale": "prevents confusion (quote needs to match what original author sees)"
+  },
+  "deleting_replies": {
+    "soft_delete": "is_visible=false, reply_count on original message decremented",
+    "hard_delete": "after 30 days, message removed entirely, reply_count still reflects"
+  },
+  "reply_count_denormalization": {
+    "field": "reply_count on messages table",
+    "update_strategy": "asynchronously via Kafka consumer on MESSAGE_SENT",
+    "eventual_consistency": "reply_count may lag by 1-2s, cached in Redis (ttl 10s)"
+  },
+  "thread_notifications": {
+    "feature": "notify user if someone replied to conversation they're following",
+    "mechanism": "subscribe to conversation → MESSAGE_SENT with reply_to_message_id set → notify",
+    "granularity": "per-conversation mute toggle + per-message reply notification opt-out"
+  },
+  "thread_search": {
+    "capability": "search includes text from replies (full-text indexing of reply content)",
+    "search_result_display": "message shows 'N replies' badge in search results; tap to view thread"
+  },
+  "performance": {
+    "query_optimization": [
+      "INDEX(original_message_id, created_at) for fast thread fetching",
+      "reply_count denormalized (no COUNT query needed)",
+      "lazy-load replies: first load returns 10, 'load more' fetches next 50"
+    ],
+    "latency_sla": "fetch thread with 100 replies: p95 <200ms"
+  },
+  "testing": {
+    "scenarios": [
+      "reply to message: verify reply_to_message_id set correctly",
+      "thread view shows all replies in seq order",
+      "edit reply: original message quote unchanged",
+      "delete reply: reply_count decremented, message no longer visible in thread",
+      "reply to reply (attempt): API rejects (must reply to original only)",
+      "reply with media reference: quote shows '[Image]', not full blob",
+      "notification on reply: user receives 'Alice replied to your message'",
+      "search in replies: searching 'keyword' returns replies containing it"
+    ]
+  },
+  "monitoring": {
+    "metrics": [
+      "reply.creation_latency_p95_ms",
+      "reply_count.denormalization_lag_ms",
+      "thread.fetch_latency_p95_ms",
+      "reply.search_performance_ms"
+    ],
+    "alerts": [
+      "reply creation > 500ms p95",
+      "reply_count divergence (cache vs DB) > threshold"
+    ]
+  }
+}

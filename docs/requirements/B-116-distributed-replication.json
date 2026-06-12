@@ -1,0 +1,337 @@
+{
+  "id": "B-116",
+  "title": "Distributed Message Replication & Cross-Shard Consistency",
+  "description": "Message replication across shards, quorum reads/writes, conflict-free replicated data types (CRDTs) for eventual consistency, and shard failover with zero message loss",
+  "status": "draft",
+  "priority": "P1",
+  "complexity": "M",
+  "domain": "distributed-systems",
+  "technologies": ["Postgres", "Kafka", "Redis", "Raft-like consensus", "CRDT"],
+
+  "overview": {
+    "purpose": "Ensure message availability and consistency across geographically distributed shards",
+    "target_scale": "100B+ messages/month, 10+ regional shards, <100ms P99 latency",
+    "key_requirements": [
+      "Zero message loss on shard failure",
+      "Sub-100ms message visibility across shards",
+      "Eventual consistency for replicated state",
+      "Automatic failover",
+      "Conflict resolution via CRDT",
+      "Forensic audit trail"
+    ]
+  },
+
+  "database_schema": {
+    "tables": [
+      {
+        "name": "message_replicas",
+        "purpose": "Track message replica state across shards",
+        "columns": [
+          {"name": "replica_id", "type": "BIGINT PRIMARY KEY"},
+          {"name": "message_id", "type": "BIGINT NOT NULL"},
+          {"name": "conversation_id", "type": "UUID NOT NULL"},
+          {"name": "primary_shard_id", "type": "INT", "description": "Which shard owns message_id"},
+          {"name": "replica_shard_ids", "type": "INT[]", "description": "[1,3,5] = replicated on shards 1,3,5"},
+          {"name": "replication_factor", "type": "INT", "default": 3},
+          {"name": "quorum_size", "type": "INT", "default": 2, "description": "For quorum reads/writes"},
+          {"name": "replica_status", "type": "JSONB", "description": "{\"shard_1\": \"synced\", \"shard_3\": \"pending\"}"},
+          {"name": "last_sync_at", "type": "TIMESTAMP"}
+        ],
+        "indexes": ["INDEX(message_id)", "INDEX(conversation_id, primary_shard_id)"]
+      },
+      {
+        "name": "shard_membership",
+        "purpose": "Track shard cluster membership and status",
+        "columns": [
+          {"name": "membership_id", "type": "BIGINT PRIMARY KEY"},
+          {"name": "shard_id", "type": "INT NOT NULL"},
+          {"name": "shard_name", "type": "VARCHAR", "description": "us-east-1, eu-west-1, etc"},
+          {"name": "status", "type": "VARCHAR", "enum": ["healthy", "degraded", "down", "recovering"]},
+          {"name": "leader_id", "type": "INT", "description": "Which node is leader in this shard"},
+          {"name": "replica_count", "type": "INT"},
+          {"name": "lag_bytes", "type": "BIGINT", "description": "Replication lag from primary"},
+          {"name": "last_heartbeat_at", "type": "TIMESTAMP"},
+          {"name": "joined_at", "type": "TIMESTAMP"}
+        ],
+        "indexes": ["INDEX(shard_id)"]
+      },
+      {
+        "name": "replication_log",
+        "purpose": "Write-ahead log for replication",
+        "columns": [
+          {"name": "log_id", "type": "BIGINT PRIMARY KEY"},
+          {"name": "message_id", "type": "BIGINT NOT NULL"},
+          {"name": "operation", "type": "VARCHAR", "enum": ["insert", "update", "delete"]},
+          {"name": "payload", "type": "JSONB", "description": "Message content/metadata"},
+          {"name": "lamport_timestamp", "type": "BIGINT", "description": "Logical clock for ordering"},
+          {"name": "vector_clock", "type": "JSONB", "description": "{\"shard_1\": 100, \"shard_3\": 98}"},
+          {"name": "created_at", "type": "TIMESTAMP NOT NULL"}
+        ],
+        "indexes": ["INDEX(message_id)", "INDEX(lamport_timestamp)"]
+      },
+      {
+        "name": "conflict_resolution_records",
+        "purpose": "Track CRDT conflicts and resolutions",
+        "columns": [
+          {"name": "conflict_id", "type": "BIGINT PRIMARY KEY"},
+          {"name": "message_id", "type": "BIGINT NOT NULL"},
+          {"name": "conflicting_versions", "type": "JSONB", "description": "[{shard: 1, content: '...'}, {shard: 3, content: '...'}]"},
+          {"name": "resolution_strategy", "type": "VARCHAR", "enum": ["last_write_wins", "crdt_merge", "manual_review"]},
+          {"name": "resolved_content", "type": "TEXT"},
+          {"name": "resolved_at", "type": "TIMESTAMP"},
+          {"name": "resolved_by_shard_id", "type": "INT"}
+        ]
+      },
+      {
+        "name": "shard_failover_log",
+        "purpose": "Track failover events",
+        "columns": [
+          {"name": "failover_id", "type": "BIGINT PRIMARY KEY"},
+          {"name": "primary_shard_id", "type": "INT NOT NULL"},
+          {"name": "failed_node_id", "type": "INT"},
+          {"name": "elected_replica_shard_id", "type": "INT"},
+          {"name": "reason", "type": "VARCHAR", "enum": ["heartbeat_timeout", "manual_intervention", "hardware_failure"]},
+          {"name": "failover_time_ms", "type": "INT", "description": "Time to detect + elect + commit"},
+          {"name": "messages_lost", "type": "INT", "default": 0},
+          {"name": "triggered_at", "type": "TIMESTAMP"}
+        ]
+      }
+    ]
+  },
+
+  "replication_protocol": {
+    "write_path": {
+      "step1": "Client sends message to primary shard (conversation_id hash)",
+      "step2": "Primary writes to local WAL (write-ahead log)",
+      "step3": "Ack to client (quorum_size=1 for latency)",
+      "step4": "Async replicate to replica shards (quorum_size remaining)",
+      "step5": "Once quorum replicas ACK, mark as 'safely_replicated' in Redis"
+    },
+    "read_path": {
+      "step1": "Client queries conversation_id → determine primary shard",
+      "step2": "Read from primary cache (Redis), fallback to Postgres",
+      "step3": "If stale (lag > 100ms), quorum_read to verify freshness",
+      "step4": "Return most recent version from quorum"
+    },
+    "consistency_model": "Causal consistency (read-your-writes), eventual consistency across regions"
+  },
+
+  "crdt_conflict_resolution": {
+    "scenario": "Shard A and Shard B partition, both accept edits to same message",
+    "approach": "Last-Write-Wins (LWW) with lamport_timestamp tiebreaker",
+    "crdt_structure": {
+      "message_edit": {
+        "id": "unique message_id",
+        "timestamp": "lamport_timestamp",
+        "shard_id": "originating shard",
+        "content": "message text"
+      }
+    },
+    "merge": "On partition heal, compare timestamps → keep higher timestamp version, log conflict",
+    "alternative": "Optional CRDT Text type (for rich text editing) using Yjs-like structure"
+  },
+
+  "api_specification": {
+    "endpoints": [
+      {
+        "method": "POST",
+        "path": "/v1/messages",
+        "description": "Send message (handles multi-shard writes)",
+        "response": {
+          "message_id": "...",
+          "replication_status": "pending",
+          "safe_replicas_count": 0
+        }
+      },
+      {
+        "method": "GET",
+        "path": "/v1/conversations/{conversation_id}/messages",
+        "description": "Fetch messages (reads from primary shard)",
+        "request": {
+          "query": {
+            "consistency": "enum[eventual, strong]",
+            "limit": 50
+          }
+        },
+        "note": "strong=quorum_read (slower but fresher), eventual=cache (faster)"
+      },
+      {
+        "method": "GET",
+        "path": "/v1/shards/status",
+        "description": "Get cluster health (admin)",
+        "auth": "admin",
+        "response": {
+          "shards": [
+            {
+              "shard_id": 1,
+              "status": "healthy",
+              "lag_bytes": 512,
+              "replicas": [
+                {"shard_id": 3, "status": "synced"},
+                {"shard_id": 5, "status": "pending"}
+              ]
+            }
+          ]
+        }
+      },
+      {
+        "method": "GET",
+        "path": "/v1/shards/{shard_id}/replication-log",
+        "description": "Audit replication (forensics)",
+        "auth": "admin",
+        "response": [
+          {
+            "log_id": 1234,
+            "message_id": "...",
+            "operation": "update",
+            "lamport_timestamp": 450,
+            "created_at": "2026-02-19T14:30:00Z"
+          }
+        ]
+      }
+    ]
+  },
+
+  "implementation_details": {
+    "shard_assignment": {
+      "strategy": "Hash(conversation_id) % num_shards → primary shard",
+      "replica_assignment": "Consistent hashing, 2 additional shards (prefer different regions)"
+    },
+    "replication_transport": {
+      "mechanism": "Kafka topic per shard (e.g., 'shard-1-replication')",
+      "payload": "Replication log entry (message_id, operation, payload)",
+      "throughput": "1M+ msg/s per shard"
+    },
+    "failover_detection": {
+      "heartbeat": "30s interval, shard leader sends heartbeat to coordinator",
+      "timeout": "3 missed heartbeats (90s) → failover triggered",
+      "election": "Lease-based, next-in-line replica becomes leader"
+    },
+    "conflict_detection": {
+      "trigger": "Partition heal → shard A and B rejoin",
+      "detection": "Compare vector clocks, find divergent message_ids",
+      "resolution": "Apply LWW with lamport_timestamp"
+    },
+    "message_deduplication": {
+      "mechanism": "client_message_id + user_id unique constraint",
+      "idempotency": "Resend → server returns same message_id (not duplicate)"
+    }
+  },
+
+  "monitoring": {
+    "metrics": [
+      "replication_lag_ms_p95",
+      "failover_count_per_week",
+      "conflict_resolution_rate",
+      "message_loss_count (should be 0)",
+      "shard_status (healthy/degraded/down)"
+    ],
+    "alerts": [
+      "replication_lag > 500ms for >30s",
+      "shard_status != healthy (degraded/down)",
+      "conflict_resolution_count > 10/hour (partition hotspot?)",
+      "message_loss_detected (integrity check)"
+    ]
+  },
+
+  "testing_scenarios": [
+    {
+      "id": "T-116-1",
+      "title": "Message write to primary shard",
+      "steps": ["Send message to shard 1 (primary)", "Verify local WAL entry created"],
+      "expected": "Message_id allocated, replication_status=pending"
+    },
+    {
+      "id": "T-116-2",
+      "title": "Async replication to replicas",
+      "steps": ["Message written to primary", "Wait for replica sync", "Query shard 3 directly"],
+      "expected": "Message appears on shard 3 within 100ms"
+    },
+    {
+      "id": "T-116-3",
+      "title": "Quorum read consistency check",
+      "steps": ["Query message with consistency=strong from shard that's lagged", "Compare across 2 shards"],
+      "expected": "Quorum returns most recent version"
+    },
+    {
+      "id": "T-116-4",
+      "title": "Shard failover on leader down",
+      "steps": ["Shard 1 leader node crashes", "Heartbeat timeout triggers", "Shard 3 elected new leader"],
+      "expected": "Failover completes <30s, messages continue flowing"
+    },
+    {
+      "id": "T-116-5",
+      "title": "Conflict detection on partition heal",
+      "steps": ["Network partition: shard 1 isolated from 3,5", "Both sides accept message edits", "Partition heals"],
+      "expected": "Conflict detected, LWW applied, log entry created"
+    },
+    {
+      "id": "T-116-6",
+      "title": "Message deduplication via client_message_id",
+      "steps": ["Send message with client_message_id=X", "Resend same after timeout", "Verify no duplicate"],
+      "expected": "Second attempt returns same message_id, no new message created"
+    },
+    {
+      "id": "T-116-7",
+      "title": "Replication log audit trail",
+      "steps": ["Message edited 3 times", "Query replication log"],
+      "expected": "All 3 edit operations logged with lamport_timestamp"
+    },
+    {
+      "id": "T-116-8",
+      "title": "Vector clock for causal consistency",
+      "steps": ["User A sends message (vc: {shard_1: 100})", "User B in shard 3 reads (vc: {shard_1: 98})", "B waits for vc >= A's"],
+      "expected": "Causal consistency maintained, no stale reads"
+    },
+    {
+      "id": "T-116-9",
+      "title": "Shard replica lag monitoring",
+      "steps": ["Query shard status → check lag_bytes"],
+      "expected": "Lag <100MB (threshold), alert if exceeded"
+    },
+    {
+      "id": "T-116-10",
+      "title": "Read fallback on primary shard down",
+      "steps": ["Primary shard offline", "Client requests message", "System reads from replica"],
+      "expected": "Message returned from replica, latency increased but no error"
+    },
+    {
+      "id": "T-116-11",
+      "title": "Replication bandwidth throttling",
+      "steps": ["Spike: 10M new messages in 10min", "Replica catching up"],
+      "expected": "Replication rate limited to not overwhelm network, lag increases temporarily"
+    },
+    {
+      "id": "T-116-12",
+      "title": "Zero message loss on failover",
+      "steps": ["Primary shard has 1000 pending (not yet replicated) messages", "Shard fails"],
+      "expected": "Failover elects replica, all 1000 messages available (or logged as lost for audit)"
+    },
+    {
+      "id": "T-116-13",
+      "title": "Conflict resolution policy: Last-Write-Wins",
+      "steps": ["Shard 1 edit at timestamp 100, Shard 3 edit at timestamp 101", "Conflict resolved"],
+      "expected": "Shard 3 version wins (higher timestamp)"
+    },
+    {
+      "id": "T-116-14",
+      "title": "Multi-region replication latency",
+      "steps": ["Replicate message from us-east to us-west to eu-west", "Measure end-to-end latency"],
+      "expected": "P99 < 500ms across regions"
+    },
+    {
+      "id": "T-116-15",
+      "title": "Coordinator failure and recovery",
+      "steps": ["Coordinator node (tracks membership) crashes", "Heartbeat detection", "Failover election"],
+      "expected": "Replica coordinator elected, cluster continues functioning"
+    }
+  ],
+
+  "dependencies": ["B-061", "B-086"],
+  "future_enhancements": [
+    "Geo-replication (active-active write in multiple regions)",
+    "Rich CRDT text support (for collaborative editing)",
+    "Automatic shard rebalancing",
+    "Cross-shard transactions (weak consistency)"
+  ]
+}

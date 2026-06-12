@@ -1,0 +1,19 @@
+{
+  "file": "B-139-media-attachment-integrity-signed-url-access.json",
+  "id": "B-139",
+  "title": "Media Attachment Integrity and Signed URL Access",
+  "description": "Attachment pipeline enforces mime/size/hash validation and private media access via signed URLs.",
+  "priority": "P0",
+  "complexity": "M",
+  "must_have": [
+    "media_objects metadata integrity",
+    "checksum optional verification",
+    "private bucket policies",
+    "short-lived signed URLs"
+  ],
+  "acceptance": [
+    "Invalid mime rejected server-side",
+    "Private object not publicly accessible",
+    "Attachment metadata matches stored object"
+  ]
+}

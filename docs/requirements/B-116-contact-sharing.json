@@ -1,0 +1,76 @@
+{
+  "req_id": "REQ-0116",
+  "title": "Contact Sharing (Send Contact as Message Attachment)",
+  "version": "1.0",
+  "status": "in-design",
+  "domain": "messaging",
+  "priority": "P2",
+  "depends_on": ["REQ-0073"],
+  "description": "Users can share a contact card (vCard-compatible) as a message attachment. The contact may be from the user's device address book OR another platform user. Recipients can view the card, save to contacts, and optionally start a conversation if the contact is a platform user.",
+  "security_and_privacy": {
+    "consent_model": [
+      "Sharing a device contact: user picks from address book. No background scan of address book — only explicit pick.",
+      "Sharing a platform user: target user's profile_visibility setting respected. If target set contacts_visible=false, their phone number is NEVER included in the shared card — only display_name and platform user_id.",
+      "Server strips phone number from contact payload if target_user.phone_sharing = 'nobody' or 'contacts_only' and sender is not in target's contact list."
+    ],
+    "pii_handling": [
+      "Phone numbers in contact payloads encrypted at rest (AES-256-GCM) in message JSONB field.",
+      "No indexing of phone numbers in search indexes.",
+      "Contact payloads purged on message deletion (cascade)."
+    ]
+  },
+  "data_model": {
+    "message_type": "contact",
+    "message_content_schema": {
+      "contact": {
+        "display_name": "string (required, max 128)",
+        "phone_number": "string | null (E.164 format, may be null per privacy settings)",
+        "email": "string | null",
+        "organization": "string | null",
+        "platform_user_id": "UUID | null (if contact is platform user)",
+        "avatar_url": "string | null (CDN URL, time-limited signed URL)",
+        "vcard_raw": "string | null (RFC 6350 encoded, max 4096 bytes)"
+      }
+    }
+  },
+  "api": {
+    "send_contact": {
+      "endpoint": "POST /v1/messages",
+      "body": {
+        "conversation_id": "UUID",
+        "type": "contact",
+        "contact": {
+          "display_name": "string",
+          "phone_number": "string?",
+          "email": "string?",
+          "platform_user_id": "UUID?"
+        },
+        "idempotency_key": "UUID"
+      },
+      "server_validation": [
+        "If platform_user_id provided: resolve user, apply visibility checks, strip phone if needed.",
+        "Validate E.164 phone format.",
+        "Max vcard_raw 4096 bytes.",
+        "Sanitize all string fields (no HTML/script injection)."
+      ]
+    }
+  },
+  "ui": {
+    "trigger": "Attachment picker (📎) → 'Contact' option → Platform contact search OR device contacts picker",
+    "contact_message_bubble": {
+      "display": "Avatar + display_name + 'View contact' button",
+      "action_menu": ["Save to contacts", "Send message (if platform user)", "Copy phone number"]
+    },
+    "platform_search": "Real-time search by username/display_name within the platform. No phone number leakage in search results."
+  },
+  "failure_handling": {
+    "permission_denied": "If OS-level contacts permission denied: show platform-user search only. No fallback scraping.",
+    "visibility_check_failure": "If platform user lookup returns 404 or 403: contact card sent without platform_user_id and without phone (degraded but safe)."
+  },
+  "observability": {
+    "metrics": [
+      "counter: message.type.contact.sent",
+      "counter: contact_share.phone_stripped{reason=visibility_setting|not_platform_contact}"
+    ]
+  }
+}

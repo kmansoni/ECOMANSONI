@@ -1,0 +1,23 @@
+{
+  "file": "B-132-ws-gateway-auth-room-acl.json",
+  "id": "B-132",
+  "title": "WebSocket Gateway Auth and Room ACL",
+  "description": "Gateway verifies Supabase JWT, enforces room membership, and isolates user/dialog/channel streams.",
+  "priority": "P0",
+  "complexity": "M",
+  "must_have": [
+    "JWKS JWT verification",
+    "Room join ACL check",
+    "Per-socket backpressure limits",
+    "Ping/pong stale connection cleanup"
+  ],
+  "interfaces": [
+    "ws://gateway?access_token=...",
+    "internal_can_join_room_v1"
+  ],
+  "acceptance": [
+    "Unauthorized room join is denied",
+    "Expired JWT disconnects session",
+    "No cross-user event leakage"
+  ]
+}

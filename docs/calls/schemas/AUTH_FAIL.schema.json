@@ -1,0 +1,11 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mansoni.com/schemas/ws/AUTH_FAIL.schema.json",
+  "title": "AUTH_FAIL",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["error"],
+  "properties": {
+    "error": { "$ref": "https://mansoni.com/schemas/ws/error.schema.json" }
+  }
+}

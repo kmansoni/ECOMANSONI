@@ -1,0 +1,173 @@
+{
+  "req_id": "REQ-0074",
+  "title": "Voice Messages (Record, Transcribe, Playback)",
+  "version": "1.0",
+  "status": "in-design",
+  "domain": "messaging",
+  "depends_on": ["REQ-0073"],
+  "use_cases": [
+    "user holds microphone button → records voice (max 5min)",
+    "release button → message sends with audio file",
+    "recipient taps play → audio plays with progress bar",
+    "optional: transcribe voice to text (async, opt-in)"
+  ],
+  "voice_message_ui": {
+    "compose": {
+      "trigger": "user taps microphone icon in composer",
+      "state": "recording mode: big waveform indicator, 'drag down to cancel' hint",
+      "timer": "elapsed time: 0:00 → 5:00 (red alert at 5min)",
+      "cancel": "swipe down or tap X → discard and return to composer"
+    },
+    "playback": {
+      "display": "inline player with play/pause, progress slider, timestamp",
+      "ui_element": "▶️ [====|====] 2:30 | 4:45",
+      "playback_speed": "1x (default), 1.25x, 1.5x (premium feature)",
+      "autoplay": "disabled by default (respect privacy)"
+    }
+  },
+  "voice_recording": {
+    "api": "Web Audio API (native browser) + native iOS/Android APIs",
+    "codec": "AAC-LC (mobile compatible, 32kbps)",
+    "mono_recording": true,
+    "sample_rate": "16kHz (sufficient for voice)",
+    "max_duration": "5 minutes (300 seconds)",
+    "ui_constraints": "disable send button, show cancel-only option while recording"
+  },
+  "voice_processing": {
+    "steps": [
+      "1. record RAW PCM using Web Audio API",
+      "2. encode to AAC-LC using ffmpeg.js (on device)",
+      "3. compute audio duration",
+      "4. upload to S3 (same flow as B-073)",
+      "5. send message with media_type='voice', duration=duration_seconds"
+    ],
+    "processing_time": "< 500ms encoding for 5min audio",
+    "fallback": "if ffmpeg.js fails, record as WAV (larger file, less compression)"
+  },
+  "voice_transcription": {
+    "trigger": "optional, async job triggered after voice message sent",
+    "service": "Whisper API (OpenAI) OR Google Cloud Speech-to-Text",
+    "latency": "30s-2min for 5min audio (queue + API call)",
+    "output": "transcript stored in voice_transcripts table",
+    "schema": {
+      "voice_transcripts_table": {
+        "message_id": "UUID FK",
+        "transcript_text": "text",
+        "confidence_score": "float 0-1 (0.85 = 85% confidence)",
+        "language": "detected language code",
+        "transcription_time_seconds": "integer",
+        "created_at": "timestamp"
+      }
+    },
+    "user_opt_in": "must enable in settings 'Transcribe voice messages'",
+    "visibility": "transcript shown in message only if enabled",
+    "privacy": "transcript NOT sent to cloud until opt-in (no auto-transcription)"
+  },
+  "voice_message_database_schema": {
+    "additions_to_messages": {
+      "voice_duration_seconds": "integer",
+      "voice_waveform": "bytea (base64 waveform data for visualization)",
+      "voice_transcribed": "boolean (has transcription)",
+      "voice_transcript_id": "UUID FK to voice_transcripts"
+    }
+  },
+  "voice_waveform_visualization": {
+    "purpose": "show visual representation of audio during playback",
+    "generation": "extract samples from MP3/AAC, normalize to 0-255 range",
+    "resolution": "60 bars (fit on screen), each bar = ~5s of audio for 5min track",
+    "storage": "as base64 string in message, ~2KB for 60 bars",
+    "ui": "bar chart that progresses as audio plays"
+  },
+  "listening_indicators": {
+    "feature": "show when voice message is being played",
+    "implementation": "similar to typing indicators",
+    "broadcast": "user presses play → VC_PLAYING event → broadcast to all conversation members",
+    "ui_display": "in group: 'Alice is listening to voice message' (appears while playing)",
+    "privacy": "can be disabled globally or per-group"
+  },
+  "transcription_quality": {
+    "factors": [
+      "noise level (loud background noise reduces accuracy)",
+      "accent & language",
+      "audio codec compression (AAC lossy)"
+    ],
+    "expected_accuracy": "85-92% for clear speech, 60-75% for noisy room",
+    "manual_correction": "future v2: allow user to edit transcript"
+  },
+  "voice_message_search": {
+    "capability": "search within transcribed voice messages",
+    "example_query": "has:voice q:'meeting tomorrow'",
+    "indexing": "elasticsearch indexes transcript_text automatically"
+  },
+  "voice_playback_features": {
+    "playback_speed": [
+      "1.0x (normal)",
+      "1.25x",
+      "1.5x",
+      "2.0x (premium only)"
+    ],
+    "speed_storage": "user preference stored in profile"
+  },
+  "voice_deletion": {
+    "soft_delete": "message.is_visible=false, media_s3_key retained",
+    "hard_delete": "S3 voice file deleted after 30 days"
+  },
+  "api_endpoints": {
+    "send_voice_message": {
+      "endpoint": "POST /v1/conversations/{id}/messages",
+      "payload": {
+        "content": "optional text before voice",
+        "voice_file": "binary AAC audio",
+        "voice_duration_seconds": 145,
+        "voice_waveform": "base64 waveform bars"
+      },
+      "response": {
+        "message_id": "UUID",
+        "seq": 1024,
+        "voice_media_url": "signed S3 URL"
+      }
+    },
+    "transcribe_voice": {
+      "endpoint": "POST /v1/messages/{id}/transcribe",
+      "async": true,
+      "response": {
+        "job_id": "UUID",
+        "status": "queued"
+      }
+    },
+    "get_transcription": {
+      "endpoint": "GET /v1/messages/{id}/transcript",
+      "response": {
+        "transcript_text": "I mentioned the meeting tomorrow at 9am",
+        "confidence_score": 0.89,
+        "transcription_time_seconds": 45
+      }
+    }
+  },
+  "testing": {
+    "scenarios": [
+      "tap microphone → recording starts, timer shown",
+      "hold 3s → release → voice message sent with duration=3s",
+      "record 5min → release → send (file ~12KB)",
+      "recipient plays voice message → progress bar shows playback",
+      "toggle transcription on → voice transcribed within 2min",
+      "search 'has:voice q:meeting' → returns voice messages with 'meeting' in transcript",
+      "delete voice message → soft-delete hides it, S3 file remains",
+      "play speed 1.5x → audio plays faster, maintains pitch"
+    ]
+  },
+  "monitoring": {
+    "metrics": [
+      "voice.messages_sent_per_day",
+      "voice.avg_duration_seconds",
+      "transcription.latency_p95_seconds",
+      "transcription.accuracy_avg_percent",
+      "voice.playback_failures_percent"
+    ],
+    "alerts": [
+      "transcript accuracy < 70% (speech-to-text service degraded?)",
+      "transcription latency > 5min p95",
+      "voice recording fails > 2%"
+    ]
+  }
+}

@@ -1,0 +1,135 @@
+{
+  "req_id": "REQ-0068",
+  "title": "Message Search Indexing (Full-text Search)",
+  "version": "1.0",
+  "status": "in-design",
+  "domain": "messaging",
+  "depends_on": ["REQ-0064"],
+  "use_cases": [
+    "user searches 'meeting tomorrow' → find all relevant messages",
+    "search within conversation: 'project spec'",
+    "search across all conversations: 'Alice'",
+    "filter by date: 'from:2026-01-01 to:2026-02-01'"
+  ],
+  "search_backends": {
+    "primary": "Elasticsearch",
+    "index_name": "messages_v1",
+    "shards": 10,
+    "replicas": 2,
+    "refresh_interval": "3s"
+  },
+  "indexed_fields": {
+    "message_id": "UUID (not analyzed)",
+    "conversation_id": "UUID (keyword)",
+    "sender_id": "UUID (keyword)",
+    "content": "text (analyzed, supports stemming + synonyms)",
+    "timestamp": "date (range queries)",
+    "is_visible": "boolean (exclude deleted messages)",
+    "language": "keyword (detect via language_detect lib)"
+  },
+  "mapping_example": {
+    "content": {
+      "type": "text",
+      "analyzer": "standard",
+      "fields": {
+        "raw": {
+          "type": "keyword"
+        }
+      }
+    },
+    "timestamp": {
+      "type": "date",
+      "format": "epoch_millis"
+    }
+  },
+  "indexing_pipeline": {
+    "trigger": "message created (or edited) → Kafka topic messages.send_request",
+    "consumer": "search-indexer consumer group",
+    "flow": [
+      "1. receive message from Kafka",
+      "2. check is_visible = true (skip deleted messages)",
+      "3. POST {message} to ES",
+      "4. handle ES failures: retry with exponential backoff"
+    ],
+    "latency": "messages searchable within 3s of creation"
+  },
+  "query_api": {
+    "simple_search": {
+      "endpoint": "GET /v1/search/messages",
+      "params": {
+        "q": "meeting tomorrow",
+        "conversation_id": "UUID (optional, filter to one conv)",
+        "from_user": "UUID (optional)",
+        "from_date": "2026-01-01 (optional)",
+        "to_date": "2026-02-01",
+        "limit": 50,
+        "offset": 0
+      },
+      "response": [
+        {
+          "message_id": "UUID",
+          "conversation_id": "UUID",
+          "sender_name": "Alice",
+          "content_snippet": "...meeting tomorrow at 9am...",
+          "timestamp": "2026-02-15T15:30:00Z",
+          "highlight_ranges": [[20, 35]]
+        }
+      ],
+      "sla": "p95_latency: 500ms"
+    },
+    "advanced_syntax": {
+      "examples": [
+        "q: 'meeting AND tomorrow'",
+        "q: 'project OR proposal'",
+        "q: 'NOT spam'",
+        "from_user: alice@example.com",
+        "timestamp: [2026-01-01 TO 2026-02-01]"
+      ]
+    }
+  },
+  "privacy_scope": {
+    "rule": "user can only search messages they have access to",
+    "implementation": "filter by user_id in conversation members list",
+    "example": "search includes only messages from groups user is member of"
+  },
+  "content_highlighting": {
+    "mechanism": "ES highlight feature returns match positions",
+    "ui_display": "bold or color matched terms in snippet"
+  },
+  "performance_optimizations": {
+    "caching": {
+      "redis_cache": "popular search queries (top 100 queries/day)",
+      "ttl": "24 hours",
+      "key": "search:{user_id}:{query_hash}"
+    },
+    "lazy_loading": "search returns first 50 results, 'load more' fetches next 50",
+    "index_optimization": "monthly reindex for deleted messages cleanup"
+  },
+  "data_retention": {
+    "searchable": "messages indexed for 1 year",
+    "deleted_messages": "removed from index immediately when soft-deleted",
+    "gdpr_right_to_forget": "hard delete from ES after 30 days"
+  },
+  "testing": {
+    "scenarios": [
+      "search 'meeting' returns only messages with that word",
+      "case-insensitive search (meeting, MEETING, Meeting all same)",
+      "special chars: 'alice@example.com' searchable",
+      "emoji search: 'coffee ☕' works",
+      "date range filter: messages from 2026-01 only",
+      "user can't search messages from groups they left"
+    ]
+  },
+  "monitoring": {
+    "metrics": [
+      "search.latency_p95_ms",
+      "es_indexing.lag_seconds",
+      "search.queries_per_sec",
+      "search.index_size_gb"
+    ],
+    "alerts": [
+      "search latency > 1s p95",
+      "indexing lag > 10s (messages not searchable)"
+    ]
+  }
+}

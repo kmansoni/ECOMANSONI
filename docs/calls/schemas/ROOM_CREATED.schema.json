@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mansoni.com/schemas/ws/ROOM_CREATED.schema.json",
+  "title": "ROOM_CREATED",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["roomId", "callId", "region", "nodeId", "epoch", "memberSetVersion"],
+  "properties": {
+    "roomId": { "$ref": "https://mansoni.com/schemas/ws/types.schema.json#/properties/roomId" },
+    "callId": { "$ref": "https://mansoni.com/schemas/ws/types.schema.json#/properties/callId" },
+    "region": { "$ref": "https://mansoni.com/schemas/ws/types.schema.json#/properties/region" },
+    "nodeId": { "$ref": "https://mansoni.com/schemas/ws/types.schema.json#/properties/nodeId" },
+    "epoch": { "type": "integer", "minimum": 0 },
+    "memberSetVersion": { "type": "integer", "minimum": 0 }
+  }
+}

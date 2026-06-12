@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mansoni.com/schemas/ws/ROOM_CREATE.schema.json",
+  "title": "ROOM_CREATE",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["e2eeRequired", "preferredRegion"],
+  "properties": {
+    "e2eeRequired": { "type": "boolean" },
+    "preferredRegion": { "$ref": "https://mansoni.com/schemas/ws/types.schema.json#/properties/region" },
+    "metadata": { "type": "object" }
+  }
+}

@@ -1,0 +1,75 @@
+{
+  "req_id": "REQ-0113",
+  "title": "Slow Mode for Groups (Per-User Message Rate Limiting)",
+  "version": "1.0",
+  "status": "in-design",
+  "domain": "groups",
+  "priority": "P1",
+  "depends_on": ["REQ-0086", "REQ-0087"],
+  "description": "Group admins can enforce a per-user cooldown between successive messages in a group. After sending a message, a user must wait the configured interval before sending another. Admins and bots are exempt. Protects against flooding and spam in public/large communities.",
+  "slow_mode_intervals_seconds": [0, 10, 30, 60, 300, 900, 3600],
+  "server_architecture": {
+    "enforcement_layer": "API Gateway (not application server) — ensures zero bypass possible via direct DB writes",
+    "storage": {
+      "table": "group_slow_mode_config",
+      "schema": {
+        "group_id": "UUID PK FK → conversations.id",
+        "interval_seconds": "INTEGER NOT NULL DEFAULT 0 (0 = disabled)",
+        "updated_by": "UUID FK → users.id",
+        "updated_at": "TIMESTAMPTZ"
+      }
+    },
+    "cooldown_tracking": {
+      "store": "Redis — chosen for sub-millisecond TTL precision and atomic SETNX semantics",
+      "key_pattern": "slowmode:{group_id}:{user_id}",
+      "value": "last_message_unix_ts (integer)",
+      "ttl": "interval_seconds + 5 (grace buffer for clock drift)",
+      "algorithm": {
+        "on_send_attempt": [
+          "1. GET slowmode:{group_id}:{user_id} → last_ts",
+          "2. IF last_ts EXISTS AND now() - last_ts < interval → reject with 429, include Retry-After header",
+          "3. ELSE: SET key=now() EX=interval+5 NX (atomic — prevents race condition between concurrent requests)"
+        ],
+        "race_condition_analysis": "Two concurrent sends from same user: SETNX guarantees only one wins. Loser gets 429. No double-write to messages table."
+      }
+    },
+    "exemptions": ["group admins", "group owners", "verified bots (bot_role in conversation_members)"],
+    "exemption_check": "Fetched from PostgreSQL conversations_members cache (1s TTL in Redis) to avoid hot DB reads"
+  },
+  "api": {
+    "configure": {
+      "endpoint": "PATCH /v1/groups/{group_id}/settings",
+      "body": { "slow_mode_interval": "integer (must be one of allowed values)" },
+      "auth": "JWT with admin or owner role in group",
+      "idempotency": "Last-write-wins on group_slow_mode_config; concurrent admin changes → no deadlock risk (single-row upsert)"
+    },
+    "message_send_rejection": {
+      "status": 429,
+      "body": {
+        "error": "SLOW_MODE_ACTIVE",
+        "retry_after_seconds": "integer",
+        "next_allowed_at": "ISO8601 timestamp"
+      }
+    }
+  },
+  "failure_handling": {
+    "redis_unavailable": "Fail-open: allow message send, emit metric alert. Fail-closed would degrade UX globally for transient Redis outage — documented trade-off.",
+    "clock_skew": "Server-side timestamps only; client clock NOT trusted. interval TTL extended by +5s to absorb NTP jitter."
+  },
+  "ui": {
+    "composer_state": "While cooldown active: send button disabled, timer countdown visible ('Next message in 42s'). Timer driven by server-provided next_allowed_at, not local clock.",
+    "admin_settings": "Group Settings → Slow Mode → picker with predefined intervals (Off / 10s / 30s / 1m / 5m / 15m / 1h)"
+  },
+  "observability": {
+    "metrics": [
+      "counter: slowmode.rejected{group_id} — track which groups generate most rejections",
+      "gauge: slowmode.configured_interval{group_id}",
+      "counter: slowmode.redis_miss (fail-open events)"
+    ],
+    "alerts": ["slowmode.redis_miss > 10/min → PagerDuty P1 (Redis cluster degraded)"]
+  },
+  "security": {
+    "privilege_escalation": "Client cannot self-grant admin exemption. Server validates role on every request from conversation_members_cache.",
+    "config_tampering": "Slow mode config changes require admin JWT — RLS policy enforces admin-only writes to group_slow_mode_config."
+  }
+}

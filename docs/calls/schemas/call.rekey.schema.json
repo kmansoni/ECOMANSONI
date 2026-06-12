@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mansoni.com/schemas/ws/call.rekey.schema.json",
+  "title": "call.rekey",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["call_id", "reason", "epoch"],
+  "properties": {
+    "call_id": { "$ref": "https://mansoni.com/schemas/ws/types.schema.json#/properties/callId" },
+    "reason": { "type": "string", "enum": ["member_join", "member_leave", "periodic"] },
+    "epoch": { "type": "integer", "minimum": 0 }
+  }
+}

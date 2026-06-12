@@ -1,0 +1,98 @@
+{
+  "req_id": "REQ-0114",
+  "title": "Supergroups (Large-Scale Group Conversations)",
+  "version": "1.0",
+  "status": "in-design",
+  "domain": "groups",
+  "priority": "P1",
+  "depends_on": ["REQ-0086", "REQ-0087", "REQ-0088"],
+  "description": "Supergroups are high-capacity group conversations (up to 200,000 members) with persistent message history, searchable archive, granular admin permissions, topics/threads, and anonymous admin posting. Regular groups have a hard cap of 200 members and no persistent history by default. Upgrade path: regular group → supergroup is one-way and irreversible.",
+  "differentiation_matrix": {
+    "regular_group": {
+      "max_members": 200,
+      "message_history": "visible only to members present at time of message",
+      "admin_permissions": "basic (add/remove members, delete messages)",
+      "topics": false,
+      "anonymous_admin": false,
+      "join_requests": false,
+      "searchable_history": false,
+      "invite_links": "single link"
+    },
+    "supergroup": {
+      "max_members": 200000,
+      "message_history": "fully persistent, visible to all new joiners from beginning",
+      "admin_permissions": "granular (13 distinct permissions, see below)",
+      "topics": true,
+      "anonymous_admin": true,
+      "join_requests": true,
+      "searchable_history": true,
+      "invite_links": "multiple custom links with per-link limits and expiry"
+    }
+  },
+  "database_model": {
+    "conversations_table_extensions": {
+      "group_type": "ENUM('regular', 'supergroup', 'channel') NOT NULL DEFAULT 'regular'",
+      "upgraded_at": "TIMESTAMPTZ (NULL if never upgraded)",
+      "upgraded_by": "UUID FK → users.id"
+    },
+    "supergroup_settings": {
+      "table": "supergroup_config",
+      "schema": {
+        "group_id": "UUID PK FK → conversations.id",
+        "topics_enabled": "BOOLEAN DEFAULT FALSE",
+        "join_request_required": "BOOLEAN DEFAULT FALSE",
+        "anonymous_admin_enabled": "BOOLEAN DEFAULT FALSE",
+        "linked_channel_id": "UUID FK → conversations.id (nullable)",
+        "history_visible_to_new_members": "BOOLEAN DEFAULT TRUE",
+        "max_members": "INTEGER DEFAULT 200000"
+      }
+    }
+  },
+  "upgrade_protocol": {
+    "trigger": "Admin initiates: PATCH /v1/groups/{id}/upgrade",
+    "server_steps": [
+      "1. BEGIN TRANSACTION (SERIALIZABLE)",
+      "2. Verify caller is owner (cannot be delegated)",
+      "3. Verify current member count ≤ 200000",
+      "4. SET conversations.group_type = 'supergroup', upgraded_at = now()",
+      "5. INSERT supergroup_config with defaults",
+      "6. Backfill: UPDATE all existing messages SET visible_to_new_members = TRUE",
+      "7. Emit domain event: group.upgraded (for fanout to all members via WebSocket)",
+      "8. COMMIT",
+      "9. Purge group config from all CDN/cache layers"
+    ],
+    "irreversibility_rationale": "Downgrade would require hiding history from members who joined after upgrade — violates privacy contract. Architecturally prevented at DB level (no downgrade API).",
+    "failure_rollback": "If any step 1-8 fails: full ROLLBACK. Client receives 503 with retry guidance."
+  },
+  "admin_permissions_granular": [
+    "change_info", "post_messages", "edit_messages", "delete_messages",
+    "ban_users", "invite_users", "pin_messages", "manage_video_chats",
+    "restrict_members", "promote_members", "manage_chat", "post_stories",
+    "manage_topics"
+  ],
+  "anonymous_admin": {
+    "description": "Admin posts appear as group name, not personal account. Server replaces sender_id with a sentinel group_actor_id in message payload to recipients.",
+    "security": "True sender_id stored in messages_admin_audit table (service_role only). Legal hold compliant."
+  },
+  "topics_threads": {
+    "description": "Sub-conversations within a supergroup. Each topic has id, name, icon_color, is_general (exactly one per group).",
+    "table": "supergroup_topics",
+    "schema": {
+      "id": "UUID PK", "group_id": "UUID FK", "name": "VARCHAR(128)", "icon_color": "INTEGER",
+      "is_general": "BOOLEAN", "is_closed": "BOOLEAN DEFAULT FALSE",
+      "created_by": "UUID FK → users.id", "created_at": "TIMESTAMPTZ"
+    }
+  },
+  "scalability": {
+    "member_list_pagination": "Cursor-based, page size 100. No COUNT(*) queries — use estimated counts via pg_stats.",
+    "message_fan_out": "For groups > 10,000 members: switch from direct WebSocket push to pub/sub topic per group_id. Clients subscribe on join.",
+    "write_amplification": "Supergroup message write = 1 message row + 1 pub/sub event. No per-member write. Recipients pull via WebSocket subscription."
+  },
+  "observability": {
+    "metrics": [
+      "gauge: supergroup.member_count{group_id}",
+      "counter: supergroup.upgrade.total",
+      "counter: supergroup.topic.created{group_id}"
+    ]
+  }
+}

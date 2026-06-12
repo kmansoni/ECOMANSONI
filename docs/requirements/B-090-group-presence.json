@@ -1,0 +1,147 @@
+{
+  "req_id": "REQ-0090",
+  "title": "Group Member Activity & Presence (Online Status, Last Seen)",
+  "version": "1.0",
+  "status": "in-design",
+  "domain": "messaging",
+  "depends_on": ["REQ-0086"],
+  "use_cases": [
+    "group member list shows who's online (green dot)",
+    "tap member → see 'last seen 5 minutes ago'",
+    "typing indicators show in group (Alice, Bob typing...)",
+    "group settings show 'Active now' count"
+  ],
+  "presence_mechanism": {
+    "online_status": {
+      "tracking": "user opens conversation → send PRESENCE heartbeat every 30s",
+      "termination": "user closes conversation or app minimized → PRESENCE_OFFLINE",
+      "ttl": "if no heartbeat for 60s → mark offline",
+      "storage": "Redis presence:{user_id}:{conversation_id} with 60s TTL"
+    },
+    "last_seen": {
+      "tracking": "when user goes offline, log last_seen_at timestamp",
+      "storage": "group_members.last_seen_at or separate table",
+      "display": "show relative time: '5 min ago', '2 hours ago', 'yesterday'"
+    }
+  },
+  "presence_broadcast": {
+    "mechanism": "when user comes online, broadcast PRESENCE event to group",
+    "consumer": "realtime-notifier consumes from Kafka, fans out to all group members",
+    "update_ui": "member list updates to show green dot (online)"
+  },
+  "member_list_display": {
+    "sorting": [
+      "online members first (green dot)",
+      "then offline members (gray)",
+      "both sorted alphabetically"
+    ],
+    "per_member": {
+      "display": "avatar + name + (online|last_seen_5m_ago)"
+    }
+  },
+  "privacy_considerations": {
+    "online_status_visible": "to group members only",
+    "last_seen_visible": "to group members only (can disable globally)",
+    "user_option": "disable last_seen entirely (no one sees when I was last online)"
+  },
+  "group_activity_summary": {
+    "feature": "group info shows activity metrics",
+    "metrics": [
+      "members_active_today: 8 / 15",
+      "messages_today: 234",
+      "peak_hours: 9am - 12pm"
+    ]
+  },
+  "typing_indicators_in_groups": {
+    "display": "when user types in group, show 'Alice, Bob are typing...'",
+    "max_shown": "show first 2 names + '+N more if > 2'",
+    "mechanism": "same as B-066 but broadcast to group (not 1-to-1)"
+  },
+  "database_schema": {
+    "group_members_additions": {
+      "last_seen_at": "TIMESTAMP (when user last closed conversation)"
+    },
+    "presence_table_redis": {
+      "key_format": "presence:{user_id}:{conversation_id}",
+      "ttl": 60,
+      "value": {
+        "user_id": "UUID",
+        "conversation_id": "UUID",
+        "online_since": "TIMESTAMP",
+        "device": "mobile|web|desktop"
+      }
+    }
+  },
+  "presence_api": {
+    "send_heartbeat": {
+      "endpoint": "POST /v1/conversations/{id}/presence",
+      "payload": {
+        "status": "online",
+        "device": "mobile"
+      },
+      "response": {
+        "received_at": "2026-02-15T15:35:00Z"
+      }
+    },
+    "get_group_presence": {
+      "endpoint": "GET /v1/conversations/{id}/presence",
+      "response": {
+        "online_members": [
+          {
+            "user_id": "UUID",
+            "name": "Alice",
+            "online_since": "2026-02-15T15:30:00Z"
+          }
+        ],
+        "offline_members": [
+          {
+            "user_id": "UUID",
+            "name": "Bob",
+            "last_seen_at": "2026-02-15T15:10:00Z"
+          }
+        ]
+      }
+    }
+  },
+  "presence_efficiency": {
+    "coalescence": "heartbeat every 30s (not every keystroke)",
+    "redis_optimization": "use Redis SET with EX (auto-expire) for TTL management",
+    "bulk_presence": "when user opens group, fetch all member presence in 1 query"
+  },
+  "privacy_settings": {
+    "hide_online_status": {
+      "global_setting": "show 'online' status to no one",
+      "effect": "member list always shows members without online indicator"
+    },
+    "hide_last_seen": {
+      "global_setting": "don't share when I was last seen",
+      "effect": "offline members show no timestamp"
+    }
+  },
+  "testing": {
+    "scenarios": [
+      "user opens group → sends presence heartbeat",
+      "other members see user marked online (green dot)",
+      "user closes group → sends presence_offline after 30s silence",
+      "members see last_seen_at updated",
+      "Alice typing in group → all see 'Alice is typing...'",
+      "privacy: hide_online_status=true → no one sees online/offline",
+      "10 members typing → show 'Alice, Bob +8 more typing'",
+      "group activity summary shows '5/15 active today'"
+    ]
+  },
+  "monitoring": {
+    "metrics": [
+      "presence.heartbeats_per_sec",
+      "presence.online_members_per_group_avg",
+      "presence.redis_key_count",
+      "presence.latency_p95_ms",
+      "typing_indicators.per_sec"
+    ],
+    "alerts": [
+      "presence latency > 1s p95",
+      "Redis presence keys exploding (memory leak?)",
+      "heartbeat processing fails > 2%"
+    ]
+  }
+}

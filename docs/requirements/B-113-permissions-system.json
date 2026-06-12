@@ -1,0 +1,366 @@
+{
+  "id": "B-113",
+  "title": "Advanced Permission System & Role Templates",
+  "description": "Hierarchical permissions with role templates, permission inheritance, granular group-specific role customization, and audit logging of permission changes",
+  "status": "draft",
+  "priority": "P1",
+  "complexity": "M",
+  "domain": "auth",
+  "technologies": ["Postgres", "Redis", "Casbin"],
+
+  "overview": {
+    "purpose": "Enable flexible, hierarchical permission management with inheritance and templates",
+    "target_scale": "Groups with custom roles, 100k+ distinct permission configurations",
+    "key_requirements": [
+      "Built-in admin/moderator/member roles + custom roles",
+      "Permission inheritance with override capability",
+      "Role templates for quick group setup",
+      "Audit trail of permission changes",
+      "Real-time permission validation (Redis cache)"
+    ]
+  },
+
+  "database_schema": {
+    "tables": [
+      {
+        "name": "group_roles",
+        "purpose": "Custom roles within a group",
+        "columns": [
+          {"name": "role_id", "type": "UUID PRIMARY KEY"},
+          {"name": "conversation_id", "type": "UUID NOT NULL"},
+          {"name": "role_name", "type": "VARCHAR NOT NULL"},
+          {"name": "role_type", "type": "VARCHAR", "enum": ["admin", "moderator", "member", "custom"]},
+          {"name": "display_color", "type": "VARCHAR", "description": "Hex color for UI display"},
+          {"name": "display_order", "type": "INT"},
+          {"name": "created_at", "type": "TIMESTAMP NOT NULL"},
+          {"name": "updated_at", "type": "TIMESTAMP NOT NULL"}
+        ],
+        "indexes": ["UNIQUE(conversation_id, role_name)"]
+      },
+      {
+        "name": "role_permissions",
+        "purpose": "Permissions assigned to roles",
+        "columns": [
+          {"name": "permission_id", "type": "BIGINT PRIMARY KEY"},
+          {"name": "role_id", "type": "UUID NOT NULL"},
+          {"name": "permission_key", "type": "VARCHAR NOT NULL", "description": "e.g., 'message:send', 'member:invite', 'settings:edit'"},
+          {"name": "granted_at", "type": "TIMESTAMP NOT NULL"},
+          {"name": "expires_at", "type": "TIMESTAMP", "description": "Optional: time-limited permission"}
+        ],
+        "indexes": ["UNIQUE(role_id, permission_key)", "INDEX(role_id)"]
+      },
+      {
+        "name": "permission_catalog",
+        "purpose": "Master list of all available permissions",
+        "columns": [
+          {"name": "permission_key", "type": "VARCHAR PRIMARY KEY"},
+          {"name": "display_name", "type": "VARCHAR"},
+          {"name": "description", "type": "TEXT"},
+          {"name": "category", "type": "VARCHAR", "description": "e.g., messaging, moderation, settings, member_management"},
+          {"name": "risk_level", "type": "VARCHAR", "enum": ["low", "medium", "high"], "description": "For audit flagging"},
+          {"name": "default_roles", "type": "JSONB", "description": "[\"admin\", \"moderator\"]"}
+        ]
+      },
+      {
+        "name": "role_templates",
+        "purpose": "Reusable role templates for new groups",
+        "columns": [
+          {"name": "template_id", "type": "UUID PRIMARY KEY"},
+          {"name": "template_name", "type": "VARCHAR NOT NULL"},
+          {"name": "template_type", "type": "VARCHAR", "enum": ["builtin", "community", "custom"]},
+          {"name": "created_by_user_id", "type": "UUID"},
+          {"name": "description", "type": "TEXT"},
+          {"name": "permission_set", "type": "JSONB", "description": "{\"admin\": [\"msg:send\", ...], \"moderator\": [...]}"},
+          {"name": "created_at", "type": "TIMESTAMP NOT NULL"},
+          {"name": "usage_count", "type": "INT", "default": 0}
+        ],
+        "indexes": ["INDEX(template_type)"]
+      },
+      {
+        "name": "group_member_roles",
+        "purpose": "Assign roles to members in groups",
+        "columns": [
+          {"name": "member_role_id", "type": "BIGINT PRIMARY KEY"},
+          {"name": "conversation_id", "type": "UUID NOT NULL"},
+          {"name": "user_id", "type": "UUID NOT NULL"},
+          {"name": "role_id", "type": "UUID NOT NULL"},
+          {"name": "assigned_at", "type": "TIMESTAMP NOT NULL"},
+          {"name": "assigned_by_user_id", "type": "UUID"},
+          {"name": "expires_at", "type": "TIMESTAMP", "description": "Optional: temporary role"}
+        ],
+        "indexes": ["UNIQUE(conversation_id, user_id, role_id)", "INDEX(conversation_id, role_id)"]
+      },
+      {
+        "name": "permission_audit_log",
+        "purpose": "Track permission changes for compliance",
+        "columns": [
+          {"name": "audit_id", "type": "BIGINT PRIMARY KEY"},
+          {"name": "conversation_id", "type": "UUID NOT NULL"},
+          {"name": "action", "type": "VARCHAR", "enum": ["role_created", "role_deleted", "permission_granted", "permission_revoked", "member_role_assigned", "member_role_revoked"]},
+          {"name": "role_id", "type": "UUID"},
+          {"name": "permission_key", "type": "VARCHAR"},
+          {"name": "user_id", "type": "UUID", "description": "Who was affected"},
+          {"name": "changed_by_user_id", "type": "UUID", "description": "Who made the change"},
+          {"name": "reason", "type": "VARCHAR", "description": "Optional reason for the change"},
+          {"name": "changed_at", "type": "TIMESTAMP NOT NULL"}
+        ],
+        "indexes": ["INDEX(conversation_id, changed_at DESC)", "INDEX(user_id, changed_at)"]
+      }
+    ]
+  },
+
+  "permission_catalog": {
+    "messaging": [
+      {"key": "message:send", "display_name": "Send messages", "default_roles": ["admin", "moderator", "member"]},
+      {"key": "message:edit", "display_name": "Edit own/others' messages", "default_roles": ["admin", "moderator"]},
+      {"key": "message:delete", "display_name": "Delete messages", "default_roles": ["admin", "moderator"]},
+      {"key": "message:pin", "display_name": "Pin messages", "default_roles": ["admin", "moderator"]},
+      {"key": "media:upload", "display_name": "Upload media", "default_roles": ["admin", "moderator", "member"]},
+      {"key": "poll:create", "display_name": "Create polls", "default_roles": ["admin", "moderator", "member"]}
+    ],
+    "moderation": [
+      {"key": "message:hide", "display_name": "Hide inappropriate messages", "risk_level": "high", "default_roles": ["admin", "moderator"]},
+      {"key": "member:warn", "display_name": "Warn members", "risk_level": "high", "default_roles": ["admin", "moderator"]},
+      {"key": "member:mute", "display_name": "Mute/unmute members", "risk_level": "high", "default_roles": ["admin", "moderator"]},
+      {"key": "member:suspend", "display_name": "Suspend members", "risk_level": "high", "default_roles": ["admin"]},
+      {"key": "member:ban", "display_name": "Ban/unban members", "risk_level": "high", "default_roles": ["admin"]}
+    ],
+    "member_management": [
+      {"key": "member:invite", "display_name": "Invite members", "default_roles": ["admin", "moderator", "member"]},
+      {"key": "member:remove", "display_name": "Remove members", "default_roles": ["admin", "moderator"]},
+      {"key": "member:role_assign", "display_name": "Assign roles to members", "risk_level": "high", "default_roles": ["admin"]},
+      {"key": "member:view_list", "display_name": "View member list", "default_roles": ["admin", "moderator", "member"]}
+    ],
+    "settings": [
+      {"key": "settings:edit", "display_name": "Edit group settings", "risk_level": "medium", "default_roles": ["admin"]},
+      {"key": "settings:delete_group", "display_name": "Delete group", "risk_level": "high", "default_roles": ["admin"]},
+      {"key": "role:manage", "display_name": "Manage roles", "risk_level": "high", "default_roles": ["admin"]}
+    ]
+  },
+
+  "api_specification": {
+    "endpoints": [
+      {
+        "method": "GET",
+        "path": "/v1/conversations/{conversation_id}/roles",
+        "description": "List all roles in group",
+        "response": [
+          {"role_id": "...", "role_name": "admin", "role_type": "admin", "permission_count": 25}
+        ]
+      },
+      {
+        "method": "POST",
+        "path": "/v1/conversations/{conversation_id}/roles",
+        "description": "Create custom role",
+        "auth": "admin",
+        "request": {
+          "role_name": "Moderator Lite",
+          "permissions": ["message:delete", "member:warn"]
+        },
+        "response": {"role_id": "...", "role_name": "Moderator Lite"}
+      },
+      {
+        "method": "PATCH",
+        "path": "/v1/conversations/{conversation_id}/roles/{role_id}/permissions",
+        "description": "Grant permission to role",
+        "auth": "admin",
+        "request": {
+          "permission_key": "message:edit",
+          "action": "grant",
+          "expires_at": "optional_2026-02-26T14:30:00Z"
+        }
+      },
+      {
+        "method": "POST",
+        "path": "/v1/conversations/{conversation_id}/members/{user_id}/roles",
+        "description": "Assign role to member",
+        "auth": "admin",
+        "request": {
+          "role_id": "...",
+          "expires_at": "optional"
+        }
+      },
+      {
+        "method": "DELETE",
+        "path": "/v1/conversations/{conversation_id}/members/{user_id}/roles/{role_id}",
+        "description": "Revoke role from member",
+        "auth": "admin"
+      },
+      {
+        "method": "GET",
+        "path": "/v1/conversations/{conversation_id}/members/{user_id}/permissions",
+        "description": "Get effective permissions for a member",
+        "response": {
+          "permissions": ["message:send", "message:edit", "member:invite"],
+          "effective_roles": ["admin", "moderator"]
+        }
+      },
+      {
+        "method": "GET",
+        "path": "/v1/role-templates",
+        "description": "List role templates (builtin + community)",
+        "response": [
+          {"template_id": "...", "template_name": "Standard Community", "usage_count": 5000}
+        ]
+      },
+      {
+        "method": "POST",
+        "path": "/v1/conversations/{conversation_id}/apply-template",
+        "description": "Apply role template to group",
+        "auth": "admin",
+        "request": {"template_id": "..."}
+      },
+      {
+        "method": "GET",
+        "path": "/v1/conversations/{conversation_id}/audit-log",
+        "description": "Get permission change audit log",
+        "auth": "admin",
+        "response": [
+          {
+            "audit_id": 123,
+            "action": "role_created",
+            "role_name": "Moderator Lite",
+            "changed_by": "Alice",
+            "changed_at": "2026-02-19T12:34:00Z"
+          }
+        ]
+      }
+    ]
+  },
+
+  "implementation_details": {
+    "permission_evaluation": {
+      "approach": "Redis cache for fast permission lookups",
+      "cache_key": "perms:conversation_id:user_id → set of permission_keys",
+      "ttl": "30min, invalidated on role/permission change",
+      "fallback": "Query Postgres role_permissions + group_member_roles if cache miss"
+    },
+    "role_inheritance": {
+      "model": "Flat role assignment (no role hierarchy), but permissions can be composed",
+      "example": "admin role includes all moderator permissions + admin-only perms"
+    },
+    "audit_logging": {
+      "trigger": "On every role/permission change",
+      "retention": "2 years for compliance",
+      "sensitivity": "High-risk actions (ban, role_assign) logged with extra detail"
+    },
+    "templates": {
+      "builtin_templates": ["Standard Community", "Enterprise", "Moderation-Heavy"],
+      "community_templates": "Users can save their role config as template (future)"
+    }
+  },
+
+  "monitoring": {
+    "metrics": [
+      "permission_check_latency_p95_ms (target <10ms from cache)",
+      "cache_hit_rate (target >95%)",
+      "permission_change_frequency",
+      "high_risk_permission_changes_count"
+    ],
+    "alerts": [
+      "permission_check_latency > 50ms (cache miss spike)",
+      "multiple_ban_actions from single moderator in <1h (potential abuse)"
+    ]
+  },
+
+  "testing_scenarios": [
+    {
+      "id": "T-113-1",
+      "title": "Custom role creation with specific permissions",
+      "steps": ["Admin creates role 'Content Reviewer' with [message:hide, member:warn]", "Verify role_permissions table"],
+      "expected": "Role created, permissions assigned correctly"
+    },
+    {
+      "id": "T-113-2",
+      "title": "Permission inheritance check",
+      "steps": ["Member has admin role", "Query effective permissions"],
+      "expected": "All admin + moderator + member permissions returned"
+    },
+    {
+      "id": "T-113-3",
+      "title": "Temporary role assignment (time-limited)",
+      "steps": ["Assign moderator role with expires_at=tomorrow", "Check member permissions", "Query after expiry"],
+      "expected": "Permission honored until expiry, revoked automatically"
+    },
+    {
+      "id": "T-113-4",
+      "title": "Permission cache invalidation",
+      "steps": ["Member has message:send", "Admin revokes permission", "Query member permissions"],
+      "expected": "Cache invalidated immediately, permission revoked"
+    },
+    {
+      "id": "T-113-5",
+      "title": "High-risk permission audit log",
+      "steps": ["Admin bans user", "Query audit log"],
+      "expected": "Action logged with admin_user_id, timestamp, reason"
+    },
+    {
+      "id": "T-113-6",
+      "title": "Role template application",
+      "steps": ["Apply 'Enterprise' template to new group", "Verify roles created + permissions assigned"],
+      "expected": "All template roles and permissions replicated in group"
+    },
+    {
+      "id": "T-113-7",
+      "title": "Member with multiple roles",
+      "steps": ["Assign user both 'Moderator' and 'Content Lead' roles", "Query permissions"],
+      "expected": "Union of both roles' permissions returned"
+    },
+    {
+      "id": "T-113-8",
+      "title": "Revoke specific permission from role",
+      "steps": ["Remove message:edit from moderator role", "Check existing moderators"],
+      "expected": "Existing moderators' effective permissions updated (cache invalidated)"
+    },
+    {
+      "id": "T-113-9",
+      "title": "Permission check latency under load",
+      "steps": ["1000 concurrent permission checks for same member"],
+      "expected": "p95 latency <10ms (from Redis)"
+    },
+    {
+      "id": "T-113-10",
+      "title": "Restricted action by non-admin",
+      "steps": ["Non-admin user attempts DELETE role", "API rejects"],
+      "expected": "403 Forbidden, only admins can manage roles"
+    },
+    {
+      "id": "T-113-11",
+      "title": "Default permissions for new member",
+      "steps": ["User joins group, assigned default 'member' role"],
+      "expected": "Member has [message:send, media:upload, poll:create, member:invite] permissions"
+    },
+    {
+      "id": "T-113-12",
+      "title": "Audit log export for compliance",
+      "steps": ["Query audit log for date range", "Export to CSV"],
+      "expected": "All permission changes with actor/timestamp included"
+    },
+    {
+      "id": "T-113-13",
+      "title": "Permission expiry job runs at schedule",
+      "steps": ["Create temp moderator role with 1 hour expiry", "Check after 1h"],
+      "expected": "Automatic revocation via pg_cron job"
+    },
+    {
+      "id": "T-113-14",
+      "title": "Prevent permission elevation exploit",
+      "steps": ["Moderator attempts to grant themselves admin role"],
+      "expected": "API rejects, only higher-role can grant"
+    },
+    {
+      "id": "T-113-15",
+      "title": "Permission catalog consistency",
+      "steps": ["Verify all role defaults reference catalog keys"],
+      "expected": "No orphaned permissions, all referenced keys in catalog"
+    }
+  ],
+
+  "dependencies": ["B-086", "B-087"],
+  "future_enhancements": [
+    "Role hierarchy with inheritance",
+    "Conditional permissions (e.g., 'moderate messages only from 6am-6pm')",
+    "Delegation (admin delegates ban-only permission temporarily)",
+    "Policy as code (YAML-defined role templates)"
+  ]
+}

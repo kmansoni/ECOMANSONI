@@ -1,0 +1,90 @@
+{
+  "req_id": "REQ-0125",
+  "title": "Chat Message Drafts (Per-Conversation Composer State Persistence)",
+  "version": "1.0",
+  "status": "in-design",
+  "domain": "messaging",
+  "priority": "P1",
+  "depends_on": [],
+  "description": "Unsent composer text (including reply context, mention state, and formatting entities) is automatically saved as a draft when a user navigates away from a conversation. Draft is restored when user returns. Drafts are per-conversation, per-device. Multi-device sync optional (trade-off: see below). Distinct from content-creation drafts (reels/posts) — this spec covers chat message composer state only.",
+  "scope_clarification": {
+    "in_scope": "Chat message composer text + reply_to_message_id + entities (bold/italic/mention/code) + cursor position",
+    "out_of_scope": "Reel drafts, story drafts, post drafts — handled by separate content-creation pipeline"
+  },
+  "data_model": {
+    "table": "chat_drafts",
+    "schema": {
+      "id": "UUID PK",
+      "user_id": "UUID FK → users.id NOT NULL",
+      "conversation_id": "UUID FK → conversations.id NOT NULL",
+      "device_id": "UUID FK → user_devices.id NOT NULL (if device-scoped) OR NULL (if cloud-synced)",
+      "text": "TEXT (max 4096 chars, matching message max length)",
+      "entities": "JSONB[] (formatting entities: {type, offset, length, [url|user_id]})",
+      "reply_to_message_id": "UUID FK → messages.id (nullable)",
+      "updated_at": "TIMESTAMPTZ NOT NULL DEFAULT now()"
+    },
+    "unique_constraint": "UNIQUE (user_id, conversation_id, device_id) — one draft per user per conversation per device",
+    "rls": "SELECT/INSERT/UPDATE/DELETE restricted to owner: user_id = auth.uid()",
+    "index": "idx_chat_drafts_user_conv ON chat_drafts(user_id, conversation_id) WHERE device_id IS NULL OR device_id = current_device_id"
+  },
+  "sync_strategy": {
+    "device_local": {
+      "description": "Draft stored in IndexedDB/SQLite on device. No server sync. Zero latency, zero bandwidth. Lost if device cleared.",
+      "trade_off": "Draft not available on other devices."
+    },
+    "cloud_synced": {
+      "description": "Draft synced to server, available across devices. Updated on each keystroke (debounced 2s).",
+      "trade_off": "Latency on first keystroke after debounce. Additional DB write amplification.",
+      "conflict_resolution": "Last-write-wins based on updated_at. No vector clocks needed — single-user, multi-device conflict is rare and low-stakes."
+    },
+    "recommended": "Device-local by default with optional cloud sync (Settings → Privacy → Sync drafts)"
+  },
+  "api": {
+    "save_draft": {
+      "endpoint": "PUT /v1/drafts/{conversation_id}",
+      "body": {
+        "text": "string",
+        "entities": "EntityObject[]",
+        "reply_to_message_id": "UUID?"
+      },
+      "behavior": "UPSERT on (user_id, conversation_id). Empty text → DELETE draft (cleared draft).",
+      "idempotency": "Last-write-wins. No idempotency key needed — overwrite is safe.",
+      "rate_limit": "10 req/min per user (debounced on client, enforced on server)"
+    },
+    "get_draft": {
+      "endpoint": "GET /v1/drafts/{conversation_id}",
+      "response": { "text": "string", "entities": "EntityObject[]", "reply_to_message_id": "UUID?", "updated_at": "ISO8601" },
+      "cache": "SWR on client: serve stale immediately, revalidate in background"
+    },
+    "delete_draft": {
+      "trigger": "Message sent OR user clears composer manually",
+      "endpoint": "DELETE /v1/drafts/{conversation_id}",
+      "also_triggered_by": "PUT with empty text body (idempotent empty = delete)"
+    },
+    "bulk_fetch": {
+      "endpoint": "GET /v1/drafts",
+      "description": "Returns all non-empty drafts for the authenticated user. Used on app startup to show draft indicators in chat list.",
+      "response": "[{conversation_id, text_preview (first 50 chars), updated_at}]"
+    }
+  },
+  "chat_list_integration": {
+    "draft_indicator": "In conversation list: if draft exists for a conversation, show 'Draft:' prefix in last-message preview (styled in red/accent color). updated_at used for list sorting — conversation with draft bubbles up if no newer messages.",
+    "no_draft_after_send": "On successful message send, DELETE draft atomically before confirming send to client to prevent stale draft restoration."
+  },
+  "security": {
+    "draft_injection": "Draft text validated on save (same rules as message text: max length, no null bytes). Entities validated for offset/length bounds against text length.",
+    "orphaned_drafts": "Cron job purges drafts for deleted conversations hourly. Cascade delete on conversation/user deletion."
+  },
+  "failure_handling": {
+    "save_failure": "Client retries up to 3 times with exponential backoff. On persistent failure: persist to localStorage as fallback. Show 'Draft not saved' indicator.",
+    "reply_target_deleted": "On draft restore: if reply_to_message_id refers to deleted message, restore text only, clear reply context. Show 'Reply target was deleted' toast."
+  },
+  "observability": {
+    "metrics": [
+      "counter: chat_draft.saved",
+      "counter: chat_draft.restored",
+      "counter: chat_draft.deleted{reason=sent|manual|orphaned}",
+      "gauge: chat_draft.active_count (total non-empty drafts across all users)"
+    ]
+  }
+}
