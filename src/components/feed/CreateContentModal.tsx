@@ -43,7 +43,7 @@ interface CreateContentModalProps {
 
 type TabType = 'publications' | 'stories' | 'reels' | 'live';
 type CameraMode = 'camera' | 'gallery';
-type FlashMode = 'off' | 'on' | 'auto';
+type FlashMode = 'off' | 'on' | 'auto' | 'screen';
 type StoryComposeMode = 'camera' | 'text';
 
 const TABS: Array<{ id: TabType; label: string; icon: LucideIcon; contentType: ContentType }> = [
@@ -53,7 +53,13 @@ const TABS: Array<{ id: TabType; label: string; icon: LucideIcon; contentType: C
   { id: 'live', label: 'Прямой эфир', icon: Radio, contentType: 'live' },
 ];
 
-const ZOOM_LEVELS = [1, 2, 3] as const;
+// Динамические уровни зума: 0.5x → 1x → 2x → 3x → 5x → 8x → 15x
+// iPhone: до 15x (Pro Max), Samsung Galaxy S24 Ultra: до 100x (Space Zoom)
+// clamp к возможностям камеры в CameraHost
+const BASE_ZOOM_LEVELS = [0.5, 1, 2, 3, 5, 8, 15] as const;
+const ZOOM_LEVELS_LABELS: Record<number, string> = {
+  0.5: '0.5x', 1: '1x', 2: '2x', 3: '3x', 5: '5x', 8: '8x', 15: '15x',
+};
 
 type QuickPanel = 'audio' | 'effects' | null;
 
@@ -110,6 +116,7 @@ export function CreateContentModal({ isOpen, onClose, onSuccess, initialTab = 'p
   const [isCameraRecording, setIsCameraRecording] = useState(false);
   const [cameraDebug, setCameraDebug] = useState<CameraDebugSnapshot | null>(null);
   const [flashMode, setFlashMode] = useState<FlashMode>('off');
+  const [screenFlashActive, setScreenFlashActive] = useState(false);
   const [storyComposeMode, setStoryComposeMode] = useState<StoryComposeMode>('camera');
   const [textStoryText, setTextStoryText] = useState('');
   const [textStoryBackgroundId, setTextStoryBackgroundId] = useState<(typeof TEXT_STORY_BACKGROUNDS)[number]['id']>('gradient-aurora');
@@ -144,6 +151,15 @@ export function CreateContentModal({ isOpen, onClose, onSuccess, initialTab = 'p
   const [showReelEditor, setShowReelEditor] = useState(false);
   const [reelRecordingElapsedMs, setReelRecordingElapsedMs] = useState(0);
   const reelRecordingStartRef = useRef(0);
+  // Recording timer durations: 0-30s, 0-1m, 0-3m, 0-10m, 0-15m
+  const RECORDING_DURATIONS = [
+    { label: '30с', ms: 30_000 },
+    { label: '1м', ms: 60_000 },
+    { label: '3м', ms: 180_000 },
+    { label: '10м', ms: 600_000 },
+    { label: '15м', ms: 900_000 },
+  ] as const;
+  const [reelMaxRecordingMs, setReelMaxRecordingMs] = useState<number>(RECORDING_DURATIONS[0].ms);
 
   // CRITICAL FIX #1: EditorState Management (перемещено из TabEditor)
   const [editorState, dispatchEditor] = useReducer(
@@ -156,6 +172,7 @@ export function CreateContentModal({ isOpen, onClose, onSuccess, initialTab = 'p
   const cameraHostRef = useRef<CameraHostHandle | null>(null);
   const publishInFlightRef = useRef(false);
   const captureTimerRef = useRef<number | null>(null);
+  const screenFlashVideoRef = useRef<HTMLVideoElement | null>(null);
 
   useEffect(() => {
     // CRITICAL FIX #5: URL cleanup - предотвращение утечек памяти
@@ -612,6 +629,7 @@ export function CreateContentModal({ isOpen, onClose, onSuccess, initialTab = 'p
     setReelFaceEnhance(false);
     setReelAiEnhance(false);
     setReelMaxDurationSec(60);
+    setReelMaxRecordingMs(RECORDING_DURATIONS[0].ms);
     setReelTaggedUsers('');
     setReelLocationName('');
     setReelAudience('public');
@@ -640,6 +658,22 @@ export function CreateContentModal({ isOpen, onClose, onSuccess, initialTab = 'p
 
   const cycleFlash = () => {
     void (async () => {
+      if (facingMode === 'user') {
+        // Фронтальная камера: только экранная вспышка
+        const nextMode: FlashMode = flashMode === 'screen' ? 'off' : 'screen';
+        if (nextMode === 'screen') {
+          setFlashMode('screen');
+          setScreenFlashActive(true);
+          // Скрин-флеш: белый экран на ~150мс
+          setTimeout(() => setScreenFlashActive(false), 150);
+        } else {
+          setFlashMode('off');
+          setScreenFlashActive(false);
+        }
+        return;
+      }
+
+      // Задняя камера: физическая вспышка
       const nextMode: FlashMode = flashMode === 'off' ? 'on' : 'off';
       if (nextMode === 'on') {
         const enabled = await cameraHostRef.current?.setTorchEnabled(true);
@@ -657,15 +691,15 @@ export function CreateContentModal({ isOpen, onClose, onSuccess, initialTab = 'p
 
   const cycleZoom = () => {
     setZoomIndex(prev => {
-      const nextIndex = (prev + 1) % ZOOM_LEVELS.length;
-      void cameraHostRef.current?.setZoomLevel(ZOOM_LEVELS[nextIndex]);
+      const nextIndex = (prev + 1) % BASE_ZOOM_LEVELS.length;
+      void cameraHostRef.current?.setZoomLevel(BASE_ZOOM_LEVELS[nextIndex]);
       return nextIndex;
     });
   };
 
   const setZoomLevelIndex = (nextIndex: number) => {
     setZoomIndex(nextIndex);
-    void cameraHostRef.current?.setZoomLevel(ZOOM_LEVELS[nextIndex]);
+    void cameraHostRef.current?.setZoomLevel(BASE_ZOOM_LEVELS[nextIndex]);
   };
 
   const cycleTimer = () => {
@@ -713,12 +747,17 @@ export function CreateContentModal({ isOpen, onClose, onSuccess, initialTab = 'p
   const handleCameraReadyChange = useCallback((ready: boolean) => {
     setIsCameraReady(ready);
     if (ready) {
-      void cameraHostRef.current?.setZoomLevel(ZOOM_LEVELS[zoomIndex]);
-      if (flashMode === 'on') {
+      void cameraHostRef.current?.setZoomLevel(BASE_ZOOM_LEVELS[zoomIndex]);
+      if (facingMode === 'user' && flashMode === 'screen') {
+        // При повторном открытии камеры сбрасываем скрин-флеш
+        setFlashMode('off');
+        setScreenFlashActive(false);
+      }
+      if (facingMode === 'environment' && flashMode === 'on') {
         void cameraHostRef.current?.setTorchEnabled(true);
       }
     }
-  }, [flashMode, zoomIndex]);
+  }, [flashMode, zoomIndex, facingMode]);
 
   const handleCameraDebugChange = useCallback((snapshot: CameraDebugSnapshot) => {
     setCameraDebug(snapshot);
@@ -761,7 +800,15 @@ export function CreateContentModal({ isOpen, onClose, onSuccess, initialTab = 'p
   };
 
   const flipCamera = () => {
-    setFacingMode(prev => prev === 'user' ? 'environment' : 'user');
+    setFacingMode(prev => {
+      const next = prev === 'user' ? 'environment' : 'user';
+      // Сброс flash при переключении на фронтальную камеру
+      if (next === 'user') {
+        setFlashMode('off');
+        setScreenFlashActive(false);
+      }
+      return next;
+    });
   };
 
   if (!isOpen) return null;
@@ -770,13 +817,16 @@ export function CreateContentModal({ isOpen, onClose, onSuccess, initialTab = 'p
   const isCameraAvailable = activeTab !== 'live';
   const captureMode: CaptureMode = activeTab === 'reels' ? 'reel' : 'story';
   const isPreviewVideo = selectedFile ? selectedFile.type.startsWith('video/') : activeTab === 'reels';
-  const zoomLabel = `${ZOOM_LEVELS[zoomIndex]}x`;
+  const zoomLabel = ZOOM_LEVELS_LABELS[BASE_ZOOM_LEVELS[zoomIndex]] ?? `${BASE_ZOOM_LEVELS[zoomIndex]}x`;
   const isTextStoryMode = activeTab === 'stories' && storyComposeMode === 'text';
   const textStoryBackground = TEXT_STORY_BACKGROUNDS.find((item) => item.id === textStoryBackgroundId) ?? TEXT_STORY_BACKGROUNDS[0];
   const textStoryFont = TEXT_STORY_FONTS.find((item) => item.id === textStoryFontId) ?? TEXT_STORY_FONTS[0];
 
   const FlashIcon = flashMode === 'off' ? ZapOff : Zap;
-  const flashColor = flashMode === 'on' ? 'text-yellow-400' : flashMode === 'auto' ? 'text-blue-400' : 'text-white/70';
+  const flashColor =
+    flashMode === 'screen' ? 'text-white' :
+    flashMode === 'on' ? 'text-yellow-400' :
+    flashMode === 'auto' ? 'text-blue-400' : 'text-white/70';
 
   return (
     <div
@@ -802,7 +852,8 @@ export function CreateContentModal({ isOpen, onClose, onSuccess, initialTab = 'p
             isActive={isOpen && isCameraAvailable && cameraMode === 'camera' && !isTextStoryMode}
             mode={captureMode}
             facingMode={facingMode}
-            previewZoom={ZOOM_LEVELS[zoomIndex]}
+            previewZoom={BASE_ZOOM_LEVELS[zoomIndex]}
+            maxRecordingMs={reelMaxRecordingMs}
             className={cn(
               'absolute inset-0 transition-opacity duration-150',
               cameraMode === 'camera' && !previewUrl && !isTextStoryMode ? 'opacity-100' : 'opacity-0 pointer-events-none',
@@ -825,6 +876,11 @@ export function CreateContentModal({ isOpen, onClose, onSuccess, initialTab = 'p
             }}
             onDebugChange={handleCameraDebugChange}
           />
+        )}
+
+        {/* Screen flash overlay (for front camera) */}
+        {screenFlashActive && (
+          <div className="absolute inset-0 bg-white animate-pulse pointer-events-none z-30" />
         )}
 
         {/* Preview (photo/video after capture or gallery pick) */}
@@ -984,8 +1040,8 @@ export function CreateContentModal({ isOpen, onClose, onSuccess, initialTab = 'p
                   <span>Зум</span>
                   <span>{zoomLabel}</span>
                 </div>
-                <div className="grid grid-cols-3 gap-2">
-                  {ZOOM_LEVELS.map((level, index) => (
+                <div className="grid grid-cols-4 gap-2">
+                  {BASE_ZOOM_LEVELS.map((level, index) => (
                     <button
                       key={level}
                       onClick={() => setZoomLevelIndex(index)}
@@ -1010,13 +1066,17 @@ export function CreateContentModal({ isOpen, onClose, onSuccess, initialTab = 'p
                   onClick={cycleFlash}
                   className={cn(
                     'rounded-xl border px-3 py-2 text-left transition-colors',
-                    flashMode === 'on'
+                    flashMode !== 'off'
                       ? 'border-yellow-300/70 bg-yellow-500/20 text-yellow-100'
                       : 'border-white/15 bg-white/10 text-white/80 hover:bg-white/15',
                   )}
                 >
                   <div className="font-semibold">Вспышка</div>
-                  <div className="text-[11px] opacity-70">{flashMode === 'on' ? 'Вкл' : 'Выкл'}</div>
+                  <div className="text-[11px] opacity-70">
+                    {facingMode === 'user'
+                      ? flashMode === 'screen' ? 'Экран: вкл' : 'Экран: выкл'
+                      : flashMode === 'on' ? 'Вкл' : 'Выкл'}
+                  </div>
                 </button>
                 <button
                   onClick={cycleTimer}
@@ -1032,9 +1092,30 @@ export function CreateContentModal({ isOpen, onClose, onSuccess, initialTab = 'p
                 </button>
               </div>
 
+              <div>
+                <div className="mb-2 text-white/80 text-xs">Макс. длительность записи</div>
+                <div className="grid grid-cols-5 gap-1">
+                  {RECORDING_DURATIONS.map((d) => (
+                    <button
+                      key={d.ms}
+                      onClick={() => setReelMaxRecordingMs(d.ms)}
+                      className={cn(
+                        'rounded-lg border px-1 py-1.5 text-center font-semibold text-[10px] transition-colors',
+                        reelMaxRecordingMs === d.ms
+                          ? 'border-blue-300 bg-blue-600/70 text-white'
+                          : 'border-white/15 bg-white/10 text-white/80 hover:bg-white/15',
+                      )}
+                    >
+                      {d.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
               <div className="rounded-xl border border-white/10 bg-white/5 p-3 text-white/70">
                 <div>Камера: {facingMode === 'environment' ? 'задняя' : 'фронтальная'}</div>
                 <div>Torch: {cameraDebug?.supportsTorch ? 'доступен' : 'недоступен'}</div>
+                <div>Зум: {cameraDebug?.supportsZoom ? 'аппаратный' : 'цифровой'}</div>
               </div>
             </div>
           </div>
@@ -1326,38 +1407,94 @@ export function CreateContentModal({ isOpen, onClose, onSuccess, initialTab = 'p
               thumbnailUrl={lastGalleryThumbnailUrl}
               mediaKind={lastGalleryMediaKind}
               permission={galleryPermission}
-              disabled={isCameraRecording}
+              disabled={isCameraRecording || timerCountdown != null}
               onClick={openGalleryPicker}
             />
 
-            {/* Main capture button */}
+            {/* Main capture button — 3D Liquid Glass */}
             <div className="flex flex-col items-center gap-2">
               {!isCameraReady && (
                 <Loader2 className="w-5 h-5 text-white/60 animate-spin" />
               )}
-              <button
-                onClick={handleCapture}
-                disabled={!isCameraReady || timerCountdown != null}
-                className={cn(
-                  'w-[72px] h-[72px] rounded-full border-4 transition-all active:scale-95',
-                  isCameraRecording
-                    ? 'border-red-500 bg-red-500/30 scale-90'
-                    : 'border-white bg-white/20 hover:bg-white/30',
-                  (!isCameraReady || timerCountdown != null) && 'opacity-40',
-                )}
-                aria-label={activeTab === 'reels' ? (isCameraRecording ? 'Стоп' : 'Запись') : 'Снимок'}
-              >
-                {timerCountdown != null ? (
-                  <span className="text-2xl font-bold text-white">{timerCountdown}</span>
-                ) : isCameraRecording && (
-                  <span className="block w-6 h-6 rounded bg-red-500 mx-auto" />
-                )}
-              </button>
+
+              {/* Recording Timer Ring */}
+              {isCameraRecording && (
+                <div className="relative flex items-center justify-center">
+                  <svg className="w-[88px] h-[88px] -rotate-90" viewBox="0 0 88 88">
+                    {/* Background ring */}
+                    <circle cx="44" cy="44" r="40" fill="none" stroke="white/20" strokeWidth="4" />
+                    {/* Progress ring — цвет меняется: зелёный → жёлтый → красный */}
+                    <circle
+                      cx="44"
+                      cy="44"
+                      r="40"
+                      fill="none"
+                      stroke={reelRecordingElapsedMs < reelMaxRecordingMs * 0.5
+                        ? '#22c55e'
+                        : reelRecordingElapsedMs < reelMaxRecordingMs * 0.75
+                        ? '#eab308'
+                        : '#ef4444'}
+                      strokeWidth="4"
+                      strokeLinecap="round"
+                      strokeDasharray={`${2 * Math.PI * 40}`}
+                      strokeDashoffset={`${2 * Math.PI * 40 * (1 - reelRecordingElapsedMs / reelMaxRecordingMs)}`}
+                      className="transition-all duration-200"
+                    />
+                  </svg>
+                  {/* Timer text */}
+                  <div className="absolute inset-0 flex flex-col items-center justify-center">
+                    <span className="text-[10px] font-bold text-white/80">
+                      {Math.floor(reelRecordingElapsedMs / 60000)}:{String(Math.floor((reelRecordingElapsedMs % 60000) / 1000)).padStart(2, '0')}
+                    </span>
+                    <span className="text-[9px] text-white/50">
+                      / {reelMaxRecordingMs >= 60000
+                        ? `${reelMaxRecordingMs / 60000}м`
+                        : `${reelMaxRecordingMs / 1000}с`}
+                    </span>
+                  </div>
+                </div>
+              )}
+
+              {/* 3D Liquid Glass Capture Button */}
+              {!isCameraRecording && (
+                <button
+                  onClick={handleCapture}
+                  disabled={!isCameraReady || timerCountdown != null}
+                  className={cn(
+                    'relative w-[72px] h-[72px] rounded-full',
+                    'before:absolute before:inset-0 before:rounded-full',
+                    'before:bg-gradient-to-br before:from-white/60 before:to-white/10',
+                    'before:backdrop-blur-md before:border before:border-white/30',
+                    'before:shadow-[0_8px_32px_rgba(255,255,255,0.15),inset_0_1px_0_rgba(255,255,255,0.4)]',
+                    'after:absolute after:inset-1 after:rounded-full',
+                    'after:bg-gradient-to-br after:from-white/30 after:to-transparent',
+                    'after:shadow-[inset_0_2px_4px_rgba(255,255,255,0.2)]',
+                    'active:scale-95 active:before:scale-95',
+                    'transition-all duration-150',
+                    (!isCameraReady || timerCountdown != null) && 'opacity-40',
+                  )}
+                  aria-label={activeTab === 'reels' ? (isCameraRecording ? 'Стоп' : 'Запись') : 'Снимок'}
+                >
+                  {timerCountdown != null ? (
+                    <span className="relative z-10 text-2xl font-bold text-white">{timerCountdown}</span>
+                  ) : (
+                    <span className="relative z-10 block w-[56px] h-[56px] rounded-full bg-white/90 shadow-inner" />
+                  )}
+                </button>
+              )}
+
+              {/* Stop button when recording */}
+              {isCameraRecording && (
+                <button
+                  onClick={() => cameraHostRef.current?.stopRecording()}
+                  className="relative w-[72px] h-[72px] rounded-full flex items-center justify-center"
+                >
+                  <span className="block w-6 h-6 rounded bg-red-500" />
+                </button>
+              )}
+
               {timerCountdown != null && (
                 <span className="text-xs text-white/80 font-medium">Таймер: {timerCountdown}</span>
-              )}
-              {isCameraRecording && (
-                <span className="text-xs text-red-400 font-medium animate-pulse">● Запись {Math.floor(reelRecordingElapsedMs / 1000)}с/{reelMaxDurationSec}с</span>
               )}
             </div>
 

@@ -59,6 +59,7 @@ interface CameraHostProps {
   facingMode?: FacingMode;
   targetVideoBitsPerSecond?: number;
   previewZoom?: number;
+  maxRecordingMs?: number;
   className?: string;
   videoClassName?: string;
   videoStyle?: React.CSSProperties;
@@ -81,11 +82,11 @@ const buildConstraints = (facingMode: FacingMode = "environment"): MediaStreamCo
   audio: true,
 });
 
-const buildProfile = (mode: CaptureMode): CaptureProfile => {
+const buildProfile = (mode: CaptureMode, customMaxDurationMs?: number): CaptureProfile => {
   if (mode === "reel") {
     return {
       mode,
-      maxDurationMs: 90_000,
+      maxDurationMs: customMaxDurationMs ?? 900_000, // до 15 мин
       showTimeline: true,
       targetVideoBitsPerSecond: 4_000_000,
     };
@@ -93,7 +94,7 @@ const buildProfile = (mode: CaptureMode): CaptureProfile => {
 
   return {
     mode,
-    maxDurationMs: 15_000,
+    maxDurationMs: customMaxDurationMs ?? 15_000,
     showTimeline: false,
     targetVideoBitsPerSecond: 2_500_000,
   };
@@ -136,6 +137,7 @@ export const CameraHost = forwardRef<CameraHostHandle, CameraHostProps>(function
     mode,
     facingMode = "environment",
     targetVideoBitsPerSecond,
+    maxRecordingMs,
     className,
     videoClassName,
     videoStyle,
@@ -185,7 +187,7 @@ export const CameraHost = forwardRef<CameraHostHandle, CameraHostProps>(function
     supportsZoom: false,
   });
 
-  const profile = useMemo(() => buildProfile(mode), [mode]);
+  const profile = useMemo(() => buildProfile(mode, maxRecordingMs), [mode, maxRecordingMs]);
   const profileRef = useRef<CaptureProfile>(profile);
   const onErrorRef = useRef<CameraHostProps["onError"]>(onError);
 
