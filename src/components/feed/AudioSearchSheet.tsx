@@ -120,7 +120,7 @@ export function AudioSearchSheet({ isOpen, onClose, onSelectTrack, mode = "searc
   };
 
   return (
-    <Sheet open={isOpen} onOpenChange={onClose}>
+    <Sheet open={isOpen} onOpenChange={(open) => !open && onClose()}>
       <SheetContent side="bottom" className="h-[85vh] rounded-t-2xl flex flex-col">
         <SheetHeader>
           <SheetTitle className="flex items-center gap-2">

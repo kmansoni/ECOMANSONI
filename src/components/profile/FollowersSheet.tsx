@@ -173,8 +173,12 @@ export function FollowersSheet({ isOpen, onClose, userId, type, title }: Followe
   };
 
   return (
-    <Sheet open={isOpen} onOpenChange={onClose}>
-      <SheetContent side="bottom" className="h-[100dvh] rounded-none p-0" hideCloseButton>
+    <Sheet open={isOpen} onOpenChange={(open) => !open && onClose()}>
+      <SheetContent
+        side="bottom"
+        className="h-[100dvh] rounded-none p-0 flex flex-col bg-background text-foreground"
+        hideCloseButton
+      >
         <div className="flex items-center justify-between px-4 py-3 border-b border-border">
           <div className="w-8" /> {/* Spacer */}
           <SheetTitle className="text-center font-semibold">{title}</SheetTitle>

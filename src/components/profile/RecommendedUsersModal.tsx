@@ -132,7 +132,7 @@ export function RecommendedUsersModal({ isOpen, onClose }: RecommendedUsersModal
   };
 
   return (
-    <Dialog open={isOpen} onOpenChange={onClose}>
+    <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
       <DialogContent className="max-w-md max-h-[80dvh] flex flex-col p-0 overflow-hidden">
         <DialogHeader className="px-6 pt-6 pb-4 border-b border-border">
           <DialogTitle className="text-2xl font-bold">Добро пожаловать!</DialogTitle>

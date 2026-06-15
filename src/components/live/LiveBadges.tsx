@@ -139,7 +139,7 @@ export function LiveBadgePurchase({
   };
 
   return (
-    <Sheet open onOpenChange={onClose}>
+    <Sheet open onOpenChange={(open) => !open && onClose()}>
       <SheetContent side="bottom" className="rounded-t-2xl">
         <SheetHeader>
           <SheetTitle className="flex items-center gap-2">

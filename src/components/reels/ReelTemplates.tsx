@@ -202,7 +202,7 @@ export function ReelTemplates({ onSelectTemplate, onClose }: ReelTemplatesProps)
   ];
 
   return (
-    <Sheet open onOpenChange={onClose}>
+    <Sheet open onOpenChange={(open) => !open && onClose()}>
       <SheetContent side="bottom" className="h-[85vh] rounded-t-2xl flex flex-col">
         <SheetHeader>
           <SheetTitle className="flex items-center gap-2">
