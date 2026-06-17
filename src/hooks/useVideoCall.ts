@@ -47,6 +47,8 @@ export interface VideoCall {
   ended_at: string | null;
   caller_profile?: { display_name: string | null; avatar_url: string | null };
   callee_profile?: { display_name: string | null; avatar_url: string | null };
+  /** Pending callee profile — set immediately on startCall for instant UI display */
+  pending_callee_profile?: { userId: string; display_name: string; avatar_url?: string | null };
 }
 
 interface UseVideoCallOptions {

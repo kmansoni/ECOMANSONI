@@ -248,7 +248,7 @@ export function useSignalingViewModel(deps: SignalingViewModelDeps) {
     setIsCallUiActive(true);
 
     try {
-      const result = await startVideoCall(calleeId, conversationId, callType);
+      const result = await startVideoCall(calleeId, conversationId, callType, calleeProfile);
       if (!result) {
         logger.error("[SignalingVM] startVideoCall returned null");
         setPendingCalleeProfile(null);

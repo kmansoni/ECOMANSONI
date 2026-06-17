@@ -23,6 +23,7 @@ import { acquireScreenStream } from "@/lib/calls/screenShare";
 import { SmartNoiseSuppressor } from "@/lib/audio/smartNoiseSuppression";
 import { VideoBlurProcessor } from "@/lib/calls/videoBlurProcessor";
 import type { VideoQualitySettings } from "@/hooks/useBatterySaver";
+import type { CalleeProfile } from "@/contexts/video-call/types";
 
 // Default quality settings
 const DEFAULT_QUALITY_HD: VideoQualitySettings = {
@@ -317,7 +318,8 @@ export interface UseVideoCallSfuReturn {
   startCall: (
     calleeId: string,
     conversationId: string | null,
-    callType: "video" | "audio"
+    callType: "video" | "audio",
+    calleeProfile?: CalleeProfile
   ) => Promise<VideoCall | null>;
   /**
    * Answer incoming call.
@@ -651,7 +653,8 @@ export function useVideoCallSfu(options: UseVideoCallSfuOptions = {}): UseVideoC
   const startCall = useCallback(async (
     calleeId: string,
     conversationId: string | null,
-    callType: "video" | "audio"
+    callType: "video" | "audio",
+    calleeProfile?: CalleeProfile
   ): Promise<VideoCall | null> => {
     if (!user?.id) {
       logger.error("video_call_sfu.start_call_not_authenticated", {});
@@ -726,13 +729,20 @@ export function useVideoCallSfu(options: UseVideoCallSfuOptions = {}): UseVideoC
       created_at: createdAt,
       started_at: null,
       ended_at: null,
+      ...(calleeProfile && {
+        pending_callee_profile: {
+          userId: calleeProfile.userId,
+          display_name: calleeProfile.display_name,
+          avatar_url: calleeProfile.avatar_url,
+        },
+      }),
     };
     setCurrentCall(call);
     mediaBootstrapSignalsRef.current.clear();
     setConnectionStateSynced("connecting");
     logger.info("video_call_sfu.start_call_connecting", { callId: call.id.slice(0, 8) });
     return call;
-  }, [user, releaseLocalMedia, setConnectionStateSynced, setStatusSynced]);
+  }, [user, releaseLocalMedia, setConnectionStateSynced, setStatusSynced, calleeProfile]);
 
   // ---------------------------------------------------------------------------
   // answerCall
