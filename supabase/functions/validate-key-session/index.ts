@@ -169,49 +169,27 @@ Deno.serve(async (req: Request): Promise<Response> => {
   }
 
   // ── 5. OPK single-use enforcement ──────────────────────────────────────
-  // Use atomic consume_opk RPC (DELETE + RETURNING in single transaction).
-  // Falls back to direct DELETE for backwards compatibility.
+  // Use atomic consume_one_time_prekey RPC (DELETE + RETURNING in single transaction).
+  // Returns base64 SPKI public key of consumed OPK, or null if none available.
   let consumedOpkId: string | undefined;
   if (preKeyBundle.oneTimePreKeyId) {
-    const opkId = preKeyBundle.oneTimePreKeyId;
+    const { data: consumedPublicKey, error: rpcErr } = await supabase
+      .rpc('consume_one_time_prekey', { target_user_id: userId });
 
-    // Try atomic RPC first
-    const { data: rpcResult, error: rpcErr } = await supabase.rpc('consume_opk', {
-      p_opk_id: opkId,
-      p_user_id: userId,
-    });
-
-    let consumed: boolean = false;
-
-    if (!rpcErr) {
-      const row = Array.isArray(rpcResult) ? rpcResult[0] : rpcResult;
-      consumed = !!row?.consumed_id;
-      if (consumed) consumedOpkId = row.consumed_id;
-    } else {
-      // Fallback: direct DELETE (for environments where RPC isn't available yet)
-      const { data: opkRow, error: opkErr } = await supabase
-        .from('one_time_prekeys')
-        .delete()
-        .eq('id', opkId)
-        .eq('user_id', userId)
-        .select('id')
-        .maybeSingle();
-
-      if (opkErr) {
-        console.error('[validate-key-session] OPK consume error:', opkErr.message);
-        return jsonResponse({ valid: false, reason: 'OPK validation error' }, 500, req);
-      }
-      consumed = !!opkRow;
-      if (consumed) consumedOpkId = opkRow?.id;
+    if (rpcErr) {
+      console.error('[validate-key-session] OPK consume error:', rpcErr.message);
+      return jsonResponse({ valid: false, reason: 'OPK validation error' }, 500, req);
     }
 
-    if (!consumed) {
+    if (!consumedPublicKey) {
       return jsonResponse(
         { valid: false, reason: 'One-time pre-key already used or invalid' },
         422,
         req,
       );
     }
+
+    consumedOpkId = preKeyBundle.oneTimePreKeyId;
   }
 
   // ── 6. All checks passed ────────────────────────────────────────────────

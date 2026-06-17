@@ -157,22 +157,23 @@ export async function replenishOPKsIfNeeded(
 export async function consumeOPK(
   opkId: string,
   userId: string,
-): Promise<{ consumed: boolean; error?: string }> {
+): Promise<{ consumed: boolean; consumedId?: string; error?: string }> {
+  // consume_one_time_prekey: атомарно удаляет OPK пользователя.
+  // Принимает target_user_id — выбирает случайный доступный OPK для пользователя.
+  // opkId передаётся как hint для логирования, но RPC не привязан к конкретному ID.
   const { data, error } = await e2eeDb.rpc.consumeOPK(opkId, userId);
 
   if (error) {
     return { consumed: false, error: error.message };
   }
 
-  const row = Array.isArray(data) ? data[0] : data;
-  const consumedId = row?.consumed_id ?? null;
+  const consumedId = typeof data === 'string' ? data : null;
 
   if (!consumedId) {
-    // OPK уже использован или не существует
     return { consumed: false, error: 'OPK already consumed or invalid' };
   }
 
-  return { consumed: true };
+  return { consumed: true, consumedId };
 }
 
 // ─── Revocation ─────────────────────────────────────────────────────────────

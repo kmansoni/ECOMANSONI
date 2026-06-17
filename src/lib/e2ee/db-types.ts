@@ -233,18 +233,17 @@ export const e2eeDb = {
     },
 
     /**
-     * consume_opk — атомарное удаление OPK.
-     * Supabase RPC: результат оборачивается в { data, error }.
-     * data = { consumed_id: string | null } | null
+     * consume_one_time_prekey — атомарное удаление OPK.
+     * Supabase RPC (already exists on remote).
+     * Returns: string (base64 SPKI публичного ключа удалённого OPK) или null если OPK не найден.
      */
-    consumeOPK(opkId: string, userId: string): Promise<{
-      data: { consumed_id: string | null } | null;
-      error: { message: string } | null;
-    }> {
-      return db.rpc('consume_opk', {
-        p_opk_id: opkId,
-        p_user_id: userId,
-      }) as Promise<{ data: { consumed_id: string | null } | null; error: { message: string } | null }>;
+    consumeOPK(
+      _opkId: string,
+      userId: string,
+    ): Promise<{ data: string | null; error: { message: string } | null }> {
+      return db.rpc('consume_one_time_prekey', {
+        target_user_id: userId,
+      }) as Promise<{ data: string | null; error: { message: string } | null }>;
     },
   },
 
