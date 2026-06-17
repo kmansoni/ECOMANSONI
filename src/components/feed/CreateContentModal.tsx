@@ -398,10 +398,10 @@ export function CreateContentModal({ isOpen, onClose, onSuccess, initialTab = 'p
       logger.error('[CreateContentModal] Не удалось загрузить аудио-треки', { error: err });
       toast.error('Не удалось загрузить аудио-треки');
     } finally {
-      if (version !== loadAudioTracksVersionRef.current) return;
-      setIsAudioLoading(false);
+      // Без return — finally не должен блокировать исключения
+      const isStale = version !== loadAudioTracksVersionRef.current;
+      if (!isStale) setIsAudioLoading(false);
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const setPreviewFromCapture = (file: File, url: string) => {
