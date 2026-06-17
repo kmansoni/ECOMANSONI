@@ -26,7 +26,8 @@ export type MediaBucket =
   | 'post-media'
   | 'reels-media'
   | 'avatars'
-  | 'stories-media';
+  | 'stories-media'
+  | 'live-media';
 
 /** Опции загрузки файла. */
 export interface UploadOptions {

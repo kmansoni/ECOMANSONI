@@ -361,13 +361,17 @@ export const CameraHost = forwardRef<CameraHostHandle, CameraHostProps>(function
     setRecording(false);
 
     const video = videoRef.current;
-    if (video && video.srcObject) {
+    if (video) {
       const globalDebug = getCameraDebugGlobal();
       if (globalDebug) {
         globalDebug.detachCount += 1;
       }
       video.pause();
       video.srcObject = null;
+      // Fix A: сброс src сбрасывает буфер последнего кадра на hardware overlay.
+      // Без этого последний кадр «застревает» на 1-3 фрейма на mobile браузерах.
+      video.src = '';
+      video.load();
     }
 
     const stream = streamRef.current;

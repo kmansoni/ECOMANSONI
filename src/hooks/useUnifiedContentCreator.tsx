@@ -411,13 +411,34 @@ export function useUnifiedContentCreator(): UseUnifiedContentCreatorReturn {
       setError(null);
 
       try {
+        // Fix #2: blob URL из preview не работает на других устройствах — upload в Storage
+        let stableThumbnailUrl: string | undefined = thumbnailUrl ?? undefined;
+        if (thumbnailUrl?.startsWith('blob:')) {
+          try {
+            const response = await fetch(thumbnailUrl);
+            const blob = await response.blob();
+            const ext = blob.type.startsWith('video/') ? 'jpg'
+              : blob.type === 'image/png' ? 'png'
+              : blob.type === 'image/gif' ? 'gif'
+              : 'jpg';
+            const file = new File([blob], `live-cover-${Date.now()}.${ext}`, { type: blob.type || 'image/jpeg' });
+            const uploadResult = await uploadMedia(file, { bucket: 'live-media' });
+            stableThumbnailUrl = uploadResult.url;
+            // Revoke blob только после успешного upload
+            try { URL.revokeObjectURL(thumbnailUrl); } catch {}
+          } catch (err) {
+            logger.warn('[useUnifiedContentCreator] Не удалось загрузить обложку эфира в Storage', { error: err });
+            stableThumbnailUrl = undefined;
+          }
+        }
+
         const { data: session, error: sessionError } = await dbLoose
           .from('live_sessions')
           .insert({
             creator_id: user.id,
             title,
             category,
-            thumbnail_url: thumbnailUrl || null,
+            thumbnail_url: stableThumbnailUrl,
             status: 'preparing', // Will change to 'live' when user starts broadcasting
             is_public: true,
           })
@@ -432,7 +453,7 @@ export function useUnifiedContentCreator(): UseUnifiedContentCreatorReturn {
           author_id: user.id,
           title,
           category,
-          thumbnail_url: thumbnailUrl,
+          thumbnail_url: stableThumbnailUrl,
           created_at: session.created_at,
         };
       } catch (err) {

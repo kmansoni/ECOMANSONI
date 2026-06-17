@@ -204,7 +204,7 @@ export interface ValidationResult {
  */
 export function validateMediaFile(
   file: File | null,
-  contentType: 'post' | 'story' | 'reel' | 'publications' | 'stories' | 'reels'
+  contentType: 'post' | 'story' | 'reel' | 'publications' | 'stories' | 'reels' | string
 ): ValidationResult {
   if (!file) {
     return { valid: false, error: 'Медиа-файл не выбран' };
@@ -266,18 +266,37 @@ export function validateMediaFile(
 /**
  * Валидация состояния перед публикацией
  * CRITICAL FIX #6: Полная форма валидация
+ * Fix #8: pluggable tab-specific validators — новый формат добавляется регистрацией,
+ *         не требует правки switch/if в validateEditorState
  */
+
+/** known tab types (exported для регистрации валидаторов) */
+export const VALID_TABS = ['publications', 'stories', 'reels', 'live'] as const;
+export type ValidTab = typeof VALID_TABS[number];
+
+interface TabValidator {
+  (state: EditorState): ValidationResult;
+}
+
+const tabValidators: Partial<Record<ValidTab, TabValidator>> = {
+  publications: (state) => {
+    if (state.peopleTags.length > 50) {
+      return { valid: true, warnings: ['Количество отметок превышает 50 человек'] };
+    }
+    return { valid: true };
+  },
+  // stories, reels, live — пока без специфичных ограничений
+};
+
 export function validateEditorState(state: EditorState, activeTab: string): ValidationResult {
   const warnings: string[] = [];
 
-  // Проверка scheduling
+  // Проверка scheduling (все табы)
   if (state.scheduledDate) {
     const now = new Date();
     if (state.scheduledDate < now) {
       return { valid: false, error: 'Нельзя запланировать на прошедшее время' };
     }
-
-    // Предупреждение: слишком далеко в будущее
     const maxFutureDate = new Date();
     maxFutureDate.setDate(maxFutureDate.getDate() + 365);
     if (state.scheduledDate > maxFutureDate) {
@@ -285,21 +304,15 @@ export function validateEditorState(state: EditorState, activeTab: string): Vali
     }
   }
 
-  // Проверка людей на фото (для publications)
-  if (activeTab === 'publications' && state.peopleTags.length > 50) {
-    warnings.push('Количество отметок превышает 50 человек');
-  }
-
-  // Проверка фильтра
+  // Проверка фильтра (все табы с фильтрами)
   if (state.selectedFilterIdx < 0 || state.selectedFilterIdx > 19) {
     return { valid: false, error: 'Некорректный выбор фильтра' };
   }
-
   if (state.filterIntensity < 0 || state.filterIntensity > 1) {
     return { valid: false, error: 'Некорректная интенсивность фильтра' };
   }
 
-  // Проверка корректности adjustments
+  // Проверка корректности adjustments (все табы)
   if (state.adjustments) {
     const adj = state.adjustments;
     if (adj.brightness < -100 || adj.brightness > 100) {
@@ -310,7 +323,27 @@ export function validateEditorState(state: EditorState, activeTab: string): Vali
     }
   }
 
+  // Fix #8: tab-specific validator — pluggable, future-proof
+  const tabValidator = tabValidators[activeTab as ValidTab];
+  if (tabValidator) {
+    const tabResult = tabValidator(state);
+    if (!tabResult.valid) return tabResult;
+    if (tabResult.warnings) warnings.push(...tabResult.warnings);
+  }
+
   return { valid: true, warnings: warnings.length > 0 ? warnings : undefined };
+}
+
+/**
+ * Fix #8: Регистрация валидатора для нового таба.
+ * Вызывать при инициализации модуля нового формата (например, Clips).
+ *
+ * @example
+ *   import { registerTabValidator } from './editorStateModel';
+ *   registerTabValidator('clips', (state) => { ... });
+ */
+export function registerTabValidator(tab: ValidTab, validator: TabValidator): void {
+  tabValidators[tab] = validator;
 }
 
 /**

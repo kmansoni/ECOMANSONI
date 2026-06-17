@@ -104,8 +104,8 @@ export function CreateContentModal({ isOpen, onClose, onSuccess, initialTab = 'p
     createLiveSession,
   } = useUnifiedContentCreator();
 
-  const [activeTab, setActiveTab] = useState<TabType>('publications');
-  const [cameraMode, setCameraMode] = useState<CameraMode>('camera');
+  const [activeTab, setActiveTab] = useState<TabType>(initialTab);
+  const [cameraMode, setCameraMode] = useState<CameraMode>(initialTab === 'live' ? 'gallery' : 'camera');
   const [caption, setCaption] = useState('');
   const [title, setTitle] = useState('');
   const [category, setCategory] = useState('other');
@@ -173,14 +173,43 @@ export function CreateContentModal({ isOpen, onClose, onSuccess, initialTab = 'p
   const publishInFlightRef = useRef(false);
   const captureTimerRef = useRef<number | null>(null);
   const screenFlashVideoRef = useRef<HTMLVideoElement | null>(null);
+  // Fix #5: guard publish button on unmount during in-flight publish
+  const unmountRef = useRef(false);
+  // Fix #7: prevent camera restart during bootstrap until tab switch is committed
+  const isTabSwitchBootstrapping = useRef(false);
+  // Fix #11: version counter for loadAudioTracks stale request cancellation
+  const loadAudioTracksVersionRef = useRef(0);
+  // Fix B: guard от двойного тапа — preventDefault на capturePhoto/recordVideo
+  const captureInFlightRef = useRef(false);
+
+  // Fix #5: window-level guard — если юзер ушёл со страницы во время публикации,
+  // сбрасываем publishInFlightRef при следующей загрузке модуля
+  useEffect(() => {
+    unmountRef.current = false;
+    return () => {
+      unmountRef.current = true;
+      if (publishInFlightRef.current) {
+        publishInFlightRef.current = false;
+        logger.warn('[CreateContentModal] Размонтирование во время публикации, сброшен publishInFlightRef');
+      }
+    };
+  }, []);
 
   useEffect(() => {
-    // CRITICAL FIX #5: URL cleanup - предотвращение утечек памяти
+    // Fix #10: unmount cleanup для blob URL — не зависит от previewUrl,
+    // гарантированно вызывается при размонтировании независимо от React bail-out
     return () => {
       if (captureTimerRef.current) {
         window.clearInterval(captureTimerRef.current);
         captureTimerRef.current = null;
       }
+      // Этот return выполняется при РАЗМОНТИРОВАНИИ, даже если previewUrl не изменился
+    };
+  }, []);
+
+  // Fix #10: отдельный эффект на изменение previewUrl — отзывает старые blob
+  useEffect(() => {
+    return () => {
       if (previewUrl && previewUrl.startsWith('blob:')) {
         try {
           URL.revokeObjectURL(previewUrl);
@@ -191,6 +220,7 @@ export function CreateContentModal({ isOpen, onClose, onSuccess, initialTab = 'p
     };
   }, [previewUrl]);
 
+  // Fix #10: то же для lastGalleryThumbnailUrl
   useEffect(() => {
     return () => {
       if (lastGalleryThumbnailUrl && lastGalleryThumbnailUrl.startsWith('blob:')) {
@@ -211,13 +241,22 @@ export function CreateContentModal({ isOpen, onClose, onSuccess, initialTab = 'p
     };
   }, [isOpen, setIsCreatingContent]);
 
+  // Fix #5: сброс unmountRef при повторном открытии модала
   useEffect(() => {
-    if (!isOpen) return;
-    setActiveTab(initialTab);
-    setActiveContentType(TABS.find((t) => t.id === initialTab)?.contentType || 'post');
-    setCameraMode(initialTab === 'live' ? 'gallery' : 'camera');
-    setShowCaptionEditor(false);
-  }, [isOpen, initialTab, setActiveContentType]);
+    if (isOpen) {
+      unmountRef.current = false;
+    }
+  }, [isOpen]);
+  // Предотвращает race: переключение с live→publications пока камера ещё инициализируется.
+  useEffect(() => {
+    if (isTabSwitchBootstrapping.current) {
+      // Снимаем флаг после того как commit произошёл
+      const t = setTimeout(() => {
+        isTabSwitchBootstrapping.current = false;
+      }, 100);
+      return () => clearTimeout(t);
+    }
+  }, [activeTab]);
 
   // Lock body scroll when modal open
   useEffect(() => {
@@ -253,25 +292,35 @@ export function CreateContentModal({ isOpen, onClose, onSuccess, initialTab = 'p
   const clearStoredReelPublishId = useCallback(() => {
     const storageKey = getReelsPublishStorageKey();
     if (!storageKey) return;
-    try {
-      sessionStorage.removeItem(storageKey);
-    } catch (e) {
-      logger.warn('[CreateContentModal] Не удалось очистить reel publish id из sessionStorage', { error: e });
-    }
+    // Fix #4: очищаем оба storage
+    try { sessionStorage.removeItem(storageKey); } catch {}
+    try { localStorage.removeItem(storageKey); } catch {}
   }, [getReelsPublishStorageKey]);
 
   const getStableReelPublishId = useCallback((): string => {
+    // Fix #4: сначала проверяем память (reelClientPublishId), затем sessionStorage,
+    // затем localStorage как fallback (sessionStorage блокирован в private mode).
+    // localStorage синхронен, но хранит только string ID — блокировка маловероятна.
     if (reelClientPublishId) return reelClientPublishId;
 
     const storageKey = getReelsPublishStorageKey();
     let resolvedId: string | null = null;
 
+    // Пробуем sessionStorage
     if (storageKey) {
       try {
         resolvedId = sessionStorage.getItem(storageKey);
       } catch (e) {
-        logger.warn('[CreateContentModal] Не удалось прочитать reel publish id из sessionStorage', { error: e });
-        resolvedId = null;
+        logger.warn('[CreateContentModal] sessionStorage недоступен, используем localStorage', { error: e });
+      }
+    }
+
+    // sessionStorage не дал результат — localStorage как fallback
+    if (!resolvedId && storageKey) {
+      try {
+        resolvedId = localStorage.getItem(storageKey);
+      } catch (e) {
+        logger.warn('[CreateContentModal] localStorage также недоступен', { error: e });
       }
     }
 
@@ -283,10 +332,15 @@ export function CreateContentModal({ isOpen, onClose, onSuccess, initialTab = 'p
       }
 
       if (storageKey) {
+        // sessionStorage первичен, localStorage — fallback
         try {
           sessionStorage.setItem(storageKey, resolvedId);
         } catch (e) {
-          logger.warn('[CreateContentModal] Не удалось сохранить reel publish id в sessionStorage', { error: e });
+          try {
+            localStorage.setItem(storageKey, resolvedId);
+          } catch (e2) {
+            logger.warn('[CreateContentModal] Ни sessionStorage, ни localStorage недоступны', { error: e2 });
+          }
         }
       }
     }
@@ -318,6 +372,8 @@ export function CreateContentModal({ isOpen, onClose, onSuccess, initialTab = 'p
   }, []);
 
   const loadAudioTracks = useCallback(async (queryText?: string) => {
+    // Fix #11: version counter — отменяем устаревшие запросы без изменения API
+    const version = ++loadAudioTracksVersionRef.current;
     setIsAudioLoading(true);
     try {
       const response = await editorApi.searchMusic({
@@ -325,6 +381,8 @@ export function CreateContentModal({ isOpen, onClose, onSuccess, initialTab = 'p
         limit: 20,
         query: (queryText ?? '').trim() || undefined,
       });
+
+      if (version !== loadAudioTracksVersionRef.current) return; // stale response
 
       setAudioTracks(
         response.data
@@ -336,14 +394,19 @@ export function CreateContentModal({ isOpen, onClose, onSuccess, initialTab = 'p
           })),
       );
     } catch (err) {
+      if (version !== loadAudioTracksVersionRef.current) return;
       logger.error('[CreateContentModal] Не удалось загрузить аудио-треки', { error: err });
       toast.error('Не удалось загрузить аудио-треки');
     } finally {
+      if (version !== loadAudioTracksVersionRef.current) return;
       setIsAudioLoading(false);
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const setPreviewFromCapture = (file: File, url: string) => {
+    // Fix B: снимаем guard сразу — capture завершён, state может обновляться
+    captureInFlightRef.current = false;
     // CRITICAL FIX #1: Reset editor state on new capture
     dispatchEditor({ type: 'CLEAR_ALL' });
 
@@ -361,6 +424,10 @@ export function CreateContentModal({ isOpen, onClose, onSuccess, initialTab = 'p
       toast.error('Остановите запись перед переключением режима');
       return;
     }
+    // Fix #7: отмечаем что переключение в процессе — камера не запускается пока не закоммичено
+    if (tabId !== 'live' && activeTab === 'live') {
+      isTabSwitchBootstrapping.current = true;
+    }
     setActiveTab(tabId);
     setStoryComposeMode('camera');
     setQuickPanel(null);
@@ -368,7 +435,7 @@ export function CreateContentModal({ isOpen, onClose, onSuccess, initialTab = 'p
     setActiveContentType(TABS.find(t => t.id === tabId)?.contentType || 'post');
     setCameraMode(tabId === 'live' ? 'gallery' : 'camera');
     setShowCaptionEditor(false);
-  }, [isCameraRecording, setActiveContentType]);
+  }, [isCameraRecording, setActiveContentType, activeTab]);
 
   const handleTouchStart = (e: React.TouchEvent) => {
     setTouchStart(e.touches[0].clientX);
@@ -442,166 +509,134 @@ export function CreateContentModal({ isOpen, onClose, onSuccess, initialTab = 'p
     }
   };
 
+  // Fix #9: каждый таб — отдельная функция; добавление 5-го формата = +1 маленькая функция, не рост сложности handlePublish
+  const publishLive = async (): Promise<boolean> => {
+    if (!title.trim()) { toast.error('Укажите название трансляции'); return false; }
+    const result = await createLiveSession(title, category, previewUrl || undefined);
+    if (!result) return false;
+    toast.success('Трансляция готова к началу!');
+    onSuccess?.('live');
+    resetForm();
+    onClose();
+    return true;
+  };
+
+  const publishTextStory = async (): Promise<boolean> => {
+    const text = textStoryText.trim();
+    if (!text) { toast.error('Введите текст истории'); return false; }
+    const result = await createTextStory({
+      text,
+      backgroundId: textStoryBackgroundId,
+      fontId: textStoryFontId,
+      align: textStoryAlign,
+      color: '#ffffff',
+    });
+    if (!result) return false;
+    toast.success('История успешно загружена!');
+    onSuccess?.(result.content_type);
+    resetForm();
+    onClose();
+    return true;
+  };
+
+  const publishMediaContent = async (): Promise<boolean> => {
+    if (!selectedFile) { toast.error('Выберите медиа-файл'); return false; }
+    const fileValidation = validateMediaFile(selectedFile, activeTab);
+    if (!fileValidation.valid) { toast.error(fileValidation.error || 'Некорректный файл'); return false; }
+
+    if (activeTab === 'reels') {
+      if (selectedFile.type.startsWith('video/')) {
+        const duration = await getVideoDurationSeconds(selectedFile);
+        if (duration != null && duration > reelMaxDurationSec) {
+          toast.error(`Максимальная длительность в текущем режиме: ${reelMaxDurationSec}с`);
+          return false;
+        }
+      }
+      const hashtagVerdict = await checkHashtagsAllowedForText(caption.trim());
+      if (!hashtagVerdict.ok) {
+        const blockedTags = 'blockedTags' in hashtagVerdict ? hashtagVerdict.blockedTags : [];
+        toast.error('Некоторые хештеги недоступны', { description: blockedTags.join(', ') });
+        return false;
+      }
+    }
+
+    const scheduledAt = editorState.scheduledDate?.toISOString() || null;
+
+    let processedFile = selectedFile;
+    if (activeTab === 'publications' && selectedFile.type.startsWith('image/')) {
+      processedFile = await applyImageFilter(selectedFile, {
+        filterIdx: editorState.selectedFilterIdx,
+        filterIntensity: editorState.filterIntensity,
+        adjustments: editorState.adjustments,
+      });
+    }
+
+    let result: UnifiedContent | null = null;
+    switch (activeTab) {
+      case 'publications':
+        result = await uploadPostMedia(processedFile, caption, scheduledAt, {
+          hideLikes: editorState.hideLikes,
+          commentsDisabled: editorState.commentsDisabled,
+        });
+        if (result && scheduledAt) toast.info(`Публикация запланирована на ${new Date(scheduledAt).toLocaleString('ru')}`);
+        break;
+      case 'stories':
+        result = await uploadStoryMedia(selectedFile, caption);
+        if (result && scheduledAt) toast.info(`История запланирована на ${new Date(scheduledAt).toLocaleString('ru')}`);
+        break;
+      case 'reels':
+        result = await uploadReelMedia(selectedFile, caption, {
+          clientPublishId: getStableReelPublishId(),
+          musicTitle,
+          musicTrackId: selectedMusicTrackId,
+          effectPreset: reelEffectPreset,
+          faceEnhance: reelFaceEnhance,
+          aiEnhance: reelAiEnhance,
+          maxDurationSec: reelMaxDurationSec,
+          taggedUsers: reelTaggedUsers.split(',').map(v => v.trim()).filter(Boolean),
+          locationName: reelLocationName.trim() || null,
+          visibility: reelAudience,
+          allowComments: reelAllowComments,
+          allowRemix: reelAllowRemix,
+        });
+        if (result && scheduledAt) toast.info(`Видео запланировано на ${new Date(scheduledAt).toLocaleString('ru')}`);
+        break;
+      default:
+        return false;
+    }
+
+    if (result) {
+      const currentTab2 = TABS.find((t) => t.id === activeTab);
+      toast.success(`${currentTab2?.label ?? 'Контент'} успешно загружен!`);
+      onSuccess?.(result.content_type);
+      resetForm();
+      onClose();
+      return true;
+    }
+    return false;
+  };
+
   const handlePublish = async () => {
-    if (publishInFlightRef.current) return;
+    // Fix #5: не позволяем publish если компонент размонтирован
+    if (publishInFlightRef.current || unmountRef.current) return;
     publishInFlightRef.current = true;
     setIsPublishing(true);
 
     try {
-      // CRITICAL FIX #3 & #4 & #6: Валидация + Schedule передача + Форма валидация
       const currentTab = TABS.find((t) => t.id === activeTab);
-
-      // Валидация состояния редактора
       const validation = validateEditorState(editorState, activeTab);
-      if (!validation.valid) {
-        toast.error(validation.error || 'Ошибка валидации');
-        return;
-      }
+      if (!validation.valid) { toast.error(validation.error || 'Ошибка валидации'); return; }
+      if (validation.warnings) validation.warnings.forEach((w) => toast.warning(w));
 
-      // Показываем предупреждения если есть
-      if (validation.warnings) {
-        validation.warnings.forEach((w) => toast.warning(w));
-      }
-
+      let published = false;
       if (activeTab === 'live') {
-        if (!title.trim()) {
-          toast.error('Укажите название трансляции');
-          return;
-        }
-        await createLiveSession(title, category, previewUrl || undefined);
-        toast.success('Трансляция готова к началу!');
-        onSuccess?.('live');
-        resetForm();
-        onClose();
+        published = await publishLive();
+      } else if (activeTab === 'stories' && storyComposeMode === 'text') {
+        published = await publishTextStory();
       } else {
-        if (activeTab === 'stories' && storyComposeMode === 'text') {
-          const text = textStoryText.trim();
-          if (!text) {
-            toast.error('Введите текст истории');
-            return;
-          }
-
-          const result = await createTextStory({
-            text,
-            backgroundId: textStoryBackgroundId,
-            fontId: textStoryFontId,
-            align: textStoryAlign,
-            color: '#ffffff',
-          });
-
-          if (result) {
-            toast.success('История успешно загружена!');
-            onSuccess?.(result.content_type);
-            resetForm();
-            onClose();
-          }
-          return;
-        }
-
-        if (!selectedFile) {
-          toast.error('Выберите медиа-файл');
-          return;
-        }
-
-        // CRITICAL FIX #6: Валидация файла перед загрузкой
-        const fileValidation = validateMediaFile(selectedFile, activeTab);
-        if (!fileValidation.valid) {
-          toast.error(fileValidation.error || 'Некорректный файл');
-          return;
-        }
-
-        if (activeTab === 'reels') {
-          if (selectedFile.type.startsWith('video/')) {
-            const duration = await getVideoDurationSeconds(selectedFile);
-            if (duration != null && duration > reelMaxDurationSec) {
-              toast.error(`Максимальная длительность в текущем режиме: ${reelMaxDurationSec}с`);
-              return;
-            }
-          }
-
-          const hashtagVerdict = await checkHashtagsAllowedForText(caption.trim());
-          if (!hashtagVerdict.ok) {
-            const blockedTags = 'blockedTags' in hashtagVerdict ? hashtagVerdict.blockedTags : [];
-            toast.error('Некоторые хештеги недоступны', {
-              description: blockedTags.join(', '),
-            });
-            return;
-          }
-        }
-
-        // Создаем metadata с scheduling информацией
-        const metadata = {
-          scheduledAt: editorState.scheduledDate?.toISOString() || null,
-          filters: {
-            selectedIdx: editorState.selectedFilterIdx,
-            intensity: editorState.filterIntensity,
-          },
-          adjustments: editorState.adjustments,
-          peopleTags: editorState.peopleTags,
-          location: editorState.location,
-          draftId: editorState.draftId,
-        };
-
-        let result: UnifiedContent | null = null;
-
-        // Применяем фильтры к изображению перед загрузкой (для publications)
-        let processedFile = selectedFile;
-        if (activeTab === 'publications' && selectedFile.type.startsWith('image/')) {
-          processedFile = await applyImageFilter(selectedFile, {
-            filterIdx: editorState.selectedFilterIdx,
-            filterIntensity: editorState.filterIntensity,
-            adjustments: editorState.adjustments,
-          });
-        }
-
-        // CRITICAL FIX #4: передаем scheduling metadata к backend
-        switch (activeTab) {
-          case 'publications':
-            result = await uploadPostMedia(processedFile, caption, metadata.scheduledAt, {
-              hideLikes: editorState.hideLikes,
-              commentsDisabled: editorState.commentsDisabled,
-            });
-            if (result && metadata.scheduledAt) {
-              toast.info(`Публикация запланирована на ${new Date(metadata.scheduledAt).toLocaleString('ru')}`);
-            }
-            break;
-          case 'stories':
-            result = await uploadStoryMedia(selectedFile, caption);
-            if (result && metadata.scheduledAt) {
-              toast.info(`История запланирована на ${new Date(metadata.scheduledAt).toLocaleString('ru')}`);
-            }
-            break;
-          case 'reels':
-            result = await uploadReelMedia(selectedFile, caption, {
-              clientPublishId: getStableReelPublishId(),
-              musicTitle,
-              musicTrackId: selectedMusicTrackId,
-              effectPreset: reelEffectPreset,
-              faceEnhance: reelFaceEnhance,
-              aiEnhance: reelAiEnhance,
-              maxDurationSec: reelMaxDurationSec,
-              taggedUsers: reelTaggedUsers
-                .split(',')
-                .map((v) => v.trim())
-                .filter(Boolean),
-              locationName: reelLocationName.trim() || null,
-              visibility: reelAudience,
-              allowComments: reelAllowComments,
-              allowRemix: reelAllowRemix,
-            });
-            if (result && metadata.scheduledAt) {
-              toast.info(`Видео запланировано на ${new Date(metadata.scheduledAt).toLocaleString('ru')}`);
-            }
-            break;
-        }
-
-        if (result) {
-          toast.success(`${currentTab?.label} успешно загружена!`);
-          onSuccess?.(result.content_type);
-          resetForm();
-          onClose();
-        }
+        published = await publishMediaContent();
       }
+      if (!published) return; // ошибка уже показана внутри
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : error;
       toast.error(errorMsg || 'Ошибка при публикации');
@@ -707,11 +742,14 @@ export function CreateContentModal({ isOpen, onClose, onSuccess, initialTab = 'p
   };
 
   const runCapture = useCallback(() => {
+    if (captureInFlightRef.current) return;
+    captureInFlightRef.current = true;
     if (activeTab === 'reels') {
       void cameraHostRef.current?.recordVideo();
     } else {
       void cameraHostRef.current?.capturePhoto();
     }
+    // reset в finally/callback — see handleCapture
   }, [activeTab]);
 
   const handleCapture = useCallback(() => {
@@ -723,6 +761,7 @@ export function CreateContentModal({ isOpen, onClose, onSuccess, initialTab = 'p
     }
 
     if (captureTimerSec <= 0) {
+      if (captureInFlightRef.current) return; // Fix B: prevent double-tap
       runCapture();
       return;
     }
@@ -849,7 +888,14 @@ export function CreateContentModal({ isOpen, onClose, onSuccess, initialTab = 'p
         {isCameraAvailable && (
           <CameraHost
             ref={cameraHostRef}
-            isActive={isOpen && isCameraAvailable && cameraMode === 'camera' && !isTextStoryMode}
+            isActive={
+              isOpen
+              && isCameraAvailable
+              && cameraMode === 'camera'
+              && !isTextStoryMode
+              && !isTabSwitchBootstrapping.current
+              && !previewUrl  // Fix E: не запускать камеру когда уже есть preview
+            }
             mode={captureMode}
             facingMode={facingMode}
             previewZoom={BASE_ZOOM_LEVELS[zoomIndex]}
@@ -1524,11 +1570,9 @@ export function CreateContentModal({ isOpen, onClose, onSuccess, initialTab = 'p
             )}
             <button
               onClick={() => {
-                if (previewUrl) URL.revokeObjectURL(previewUrl);
-                setPreviewUrl(null);
-                setSelectedFile(null);
-                setCameraMode('camera');
-                setShowCaptionEditor(false);
+                // Fix C: вызываем resetForm — сбрасывает всё: state, инпут, editor.
+                // Без этого инпут хранит старый файл, и при повторном «Переснять» он не обновится.
+                resetForm();
               }}
               className="w-10 h-10 rounded-full bg-black/40 backdrop-blur-sm flex items-center justify-center text-white"
               aria-label="Переснять"
