@@ -13,6 +13,17 @@ type ContactEntry = {
   source: "device" | "app";
 };
 
+type ContactPickerContact = {
+  name?: string[] | string;
+  tel?: string[] | string;
+};
+
+type ContactPickerNavigator = Navigator & {
+  contacts: {
+    select(properties: string[], options?: { multiple?: boolean }): Promise<ContactPickerContact[]>;
+  };
+};
+
 interface ContactsHubSheetProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -47,7 +58,7 @@ export function ContactsHubSheet({
   const isContactPickerSupported =
     typeof window !== "undefined" &&
     typeof navigator !== "undefined" &&
-    Boolean((navigator as any)?.contacts?.select);
+    Boolean((navigator as ContactPickerNavigator).contacts.select);
 
   const clampSheetVh = (value: number) => Math.max(MIN_SHEET_VH, Math.min(MAX_SHEET_VH, value));
 
@@ -120,25 +131,27 @@ export function ContactsHubSheet({
 
     setLoadingDeviceContacts(true);
     try {
-      const selected = await (navigator as any).contacts.select(["name", "tel"], { multiple: true });
-      const mapped: ContactEntry[] = (selected || [])
-        .map((c: any, index: number) => {
-          const rawName = Array.isArray(c?.name) ? c.name[0] : c?.name;
-          const rawPhone = Array.isArray(c?.tel) ? c.tel[0] : c?.tel;
-          const name = typeof rawName === "string" && rawName.trim() ? rawName.trim() : "Контакт";
-          const phone = typeof rawPhone === "string" && rawPhone.trim() ? rawPhone.trim() : null;
-          if (!phone) return null;
-          const keyPhone = phone.replace(/\s+/g, "");
-          return {
+      const selected = await (navigator as ContactPickerNavigator).contacts.select(["name", "tel"], {
+        multiple: true,
+      });
+      const mapped = selected.flatMap((c, index) => {
+        const rawName = Array.isArray(c?.name) ? c.name[0] : c?.name;
+        const rawPhone = Array.isArray(c?.tel) ? c.tel[0] : c?.tel;
+        const name = typeof rawName === "string" && rawName.trim() ? rawName.trim() : "Контакт";
+        const phone = typeof rawPhone === "string" && rawPhone.trim() ? rawPhone.trim() : null;
+        if (!phone) return [];
+        const keyPhone = phone.replace(/\s+/g, "");
+        return [
+          {
             key: `device:${keyPhone || index}`,
             displayName: name,
             avatarUrl: null,
             phone,
             userId: null,
             source: "device" as const,
-          };
-        })
-        .filter((item: ContactEntry | null): item is ContactEntry => Boolean(item));
+          },
+        ];
+      });
 
       setDeviceContacts((prev) => {
         const map = new Map<string, ContactEntry>();

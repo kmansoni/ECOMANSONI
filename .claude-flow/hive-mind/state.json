@@ -14,13 +14,24 @@
     "pending": [],
     "history": []
   },
-  "sharedMemory": {},
-  "createdAt": "2026-06-11T20:40:03.212Z",
-  "updatedAt": "2026-06-11T20:44:24.041Z",
+  "sharedMemory": {
+    "mansoni-queen-active": "{\"role\": \"orchestrator\", \"status\": \"active\", \"capabilities\": [\"orchestration\", \"task-routing\", \"model-selection\", \"fable-integration\", \"agent-spawning\"]}",
+    "broadcasts": [
+      {
+        "messageId": "msg-1781228226958-krsm1y",
+        "message": "Mansoni orchestrator fully configured with: skills (graphify, verification, browser-agent), Fable model for security/e2ee, browser testing capabilities. All agents ready for coordinated work.",
+        "priority": "high",
+        "fromId": "mansoni-queen",
+        "timestamp": "2026-06-12T01:37:06.958Z"
+      }
+    ]
+  },
+  "createdAt": "2026-06-12T01:28:01.726Z",
+  "updatedAt": "2026-06-12T01:37:06.958Z",
   "consensusStrategy": "raft",
   "queen": {
     "agentId": "mansoni-queen",
-    "electedAt": "2026-06-11T20:40:03.212Z",
+    "electedAt": "2026-06-12T01:28:01.726Z",
     "term": 1
   }
 }

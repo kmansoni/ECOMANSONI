@@ -43,7 +43,8 @@ export function toCompactErrorDetails(error: unknown): { code: string; message: 
   }
 
   if (error && typeof error === "object") {
-    const anyErr = error as any;
+    // TODO: заменить на строгий тип SupabaseError после добавления суперагентных типов
+    const anyErr = error as Record<string, unknown>;
     const code = typeof anyErr.code === "string" ? anyErr.code : "";
     const status = Number.isFinite(Number(anyErr.status)) ? Number(anyErr.status) : null;
     const message = String(anyErr.message ?? anyErr.details ?? anyErr.error_description ?? "Unknown error");

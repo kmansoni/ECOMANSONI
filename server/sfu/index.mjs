@@ -4,6 +4,11 @@ import WebSocket, { WebSocketServer } from "ws";
 import { createClient } from "@supabase/supabase-js";
 import { IS_PROD_LIKE, readJoinTokenSecretConfig, validateSfuStartupEnv } from "./env.mjs";
 import { createMediaPlaneController } from "./mediaPlane.mjs";
+import { createAdmissionController } from "./admissionController.mjs";
+import { createRecoveryLease } from "./recoveryLease.mjs";
+import { createHealthState } from "./healthState.mjs";
+import { SfuSFrameManager, createSfuSFrameManager } from "./sframeServer.mjs";
+import { logger, setupGlobalErrorHandlers } from "./logger.mjs";
 
 const PORT = Number(process.env.SFU_PORT ?? "8888");
 const REGION = process.env.SFU_REGION ?? "ru";
@@ -98,6 +103,54 @@ const MAX_PARTICIPANTS_PER_ROOM = (() => {
 const SFU_EXPECT_MULTI_INSTANCE = process.env.SFU_EXPECT_MULTI_INSTANCE === "1";
 const SFU_E2EE_RATE_LIMIT_BACKEND = String(process.env.SFU_E2EE_RATE_LIMIT_BACKEND ?? "memory").trim().toLowerCase();
 
+// ── Structured logging (production-ready) ─────────────────────────────────────
+setupGlobalErrorHandlers();
+
+// ── Global error handlers ────────────────────────────────────────────────────────
+logger.info("SFU starting", { port: PORT, region: REGION, nodeId: NODE_ID });
+
+// ── Recovery infrastructure (Redis-backed) ──────────────────────────────────────
+const REDIS_URL = process.env.REDIS_URL ?? "redis://localhost:6379";
+const ADMISSION_ENABLED = IS_PROD_LIKE || process.env.SFU_ADMISSION_ENABLED === "1";
+
+let admissionController = null;
+let recoveryLease = null;
+let healthState = null;
+
+if (ADMISSION_ENABLED) {
+  try {
+    admissionController = createAdmissionController({
+      redisUrl: REDIS_URL,
+      maxConcurrentRooms: Number(process.env.SFU_ADMISSION_MAX_ROOMS ?? "100"),
+      tokensPerSec: Number(process.env.SFU_ADMISSION_RATE ?? "10"),
+      burst: Number(process.env.SFU_ADMISSION_BURST ?? "20"),
+      log: logger,
+    });
+    recoveryLease = createRecoveryLease({
+      redisUrl: REDIS_URL,
+      leaseTtlSec: Number(process.env.SFU_LEASE_TTL_SEC ?? "30"),
+      log: logger,
+    });
+    healthState = createHealthState({
+      redisUrl: REDIS_URL,
+      leaseTtlSec: Number(process.env.SFU_LEASE_TTL_SEC ?? "30"),
+      log: logger,
+    });
+    logger.info("Recovery infrastructure initialized", { redisUrl: REDIS_URL });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    if (IS_PROD_LIKE) {
+      logger.fatal("Failed to initialize recovery infrastructure", { error: msg });
+      throw err;
+    }
+    logger.warn("Recovery infrastructure unavailable, running without it", { error: msg });
+  }
+}
+
+// ── Server-side SFrame manager (for server-encrypted E2EE) ─────────────────────
+const sframeManager = createSfuSFrameManager({ enabled: requireSFrame });
+logger.info("SFrame manager initialized", { enabled: requireSFrame });
+
 validateSfuStartupEnv();
 
 if (IS_PROD_LIKE && SFU_EXPECT_MULTI_INSTANCE && SFU_E2EE_RATE_LIMIT_BACKEND !== "redis") {
@@ -142,7 +195,7 @@ function checkE2EERateLimit(deviceId, operation) {
   if (!entry || now - entry.lastReset > E2EE_RATE_WINDOW) {
     if (!entry && e2eeRateLimits.size >= E2EE_RATE_LIMIT_MAX_ENTRIES) {
       // Map is full — reject new device to prevent OOM. Existing devices unaffected.
-      console.warn(`[E2EE] e2eeRateLimits at capacity (${E2EE_RATE_LIMIT_MAX_ENTRIES}), rejecting new deviceId`);
+      logger.warn("E2EE rate limit at capacity, rejecting new deviceId", { maxEntries: E2EE_RATE_LIMIT_MAX_ENTRIES });
       return false;
     }
     entry = { keyPackages: 0, rekeys: 0, lastReset: now };
@@ -177,7 +230,7 @@ async function verifyAccessToken(accessToken, req) {
   if (CALLS_DEV_INSECURE_AUTH) {
     const remoteAddress = getRemoteAddress(req);
     if (!isLoopbackAddress(remoteAddress)) {
-      console.warn(`[sfu] CALLS_DEV_INSECURE_AUTH rejected for non-loopback source: ${remoteAddress || "unknown"}`);
+      logger.warn("CALLS_DEV_INSECURE_AUTH rejected for non-loopback source", { remoteAddress });
       return null;
     }
     return { userId: `dev_${String(accessToken ?? "anon").slice(0, 20)}` };
@@ -230,7 +283,7 @@ function getJoinTokenSecret() {
   if (resolved) {
     if (resolved.source === "SUPABASE_JWT_SECRET") {
       const scope = IS_PROD_LIKE ? "production-like environment" : "non-prod environment";
-      console.warn(`[sfu] Missing CALLS_JOIN_TOKEN_SECRET, using SUPABASE_JWT_SECRET fallback in ${scope}`);
+      logger.warn("Missing CALLS_JOIN_TOKEN_SECRET, using SUPABASE_JWT_SECRET fallback", { scope });
     }
     cachedJoinTokenSecret = resolved.secret;
     return cachedJoinTokenSecret;
@@ -381,11 +434,12 @@ function ack(ws, ackOfMsgId, ok = true, error, payload = {}) {
   });
 }
 
-function logOperationError(operation, { roomId = null, deviceId = null, consumerId = null, error } = {}) {
-  console.error(
-    `[sfu] operation failed: operation=${operation} roomId=${roomId ?? "-"} deviceId=${deviceId ?? "-"} consumerId=${consumerId ?? "-"}`,
-    error
-  );
+function logOperationError(operation, { roomId = null, deviceId = null, consumerId = null, error = null } = {}) {
+  const meta = { operation, roomId, deviceId, consumerId };
+  if (error) {
+    meta.error = error instanceof Error ? error.message : String(error);
+  }
+  logger.error("Operation failed", meta);
 }
 
 const rooms = new Map();
@@ -618,6 +672,13 @@ function isPeerE2EEReadyForEpoch(room, peerDeviceId) {
 }
 
 const server = http.createServer((req, res) => {
+  // Request timeout — prevent slow clients from holding connections indefinitely
+  req.setTimeout(30000, () => {
+    logger.warn("Request timeout", { url: req.url, remoteAddress: getRemoteAddress(req) });
+    res.writeHead(408, { "content-type": "application/json" });
+    res.end(JSON.stringify({ error: "request_timeout" }));
+  });
+
   if (req.url === "/health" || req.url === "/healthz" || req.url === "/ready") {
     const roomCount = rooms.size;
     const peerCount = peersByDevice.size;
@@ -648,19 +709,43 @@ const server = http.createServer((req, res) => {
       acc[room.region] = (acc[room.region] ?? 0) + 1;
       return acc;
     }, {});
-    res.writeHead(200, { "content-type": "application/json" });
-    res.end(
-      JSON.stringify({
-        nodeId: NODE_ID,
-        region: REGION,
-        uptimeSec: Math.round((Date.now() - STARTED_AT) / 1000),
-        rooms: rooms.size,
-        peers,
-        producers,
-        mediaPlane: mediaPlaneMetrics,
-        roomsByRegion,
-      })
-    );
+    const consumers = Array.from(rooms.values()).reduce((acc, room) => acc + room.consumers.size, 0);
+    const uptimeSec = Math.round((Date.now() - STARTED_AT) / 1000);
+
+    // Prometheus-compatible metrics format
+    const metrics = [
+      `# HELP sfu_uptime_seconds SFU uptime in seconds`,
+      `# TYPE sfu_uptime_seconds gauge`,
+      `sfu_uptime_seconds${IS_PROD_LIKE ? '' : ' ' + NODE_ID} ${uptimeSec}`,
+      `# HELP sfu_rooms_current Number of active rooms`,
+      `# TYPE sfu_rooms_current gauge`,
+      `sfu_rooms_current ${rooms.size}`,
+      `# HELP sfu_peers_current Number of connected peers`,
+      `# TYPE sfu_peers_current gauge`,
+      `sfu_peers_current ${peers}`,
+      `# HELP sfu_producers_current Number of active media producers`,
+      `# TYPE sfu_producers_current gauge`,
+      `sfu_producers_current ${producers}`,
+      `# HELP sfu_consumers_current Number of active media consumers`,
+      `# TYPE sfu_consumers_current gauge`,
+      `sfu_consumers_current ${consumers}`,
+      `# HELP sfu_mediasoup_workers Number of mediasoup workers`,
+      `# TYPE sfu_mediasoup_workers gauge`,
+      `sfu_mediasoup_workers ${mediaPlaneMetrics.workerCount ?? 0}`,
+      `# HELP sfu_media_plane_mode Current media plane mode (1=mediasoup, 0=fallback)`,
+      `# TYPE sfu_media_plane_mode gauge`,
+      `sfu_media_plane_mode ${mediaPlane.mode === "mediasoup" ? 1 : 0}`,
+    ];
+
+    // Per-region room counts
+    for (const [region, count] of Object.entries(roomsByRegion)) {
+      metrics.push(`# HELP sfu_rooms_by_region Number of rooms per region`);
+      metrics.push(`# TYPE sfu_rooms_by_region gauge`);
+      metrics.push(`sfu_rooms_by_region{region="${region}"} ${count}`);
+    }
+
+    res.writeHead(200, { "content-type": "text/plain; charset=utf-8" });
+    res.end(metrics.join("\n") + "\n");
     return;
   }
 
@@ -671,6 +756,12 @@ const server = http.createServer((req, res) => {
 const wss = new WebSocketServer({ server, path: "/ws" });
 
 wss.on("connection", (ws, req) => {
+  // WebSocket error handler — prevents uncaught errors from crashing the server
+  ws.on("error", (err) => {
+    const remoteAddress = getRemoteAddress(req);
+    logger.error("WebSocket error", { remoteAddress, error: err.message });
+  });
+
   if (REQUIRE_SECURE_WS && !isSecureUpgradeRequest(req)) {
     ws.close(4003, "SECURE_TRANSPORT_REQUIRED");
     return;
@@ -1127,6 +1218,7 @@ wss.on("connection", (ws, req) => {
         // SECURITY FIX: SFrame enforcement — producers sending only tiny frames
         // (< 17 bytes, the minimum SFrame overhead) are blocked as they cannot
         // carry valid encrypted payloads and indicate a bypassed E2EE sender.
+        let sframeCheckPassed = false;
         if (requireSFrame) {
           const hasTraceObserver = produced.observer && typeof produced.observer.on === "function";
           const canEnableTrace = typeof produced.enableTraceEvent === "function";
@@ -1145,7 +1237,7 @@ wss.on("connection", (ws, req) => {
             }
 
             if (!wasClosed) {
-              console.warn(`[SFrame] closeProducer fallback cleanup for ${producerId}`);
+              logger.debug("closeProducer fallback cleanup", { producerId });
             }
 
             bumpRoomVersion(room);
@@ -1170,75 +1262,123 @@ wss.on("connection", (ws, req) => {
 
           let framesChecked = 0;
           let suspiciousFrames = 0;
-          let enforcementDone = false;
           const MAX_CHECK_FRAMES = 5;
           const SFRAME_CHECK_TIMEOUT = 10000;
-          const checkTimer = setTimeout(() => {
-            if (!enforcementDone && framesChecked === 0) {
-              console.warn(`[SFrame] WARN: no RTP trace frames for producer ${producerId} within ${SFRAME_CHECK_TIMEOUT}ms`);
+          let checkTimer = null;
+
+          const finalizeProducer = () => {
+            sframeCheckPassed = true;
+            send(ws, {
+              v: 1,
+              type: "PRODUCED",
+              msgId: uuid(),
+              ts: nowMs(),
+              seq: conn.expectedSeq++,
+              payload: { roomId: room.roomId, roomVersion: room.roomVersion, producerId, kind: producer.kind, source: producer.source },
+            });
+
+            broadcastRoom(
+              room,
+              {
+                v: 1,
+                type: "PRODUCER_ADDED",
+                msgId: uuid(),
+                ts: nowMs(),
+                payload: {
+                  roomId: room.roomId,
+                  roomVersion: room.roomVersion,
+                  producer: serializeProducer(producer),
+                },
+              },
+              conn.deviceId
+            );
+
+            broadcastLegacyParticipantStream(
+              room,
+              conn.userId,
+              "upsert",
+              producer.kind === "video",
+              conn.deviceId
+            );
+          };
+
+          const failProducer = (reason) => {
+            sframeCheckPassed = false;
+            void closeSuspiciousProducer(reason);
+          };
+
+          checkTimer = setTimeout(() => {
+            if (framesChecked === 0) {
+              logger.warn("SFrame enforcement: no RTP trace frames within timeout, allowing producer", { producerId, timeoutMs: SFRAME_CHECK_TIMEOUT });
             }
+            // Timeout reached but no suspicious frames detected — allow producer
+            finalizeProducer();
           }, SFRAME_CHECK_TIMEOUT);
 
           produced.observer.on("trace", (trace) => {
-            if (enforcementDone || trace.type !== "rtp" || framesChecked >= MAX_CHECK_FRAMES) {
+            if (trace.type !== "rtp" || framesChecked >= MAX_CHECK_FRAMES) {
               return;
             }
 
             framesChecked += 1;
             if (trace.size !== undefined && trace.size < 17) {
               suspiciousFrames += 1;
-              console.log(`[SFrame] WARN: Producer ${producerId} frame ${framesChecked} too small for SFrame (${trace.size} bytes)`);
+              logger.debug("SFrame enforcement: producer frame too small", { producerId, frameIndex: framesChecked, frameSize: trace.size });
             }
 
             if (framesChecked >= MAX_CHECK_FRAMES) {
-              enforcementDone = true;
               clearTimeout(checkTimer);
 
               if (suspiciousFrames >= MAX_CHECK_FRAMES) {
-                console.warn(`[SFrame] BLOCKING: Producer ${producerId} — all ${MAX_CHECK_FRAMES} sampled frames too small for SFrame.`);
-                void closeSuspiciousProducer("SFRAME_FRAMES_TOO_SMALL");
+                logger.warn("SFrame enforcement: blocking producer - all frames too small", { producerId, checkedFrames: MAX_CHECK_FRAMES });
+                failProducer("SFRAME_FRAMES_TOO_SMALL");
+                ack(ws, frame.msgId, false, wsError("E2EE_ENFORCEMENT_FAILED", "SFrame enforcement failed: all sampled frames too small", { producerId, suspiciousFrames }, true));
                 return;
               }
 
-              console.log(`[SFrame] OK: Producer ${producerId} passed ${MAX_CHECK_FRAMES} frame checks (${suspiciousFrames} suspicious)`);
+              logger.debug("SFrame enforcement: producer passed checks", { producerId, checkedFrames: MAX_CHECK_FRAMES, suspiciousFrames });
+              finalizeProducer();
+              ack(ws, frame.msgId, true);
             }
           });
         }
 
-        send(ws, {
-          v: 1,
-          type: "PRODUCED",
-          msgId: uuid(),
-          ts: nowMs(),
-          seq: conn.expectedSeq++,
-          payload: { roomId: room.roomId, roomVersion: room.roomVersion, producerId, kind: producer.kind, source: producer.source },
-        });
-
-        broadcastRoom(
-          room,
-          {
+        // For non-SFrame mode or when SFrame check passed already via callback
+        if (!requireSFrame) {
+          send(ws, {
             v: 1,
-            type: "PRODUCER_ADDED",
+            type: "PRODUCED",
             msgId: uuid(),
             ts: nowMs(),
-            payload: {
-              roomId: room.roomId,
-              roomVersion: room.roomVersion,
-              producer: serializeProducer(producer),
+            seq: conn.expectedSeq++,
+            payload: { roomId: room.roomId, roomVersion: room.roomVersion, producerId, kind: producer.kind, source: producer.source },
+          });
+
+          broadcastRoom(
+            room,
+            {
+              v: 1,
+              type: "PRODUCER_ADDED",
+              msgId: uuid(),
+              ts: nowMs(),
+              payload: {
+                roomId: room.roomId,
+                roomVersion: room.roomVersion,
+                producer: serializeProducer(producer),
+              },
             },
-          },
-          conn.deviceId
-        );
+            conn.deviceId
+          );
 
-        broadcastLegacyParticipantStream(
-          room,
-          conn.userId,
-          "upsert",
-          producer.kind === "video",
-          conn.deviceId
-        );
-
-        ack(ws, frame.msgId, true);
+          broadcastLegacyParticipantStream(
+            room,
+            conn.userId,
+            "upsert",
+            producer.kind === "video",
+            conn.deviceId
+          );
+          ack(ws, frame.msgId, true);
+        }
         return;
       }
 
@@ -1887,6 +2027,72 @@ wss.on("connection", (ws, req) => {
   });
 });
 
+// ── Graceful shutdown ───────────────────────────────────────────────────────────
+let isShuttingDown = false;
+
+async function gracefulShutdown(signal) {
+  if (isShuttingDown) return;
+  isShuttingDown = true;
+  logger.info("Graceful shutdown initiated", { signal });
+
+  // 1. Stop accepting new connections
+  wss.close((err) => {
+    if (err) logger.error("wss.close error", { error: err.message });
+  });
+
+  // 2. Close all WebSocket connections with notification
+  const closePromises = [];
+  for (const client of wss.clients) {
+    closePromises.push(
+      new Promise((resolve) => {
+        if (client.readyState === WebSocket.OPEN) {
+          client.send(JSON.stringify({
+            v: 1,
+            type: "SERVER_SHUTDOWN",
+            msgId: uuid(),
+            ts: nowMs(),
+            payload: { reason: "Server is shutting down for maintenance" },
+          }));
+          client.close(1012, "Server shutdown");
+        }
+        client.on("close", resolve);
+        setTimeout(resolve, 5000); // Force close after 5s
+      })
+    );
+  }
+  await Promise.all(closePromises);
+  logger.info("All WebSocket connections closed");
+
+  // 3. Close mediasoup mediaPlane
+  if (mediaPlane && typeof mediaPlane.close === "function") {
+    try {
+      await mediaPlane.close();
+      logger.info("Media plane closed");
+    } catch (err) {
+      logger.error("Error closing media plane", { error: err.message });
+    }
+  }
+
+  // 4. Close Redis-backed infrastructure
+  const redisClosers = [];
+  if (admissionController) redisClosers.push(admissionController.close());
+  if (recoveryLease) redisClosers.push(recoveryLease.close());
+  if (healthState) redisClosers.push(healthState.close());
+  await Promise.all(redisClosers);
+  logger.info("Redis connections closed");
+
+  // 5. Close HTTP server
+  server.close((err) => {
+    if (err) logger.error("server.close error", { error: err.message });
+  });
+
+  logger.info("Graceful shutdown complete");
+  process.exit(0);
+}
+
+process.on("SIGTERM", () => gracefulShutdown("SIGTERM"));
+process.on("SIGINT", () => gracefulShutdown("SIGINT"));
+
 server.listen(PORT, () => {
-  console.log(`[sfu] listening on https://sfu.mansoni.ru (region=${REGION} nodeId=${NODE_ID})`);
+  logger.info("SFU listening", { port: PORT, region: REGION, nodeId: NODE_ID });
 });

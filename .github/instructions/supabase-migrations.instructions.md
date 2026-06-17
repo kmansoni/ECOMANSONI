@@ -8,8 +8,8 @@ applyTo: "supabase/migrations/**/*.sql"
 ## Обязательные правила
 
 1. **RLS на КАЖДОЙ таблице** — сразу после CREATE TABLE
-2. **IF NOT EXISTS** на всех CREATE (TABLE, INDEX, FUNCTION)
-3. **CONCURRENTLY** на всех CREATE INDEX (кроме внутри транзакции)
+2. **IF NOT EXISTS** только на ALTER TABLE ADD COLUMN (не на CREATE TABLE!)
+3. **БЕЗ CONCURRENTLY** на CREATE INDEX (Supabase Management API = transaction)
 4. **Именование**: `YYYYMMDDHHMMSS_описание.sql`
 5. **Только additive** — никогда DROP COLUMN в одном релизе с удалением кода
 6. **Раздельные DDL и DML** — ALTER TABLE и INSERT в разных миграциях
@@ -18,16 +18,16 @@ applyTo: "supabase/migrations/**/*.sql"
 ## Шаблон
 
 ```sql
--- Таблица
-CREATE TABLE IF NOT EXISTS my_table (
+-- Таблица (ВНИМАНИЕ: БЕЗ IF NOT EXISTS!)
+CREATE TABLE my_table (
   id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
   user_id uuid NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
   created_at timestamptz DEFAULT now() NOT NULL,
   -- ...
 );
 
--- Индексы
-CREATE INDEX IF NOT EXISTS idx_my_table_user ON my_table(user_id);
+-- Индексы (ВНИМАНИЕ: БЕЗ CONCURRENTLY!)
+CREATE INDEX idx_my_table_user ON my_table(user_id);
 
 -- RLS (ОБЯЗАТЕЛЬНО)
 ALTER TABLE my_table ENABLE ROW LEVEL SECURITY;
@@ -37,4 +37,21 @@ CREATE POLICY "users_read_own" ON my_table
 
 CREATE POLICY "users_insert_own" ON my_table
   FOR INSERT WITH CHECK (user_id = auth.uid());
+```
+
+## ⚠️ ЖЁСТКИЕ ЗАПРЕТЫ
+
+```
+❌ НИКОГДА: CREATE TABLE IF NOT EXISTS
+   → Пропустит создание, RLS не применится
+
+❌ НИКОГДА: CREATE INDEX CONCURRENTLY
+   → Supabase Management API = transaction, CONCURRENTLY не поддерживается
+
+❌ НИКОГДА: DROP TABLE/COLUMN в одном релизе с удалением кода
+
+❌ НИКОГДА: RENAME в production без blue-green
+
+✅ IF NOT EXISTS только для: ALTER TABLE ADD COLUMN
+✅ Всегда: RLS policies в той же миграции что и CREATE TABLE
 ```

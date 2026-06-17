@@ -94,12 +94,9 @@ export function QRCodeLogin({ onSuccess, theme = "dark" }: QRCodeLoginProps) {
         transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
         className={cn(
           "relative rounded-2xl p-3 transition-opacity",
+          tokens.glassCard,
           status === "expired" && "opacity-40",
         )}
-        style={{
-          background: "linear-gradient(135deg,rgba(255,255,255,0.95),rgba(255,255,255,0.85))",
-          boxShadow: "0 20px 60px -15px rgba(0,180,216,0.4)",
-        }}
       >
         <canvas ref={canvasRef} />
         {status === "generating" && (

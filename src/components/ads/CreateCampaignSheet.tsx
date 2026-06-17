@@ -27,7 +27,7 @@ import {
   Send,
 } from "lucide-react";
 import { useAdCampaigns } from "@/hooks/useAdCampaigns";
-import type { Targeting } from "@/hooks/useAdCampaigns";
+import type { Targeting, CampaignObjective } from "@/lib/ads/types";
 import { toast } from "sonner";
 
 interface CreateCampaignSheetProps {
@@ -91,7 +91,7 @@ export function CreateCampaignSheet({ open, onOpenChange }: CreateCampaignSheetP
 
       const campaign = await createCampaign({
         name: name.trim(),
-        objective,
+        objective: objective as CampaignObjective,
         budget_cents: budgetCents,
         daily_budget_cents: dailyBudgetCents > 0 ? dailyBudgetCents : undefined,
         start_date: startDate,

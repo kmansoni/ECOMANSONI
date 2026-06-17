@@ -1,5 +1,11 @@
 import Redis from "ioredis";
 
+const DEFAULT_LOG = {
+  fatal: (msg, meta) => console.error(JSON.stringify({ ts: Date.now(), level: "fatal", msg, ...meta })),
+  error: (msg, meta) => console.error(JSON.stringify({ ts: Date.now(), level: "error", msg, ...meta })),
+  warn: (msg, meta) => console.warn(JSON.stringify({ ts: Date.now(), level: "warn", msg, ...meta })),
+};
+
 const HEALTH_OK = 0;
 const HEALTH_YELLOW = 1;
 const HEALTH_RED = 2;
@@ -51,7 +57,7 @@ const RELEASE_TOKEN_SCRIPT = `
   return {0, 0}
 `;
 
-export function createAdmissionController({ redisUrl, maxConcurrentRooms = 100, tokensPerSec = 10, burst = 20 }) {
+export function createAdmissionController({ redisUrl, maxConcurrentRooms = 100, tokensPerSec = 10, burst = 20, log = DEFAULT_LOG }) {
   const redis = new Redis(redisUrl, {
     lazyConnect: true,
     maxRetriesPerRequest: 1,
@@ -120,7 +126,10 @@ export function createAdmissionController({ redisUrl, maxConcurrentRooms = 100, 
     async close() {
       try {
         redis.disconnect();
-      } catch {}
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        log.warn("[admissionController] close error", { error: msg });
+      }
     },
   };
 }

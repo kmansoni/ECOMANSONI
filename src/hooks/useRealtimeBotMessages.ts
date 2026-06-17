@@ -163,11 +163,13 @@ export function useBotConversation(botId: string) {
        });
 
        // Шаг 3: Аналитика
-       await supabase.rpc('increment_bot_analytics', {
-         p_bot_id: botId,
-         p_date: new Date().toISOString().split('T')[0],
-         p_messages_received: 1,
-       }).catch(() => {});
+       try {
+         await supabase.rpc('increment_bot_analytics', {
+           p_bot_id: botId,
+           p_date: new Date().toISOString().split('T')[0],
+           p_messages_received: 1,
+         });
+       } catch {}
      } finally {
        setSending(false);
      }

@@ -12,14 +12,26 @@
           }
         ]
       }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash .github/hooks/error-capture.sh"
+          },
+          {
+            "type": "command",
+            "command": "bash .github/hooks/success-capture.sh"
+          }
+        ]
+      }
     ]
   },
   "allowedTools": {
     "bash": [
-      "node --version",
-      "npm --version",
-      "npx vitest",
-      "npx playwright"
+      "*"
     ],
     "read": [],
     "edit": [],
@@ -27,6 +39,9 @@
     "grep": [],
     "glob": []
   },
+  "model": "sonnet-4-6",
+  "availableModels": ["opus", "opus-4-8", "opus-4-7", "sonnet", "sonnet-4-6", "haiku", "fable"],
+  "fallbackModel": ["opus-4-8", "opus", "sonnet"],
   "skills": {
     "enabled": [
       "hooks-automation",
@@ -36,11 +51,68 @@
       "stream-chain",
       "swarm-advanced",
       "swarm-orchestration",
-      "verification-quality"
+      "verification-quality",
+      "browser",
+      "ui-test",
+      "autobrowse",
+      "browser-trace",
+      "safe-browser",
+      "cookie-sync",
+      "browser-to-api",
+      "browserbase-cli",
+      "functions",
+      "search",
+      "fetch",
+      "agent-experience",
+      "company-research",
+      "event-prospecting",
+      "mansoni-learn",
+      "baoyu-design",
+      "nothing-design",
+      "design-taste-frontend",
+      "frontend-design",
+      "shadcn-ui",
+      "color-expert",
+      "creative-director",
+      "ui-ux-pro-max",
+      "apple-hig",
+      "design-review",
+      "minimalist-ui",
+      "industrial-brutalist-ui",
+      "gsap-core",
+      "gsap-scrolltrigger",
+      "threejs",
+      "remotion",
+      "figma-implement-design",
+      "imagegen",
+      "canvas-design"
     ],
     "defaultWorkflow": "general",
     "namespace": "mansoni-swarm",
     "runtime": "ruflo"
+  },
+  "mcpServers": {
+    "playwright": {
+      "type": "stdio",
+      "command": "npx",
+      "args": ["@playwright/mcp"],
+      "env": {},
+      "tools": [
+        "browser_navigate",
+        "browser_snapshot",
+        "browser_click",
+        "browser_type",
+        "browser_fill_form",
+        "browser_select_option",
+        "browser_hover",
+        "browser_evaluate",
+        "browser_press_key",
+        "browser_take_screenshot",
+        "browser_console_messages",
+        "browser_network_requests",
+        "browser_network_request"
+      ]
+    }
   },
   "workflows": {
     "autoRoute": true,

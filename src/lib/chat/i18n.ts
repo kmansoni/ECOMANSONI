@@ -5,13 +5,14 @@
  */
 
 import { format as dateFnsFormat } from 'date-fns';
-import { enUS, ru, arSA, jaJP } from 'date-fns/locale';
+import { enUS, ru, arSA, ja } from 'date-fns/locale';
+import type { Locale } from 'date-fns';
 
 const localeMap: Record<string, Locale> = {
   'en-US': enUS,
   'ru-RU': ru,
   'ar-SA': arSA,
-  'ja-JP': jaJP,
+  'ja-JP': ja,
 };
 
 export function formatMessageTime(timestamp: number, locale: string = 'ru-RU', options?: {
@@ -23,7 +24,6 @@ export function formatMessageTime(timestamp: number, locale: string = 'ru-RU', o
   const fmt = options?.includeYear ? 'PPpp' : 'p'; // date-fns formats
   const formatted = dateFnsFormat(date, fmt, {
     locale: localeMap[locale] || enUS,
-    timeZone: options?.timezone,
   });
   if (options?.showTimezone) {
     const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;

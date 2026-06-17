@@ -23,20 +23,25 @@ import crypto from 'node:crypto';
 
 const MAX_REPLAY_WINDOW = 8192;
 
-interface SFrameServerContext {
-  key: CryptoKey | null;
-  counter: number;
-  keyId: number;
-  epoch: number;
-  highestSeenCounter: number;
-  seenCounters: Set<number>;
-}
+/**
+ * @typedef {Object} SFrameServerContext
+ * @property {CryptoKey|null} key
+ * @property {number} counter
+ * @property {number} keyId
+ * @property {number} epoch
+ * @property {number} highestSeenCounter
+ * @property {Set<number>} seenCounters
+ */
 
-function encodeVarInt(value: number): Buffer {
+/**
+ * @param {number} value
+ * @returns {Buffer}
+ */
+function encodeVarInt(value) {
   if (value < 0) throw new Error('VarInt must be non-negative');
   if (value === 0) return Buffer.from([0]);
 
-  const bytes: number[] = [];
+  const bytes = [];
   let v = value;
   while (v > 0) {
     bytes.unshift(v & 0x7f);
@@ -48,7 +53,12 @@ function encodeVarInt(value: number): Buffer {
   return Buffer.from(bytes);
 }
 
-function decodeVarInt(data: Buffer, offset: number): [number, number] {
+/**
+ * @param {Buffer} data
+ * @param {number} offset
+ * @returns {[number, number]}
+ */
+function decodeVarInt(data, offset) {
   let value = 0;
   let consumed = 0;
   let i = offset;
@@ -62,16 +72,20 @@ function decodeVarInt(data: Buffer, offset: number): [number, number] {
   return [value, i - offset];
 }
 
-function buildIV(epoch: number, counter: number): Buffer {
+/**
+ * @param {number} epoch
+ * @param {number} counter
+ * @returns {Buffer}
+ */
+function buildIV(epoch, counter) {
   const iv = Buffer.alloc(12);
   iv.writeUInt32BE(epoch >>> 0, 0);
-  // counter as 64-bit big-endian
   iv.writeUInt32BE(Math.floor(counter / 0x100000000) >>> 0, 4);
   iv.writeUInt32BE(counter >>> 0, 8);
   return iv;
 }
 
-function createSFrameContext(): SFrameServerContext {
+function createSFrameContext() {
   return {
     key: null,
     counter: 0,
@@ -85,7 +99,12 @@ function createSFrameContext(): SFrameServerContext {
 // Import Web Crypto for AES-GCM
 const webcrypto = crypto.webcrypto;
 
-async function importKey(keyBytes: Buffer, keyId: number): Promise<CryptoKey> {
+/**
+ * @param {Buffer} keyBytes
+ * @param {number} keyId
+ * @returns {Promise<CryptoKey>}
+ */
+async function importKey(keyBytes, keyId) {
   return webcrypto.subtle.importKey(
     'raw',
     keyBytes,
@@ -95,10 +114,12 @@ async function importKey(keyBytes: Buffer, keyId: number): Promise<CryptoKey> {
   );
 }
 
-async function encryptFrame(
-  ctx: SFrameServerContext,
-  frame: Buffer
-): Promise<Buffer> {
+/**
+ * @param {SFrameServerContext} ctx
+ * @param {Buffer} frame
+ * @returns {Promise<Buffer>}
+ */
+async function encryptFrame(ctx, frame) {
   if (!ctx.key) throw new Error('No encryption key set');
 
   const counter = ctx.counter++;
@@ -114,10 +135,12 @@ async function encryptFrame(
   return Buffer.concat([header, Buffer.from(encrypted)]);
 }
 
-async function decryptFrame(
-  ctx: SFrameServerContext,
-  frame: Buffer
-): Promise<Buffer> {
+/**
+ * @param {SFrameServerContext} ctx
+ * @param {Buffer} frame
+ * @returns {Promise<Buffer>}
+ */
+async function decryptFrame(ctx, frame) {
   if (!ctx.key) throw new Error('No decryption key set');
 
   const parsed = parseHeader(frame);
@@ -149,7 +172,6 @@ async function decryptFrame(
   ctx.seenCounters.add(counter);
   if (counter > ctx.highestSeenCounter) {
     ctx.highestSeenCounter = counter;
-    // Range-based eviction
     const newFloor = ctx.highestSeenCounter - MAX_REPLAY_WINDOW;
     for (const c of ctx.seenCounters) {
       if (c <= newFloor) ctx.seenCounters.delete(c);
@@ -159,7 +181,12 @@ async function decryptFrame(
   return Buffer.from(decrypted);
 }
 
-function buildHeader(keyId: number, counter: number): Buffer {
+/**
+ * @param {number} keyId
+ * @param {number} counter
+ * @returns {Buffer}
+ */
+function buildHeader(keyId, counter) {
   const counterBytes = encodeVarInt(counter);
   if (keyId <= 0x7f) {
     const buf = Buffer.alloc(1 + counterBytes.length);
@@ -167,7 +194,6 @@ function buildHeader(keyId: number, counter: number): Buffer {
     counterBytes.copy(buf, 1);
     return buf;
   }
-  // Long header
   let kidBytes = 0;
   let tmp = keyId >> 4;
   while (tmp > 0) { kidBytes++; tmp >>= 8; }
@@ -182,20 +208,25 @@ function buildHeader(keyId: number, counter: number): Buffer {
   return buf;
 }
 
-interface ParsedHeader {
-  keyId: number;
-  counter: number;
-  headerLength: number;
-}
+/**
+ * @typedef {Object} ParsedHeader
+ * @property {number} keyId
+ * @property {number} counter
+ * @property {number} headerLength
+ */
 
-function parseHeader(data: Buffer): ParsedHeader | null {
+/**
+ * @param {Buffer} data
+ * @returns {ParsedHeader|null}
+ */
+function parseHeader(data) {
   try {
     if (data.length < 2) return null;
     const firstByte = data[0];
     const xBit = (firstByte & 0x80) !== 0;
 
     let offset = 0;
-    let keyId: number;
+    let keyId;
 
     if (!xBit) {
       keyId = firstByte & 0x7f;
@@ -219,60 +250,62 @@ function parseHeader(data: Buffer): ParsedHeader | null {
   }
 }
 
-// ─── SFU SFrame Manager ───────────────────────────────────────────────────────
+// ─── SFU SFrame Manager ─────────────────────────────────────────────────────--
 
-export interface SfuE2eeConfig {
-  /** Enable server-side SFrame encryption */
-  enabled: boolean;
-  /** Key ID used for server-side SFrame (epoch mapped) */
-  baseKeyId?: number;
-}
+/**
+ * @typedef {Object} SfuE2eeConfig
+ * @property {boolean} enabled
+ * @property {number} [baseKeyId]
+ */
 
-export interface PeerKeyMaterial {
-  publicKey: CryptoKey;
-  privateKey: CryptoKey;
-  keyId: number;
-  epoch: number;
-}
+/**
+ * @typedef {Object} PeerKeyMaterial
+ * @property {CryptoKey} publicKey
+ * @property {CryptoKey} privateKey
+ * @property {number} keyId
+ * @property {number} epoch
+ */
 
 /**
  * Manages SFrame encryption/decryption for all peers in a room.
  * Used by mediasoup controller to encrypt/decrypt media between SFU and peers.
  */
 export class SfuSFrameManager {
-  private config: SfuE2eeConfig;
-  /** deviceId -> encryptor context for outbound to this peer */
-  private peerEncryptors: Map<string, SFrameServerContext> = new Map();
-  /** deviceId -> decryptor context for inbound from this peer */
-  private peerDecryptors: Map<string, SFrameServerContext> = new Map();
-  /** epoch -> master key for rekeying */
-  private epochKeys: Map<number, CryptoKey> = new Map();
-  private currentEpoch: number = 0;
-  private stats = {
+  /** @type {SfuE2eeConfig} */
+  config;
+  /** @type {Map<string, SFrameServerContext>} */
+  peerEncryptors = new Map();
+  /** @type {Map<string, SFrameServerContext>} */
+  peerDecryptors = new Map();
+  /** @type {Map<number, CryptoKey>} */
+  epochKeys = new Map();
+  currentEpoch = 0;
+  stats = {
     encryptedFrames: 0,
     decryptedFrames: 0,
     encryptionErrors: 0,
     decryptionErrors: 0,
   };
 
-  constructor(config: SfuE2eeConfig = { enabled: false }) {
+  /** @param {SfuE2eeConfig} config */
+  constructor(config = { enabled: false }) {
     this.config = config;
   }
 
-  get isEnabled(): boolean {
+  get isEnabled() {
     return this.config.enabled;
   }
 
   /**
    * Set the current epoch and its encryption key.
-   * Called during E2EE_READY or REKEY processing.
+   * @param {number} epoch
+   * @param {Buffer} keyBytes
    */
-  async setEpochKey(epoch: number, keyBytes: Buffer): Promise<void> {
+  async setEpochKey(epoch, keyBytes) {
     this.currentEpoch = epoch;
     const key = await importKey(keyBytes, epoch & 0xff);
     this.epochKeys.set(epoch, key);
 
-    // Update all peer encryptors with new key
     for (const [, ctx] of this.peerEncryptors) {
       ctx.key = key;
       ctx.keyId = epoch & 0xff;
@@ -287,13 +320,11 @@ export class SfuSFrameManager {
 
   /**
    * Add a peer's decryption key (inbound media from this peer).
-   * Called when processing KEY_PACKAGE from a peer.
+   * @param {string} peerDeviceId
+   * @param {Buffer} keyBytes
+   * @param {number} keyId
    */
-  async addPeerDecryptionKey(
-    peerDeviceId: string,
-    keyBytes: Buffer,
-    keyId: number
-  ): Promise<void> {
+  async addPeerDecryptionKey(peerDeviceId, keyBytes, keyId) {
     let ctx = this.peerDecryptors.get(peerDeviceId);
     if (!ctx) {
       ctx = createSFrameContext();
@@ -311,8 +342,9 @@ export class SfuSFrameManager {
 
   /**
    * Remove peer's encryption context (peer left).
+   * @param {string} peerDeviceId
    */
-  removePeer(peerDeviceId: string): void {
+  removePeer(peerDeviceId) {
     this.peerEncryptors.delete(peerDeviceId);
     this.peerDecryptors.delete(peerDeviceId);
     console.log(`[SfuSFrame] Peer removed: ${peerDeviceId.slice(0, 8)}`);
@@ -320,12 +352,13 @@ export class SfuSFrameManager {
 
   /**
    * Encrypt outbound media for a specific peer.
-   * Called when SFU forwards media to a consumer.
+   * @param {string} peerDeviceId
+   * @param {Buffer} frame
+   * @returns {Promise<Buffer>}
    */
-  async encryptForPeer(peerDeviceId: string, frame: Buffer): Promise<Buffer> {
+  async encryptForPeer(peerDeviceId, frame) {
     let ctx = this.peerEncryptors.get(peerDeviceId);
     if (!ctx || !ctx.key) {
-      // Auto-create with current epoch key
       const key = this.epochKeys.get(this.currentEpoch);
       if (!key) {
         this.stats.encryptionErrors++;
@@ -350,9 +383,11 @@ export class SfuSFrameManager {
 
   /**
    * Decrypt inbound media from a specific peer.
-   * Called when SFU receives media from a producer.
+   * @param {string} peerDeviceId
+   * @param {Buffer} frame
+   * @returns {Promise<Buffer>}
    */
-  async decryptFromPeer(peerDeviceId: string, frame: Buffer): Promise<Buffer> {
+  async decryptFromPeer(peerDeviceId, frame) {
     const ctx = this.peerDecryptors.get(peerDeviceId);
     if (!ctx || !ctx.key) {
       this.stats.decryptionErrors++;
@@ -370,17 +405,19 @@ export class SfuSFrameManager {
   }
 
   /**
-   * Check if we can encrypt for a peer (has key).
+   * @param {string} peerDeviceId
+   * @returns {boolean}
    */
-  canEncryptForPeer(peerDeviceId: string): boolean {
+  canEncryptForPeer(peerDeviceId) {
     const ctx = this.peerEncryptors.get(peerDeviceId);
     return !!ctx?.key || this.epochKeys.has(this.currentEpoch);
   }
 
   /**
-   * Check if we can decrypt from a peer (has key).
+   * @param {string} peerDeviceId
+   * @returns {boolean}
    */
-  canDecryptFromPeer(peerDeviceId: string): boolean {
+  canDecryptFromPeer(peerDeviceId) {
     const ctx = this.peerDecryptors.get(peerDeviceId);
     return !!ctx?.key;
   }
@@ -389,7 +426,7 @@ export class SfuSFrameManager {
     return { ...this.stats };
   }
 
-  reset(): void {
+  reset() {
     this.peerEncryptors.clear();
     this.peerDecryptors.clear();
     this.epochKeys.clear();
@@ -407,14 +444,18 @@ export class SfuSFrameManager {
 
 /**
  * Creates a new SfuSFrameManager for a room.
+ * @param {boolean} enabled
+ * @returns {SfuSFrameManager}
  */
-export function createSfuSFrameManager(enabled = true): SfuSFrameManager {
+export function createSfuSFrameManager(enabled = true) {
   return new SfuSFrameManager({ enabled });
 }
 
 /**
  * Parse raw epoch key from base64 (received via KEY_PACKAGE).
+ * @param {string} base64Key
+ * @returns {Buffer}
  */
-export function parseEpochKey(base64Key: string): Buffer {
+export function parseEpochKey(base64Key) {
   return Buffer.from(base64Key, 'base64');
 }

@@ -27,6 +27,10 @@ export interface Targeting {
   maxAge?: number;
   interests?: string[];
   placements?: string[];
+  age_min?: number;
+  age_max?: number;
+  gender?: string;
+  locations?: string[];
 }
 
 export interface AdCampaign {

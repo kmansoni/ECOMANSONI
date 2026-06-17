@@ -1,41 +1,45 @@
-// Double Ratchet implementation using libsodium-wrappers
-import { sodium } from 'libsodium-wrappers';
+// Double Ratchet implementation using Web Crypto API
+// Signal Protocol — Double Ratchet with AES-256-GCM
 
 export interface RatchetState {
-  // Root key for future DH ratchets
   rootKey: Uint8Array;
-  // Chain keys for sending and receiving
   sendChainKey: Uint8Array;
   recvChainKey: Uint8Array;
-  // Message keys (derived from chain keys when needed)
   sendMessageKey: Uint8Array | null;
   recvMessageKey: Uint8Array | null;
-  // Counters
   sendCount: number;
   recvCount: number;
-  // Previous counter for handling out-of-order (max skipped messages)
   prevRecvCount: number;
 }
 
-/**
- * Initialize ratchet from shared secret (output of X3DH or subsequent DH)
- * @param sharedSecret - 32-byte shared secret from DH exchange
- */
-export function initRatchet(sharedSecret: Uint8Array): RatchetState {
-  await sodium.ready;
-  // Ensure sharedSecret is 32 bytes
+async function deriveKey(parent: Uint8Array, info: string, length: number): Promise<Uint8Array> {
+  const key = await crypto.subtle.importKey(
+    'raw', parent,
+    { name: 'HKDF' },
+    false,
+    ['deriveBits']
+  );
+  const bits = await crypto.subtle.deriveBits(
+    { name: 'HKDF', hash: 'SHA-256', salt: new Uint8Array(32), info: new TextEncoder().encode(info) },
+    key,
+    length * 8
+  );
+  return new Uint8Array(bits);
+}
+
+async function kdf(parent: Uint8Array, name: string, id: number): Promise<Uint8Array> {
+  return deriveKey(parent, `${name}:${id}`, 32);
+}
+
+export async function initRatchet(sharedSecret: Uint8Array): Promise<RatchetState> {
   if (sharedSecret.length !== 32) {
     throw new Error('Shared secret must be 32 bytes');
   }
-  // Root key is the shared secret
   const rootKey = sharedSecret.slice();
-  // Derive chain keys from root key
-  const sendChainKey = sodium.crypto_kdf_derive_from_key(32, 1, sodium.fromHex('ratchet_send'), rootKey);
-  const recvChainKey = sodium.crypto_kdf_derive_from_key(32, 2, sodium.fromHex('ratchet_recv'), rootKey);
   return {
     rootKey,
-    sendChainKey,
-    recvChainKey,
+    sendChainKey: await kdf(rootKey, 'ratchet_send', 1),
+    recvChainKey: await kdf(rootKey, 'ratchet_recv', 2),
     sendMessageKey: null,
     recvMessageKey: null,
     sendCount: 0,
@@ -44,27 +48,15 @@ export function initRatchet(sharedSecret: Uint8Array): RatchetState {
   };
 }
 
-/**
- * Perform a DH ratchet step (when receiving a new DH public key from the other party)
- * This updates the root key and chain keys, and resets message keys and counters.
- * @param state - current ratchet state
- * @param dhSecret - 32-byte shared secret from DH exchange (our ephemeral private key * their ephemeral public key)
- * @returns new ratchet state
- */
-export function dhRatchet(state: RatchetState, dhSecret: Uint8Array): RatchetState {
-  await sodium.ready;
+export async function dhRatchet(state: RatchetState, dhSecret: Uint8Array): Promise<RatchetState> {
   if (dhSecret.length !== 32) {
     throw new Error('DH secret must be 32 bytes');
   }
-  // newRootKey = KDF(rootKey, dhSecret, 0x00)
-  const newRootKey = sodium.crypto_kdf_derive_from_key(32, 0, sodium.fromHex('ratchet_root'), state.rootKey);
-  // new chain keys
-  const newSendChainKey = sodium.crypto_kdf_derive_from_key(32, 1, sodium.fromHex('ratchet_send'), newRootKey);
-  const newRecvChainKey = sodium.crypto_kdf_derive_from_key(32, 2, sodium.fromHex('ratchet_recv'), newRootKey);
+  const newRootKey = await kdf(state.rootKey, 'ratchet_root', 0);
   return {
     rootKey: newRootKey,
-    sendChainKey: newSendChainKey,
-    recvChainKey: newRecvChainKey,
+    sendChainKey: await kdf(newRootKey, 'ratchet_send', 1),
+    recvChainKey: await kdf(newRootKey, 'ratchet_recv', 2),
     sendMessageKey: null,
     recvMessageKey: null,
     sendCount: 0,
@@ -73,17 +65,9 @@ export function dhRatchet(state: RatchetState, dhSecret: Uint8Array): RatchetSta
   };
 }
 
-/**
- * Generate a message key for sending (and advance the sending chain)
- * @param state - current ratchet state
- * @returns { messageKey: Uint8Array, newState: RatchetState } where newState has updated sendChainKey and incremented sendCount
- */
-export function getMessageKey(state: RatchetState): { messageKey: Uint8Array; newState: RatchetState } {
-  await sodium.ready;
-  // Derive message key from sendChainKey with index = sendCount
-  const messageKey = sodium.crypto_kdf_derive_from_key(32, state.sendCount, sodium.fromHex('message'), state.sendChainKey);
-  // Advance send chain key for next message
-  const nextSendChainKey = sodium.crypto_kdf_derive_from_key(32, 1, sodium.fromHex('ratchet_send'), state.sendChainKey);
+export async function getMessageKey(state: RatchetState): Promise<{ messageKey: Uint8Array; newState: RatchetState }> {
+  const messageKey = await kdf(state.sendChainKey, 'message', state.sendCount);
+  const nextSendChainKey = await kdf(state.sendChainKey, 'ratchet_send', 1);
   return {
     messageKey,
     newState: {
@@ -91,44 +75,25 @@ export function getMessageKey(state: RatchetState): { messageKey: Uint8Array; ne
       sendChainKey: nextSendChainKey,
       sendMessageKey: messageKey,
       sendCount: state.sendCount + 1,
-    }
+    },
   };
 }
 
-/**
- * Advance receiving chain to a given message index and return the message key.
- * If index is less than current recvCount, it's a repeat (should not happen if we track properly).
- * If index is greater than recvCount, we need to advance the chain and skip intermediate keys.
- * We'll skip up to a maximum (e.g., 1000) to prevent denial of service.
- * @param state - current ratchet state
- * @param index - the message index we want to retrieve (0-based)
- * @returns { key: Uint8Array, newState: RatchetState } where newState has updated recvChainKey, recvCount, prevRecvCount, and recvMessageKey set
- */
-export function getMessageKeyAt(state: RatchetState, index: number): { key: Uint8Array; newState: RatchetState } {
-  await sodium.ready;
+export async function getMessageKeyAt(state: RatchetState, index: number): Promise<{ key: Uint8Array; newState: RatchetState }> {
   if (index < state.recvCount) {
-    // We have already received this message (or we have skipped it). For simplicity, we return null or error.
-    // In a full implementation we would have stored previous message keys in a cache.
     throw new Error('Message index already processed');
   }
   if (index - state.recvCount > 1000) {
-    // Limit to prevent excessive skipping (DoS protection)
     throw new Error('Message gap too large');
   }
-  // Advance the recv chain until we reach the desired index
   let chainKey = state.recvChainKey;
   let count = state.recvCount;
   while (count < index) {
-    // Derive message key for this count (we don't need to store it, just advance chain)
-    const _msgKey = sodium.crypto_kdf_derive_from_key(32, count, sodium.fromHex('message'), chainKey);
-    // Advance chain key
-    chainKey = sodium.crypto_kdf_derive_from_key(32, 1, sodium.fromHex('ratchet_recv'), chainKey);
+    chainKey = await kdf(chainKey, 'ratchet_recv', 1);
     count++;
   }
-  // Now chainKey is the chain key for index
-  const messageKey = sodium.crypto_kdf_derive_from_key(32, index, sodium.fromHex('message'), chainKey);
-  // Advance chain key for next message
-  const nextRecvChainKey = sodium.crypto_kdf_derive_from_key(32, 1, sodium.fromHex('ratchet_recv'), chainKey);
+  const messageKey = await kdf(chainKey, 'message', index);
+  const nextRecvChainKey = await kdf(chainKey, 'ratchet_recv', 1);
   return {
     key: messageKey,
     newState: {
@@ -136,7 +101,29 @@ export function getMessageKeyAt(state: RatchetState, index: number): { key: Uint
       recvChainKey: nextRecvChainKey,
       recvMessageKey: messageKey,
       recvCount: index + 1,
-      prevRecvCount: index - state.recvCount, // number of messages skipped
-    }
+      prevRecvCount: index - state.recvCount,
+    },
   };
+}
+
+export async function encryptMessage(
+  state: RatchetState,
+  plaintext: Uint8Array
+): Promise<{ ciphertext: Uint8Array; newState: RatchetState }> {
+  const { messageKey, newState } = await getMessageKey(state);
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const key = await crypto.subtle.importKey('raw', messageKey, { name: 'AES-GCM' }, false, ['encrypt']);
+  const ciphertext = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, plaintext);
+  return { ciphertext: new Uint8Array(ciphertext), newState };
+}
+
+export async function decryptMessage(
+  state: RatchetState,
+  ciphertext: Uint8Array,
+  iv: Uint8Array
+): Promise<{ plaintext: Uint8Array; newState: RatchetState }> {
+  const { key, newState } = await getMessageKeyAt(state, state.recvCount);
+  const cryptoKey = await crypto.subtle.importKey('raw', key, { name: 'AES-GCM' }, false, ['decrypt']);
+  const plaintext = await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, cryptoKey, ciphertext);
+  return { plaintext: new Uint8Array(plaintext), newState };
 }

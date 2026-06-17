@@ -1,77 +1,109 @@
-// X3DH (Extended Triple Diffie-Hellman) implementation using libsodium-wrappers
-import sodium from 'libsodium-wrappers';
+// X3DH (Extended Triple Diffie-Hellman) using Web Crypto API
+// Implements Signal Protocol X3DH key agreement
 
 export interface X3DHKeyPair {
-  publicKey: Uint8Array;
-  privateKey: Uint8Array;
+  publicKey: CryptoKey;
+  privateKey: CryptoKey;
 }
 
 export interface X3DHKeyBundle {
-  ik: X3DHKeyPair; // Identity Key
-  spk: X3DHKeyPair; // Signed PreKey (also serves as ephemeral key)
-  spkSig: Uint8Array; // Signature of SPK by IK (Ed25519 signature)
-  opk: X3DHKeyPair[]; // One-time PreKeys
+  ik: X3DHKeyPair;
+  spk: X3DHKeyPair;
+  spkSig: Uint8Array;
+  opk: X3DHKeyPair[];
 }
 
-/**
- * Perform X3DH key agreement
- * @param my  - own identity key, signed preKey, signature, and list of one-time preKeys
- * @param their - peer's identity key, signed preKey, signature, and one-time preKeys
- * @param theirOpkIndex - optional index of the one-time preKey from their bundle that was used (if any)
- * @returns shared secret and initial ratchet keys
- */
+export interface X3DHResult {
+  sharedSecret: Uint8Array;
+  sendKey: Uint8Array;
+  recvKey: Uint8Array;
+}
+
+async function deriveKey(
+  inputKey: Uint8Array,
+  info: string,
+  length: number
+): Promise<Uint8Array> {
+  const key = await crypto.subtle.importKey(
+    'raw',
+    inputKey,
+    { name: 'HKDF' },
+    false,
+    ['deriveBits']
+  );
+  const bits = await crypto.subtle.deriveBits(
+    { name: 'HKDF', hash: 'SHA-256', salt: new Uint8Array(32), info: new TextEncoder().encode(info) },
+    key,
+    length * 8
+  );
+  return new Uint8Array(bits);
+}
+
+async function ecdh(privateKey: CryptoKey, publicKey: CryptoKey): Promise<Uint8Array> {
+  const shared = await crypto.subtle.deriveBits(
+    { name: 'ECDH', public: publicKey },
+    privateKey,
+    256
+  );
+  return new Uint8Array(shared);
+}
+
+async function exportKey(key: CryptoKey): Promise<Uint8Array> {
+  const raw = await crypto.subtle.exportKey('raw', key);
+  return new Uint8Array(raw);
+}
+
+export async function generateIdentityKey(): Promise<X3DHKeyPair> {
+  const pair = await crypto.subtle.generateKey(
+    { name: 'ECDH', namedCurve: 'P-256' },
+    true,
+    ['deriveBits']
+  );
+  return pair;
+}
+
+export async function signWithIdentity(
+  identityKey: CryptoKey,
+  data: Uint8Array
+): Promise<Uint8Array> {
+  const key = await crypto.subtle.importKey(
+    'raw',
+    await exportKey(identityKey),
+    { name: 'HMAC', hash: 'SHA-256' },
+    false,
+    ['sign']
+  );
+  return new Uint8Array(await crypto.subtle.sign('HMAC', key, data));
+}
+
 export async function x3dh(
   my: X3DHKeyBundle,
-  their: X3DHKeyBundle,
+  theirPublicKeys: { ik: CryptoKey; spk: CryptoKey; opk?: CryptoKey },
   theirOpkIndex: number | null = null
-): Promise<{ sharedSecret: Uint8Array; sendKey: Uint8Array; recvKey: Uint8Array }> {
-  const sodiumInstance = await sodium;
+): Promise<X3DHResult> {
+  const dh1 = await ecdh(my.ik.privateKey, theirPublicKeys.ik);
+  const dh2 = await ecdh(my.spk.privateKey, theirPublicKeys.ik);
+  const dh3 = await ecdh(my.spk.privateKey, theirPublicKeys.spk);
 
-  // Helper to compute DH: privateKey * publicKey
-  const dh = (privateKey: Uint8Array, publicKey: Uint8Array): Uint8Array => {
-    return sodiumInstance.crypto_scalarmult(privateKey, publicKey);
-  };
-
-  // Helper to concatenate Uint8Arrays
-  const concatUint8Arrays = (arrays: Uint8Array[]): Uint8Array => {
-    let totalLength = 0;
-    for (const arr of arrays) {
-      totalLength += arr.length;
-    }
-    const result = new Uint8Array(totalLength);
-    let offset = 0;
-    for (const arr of arrays) {
-      result.set(arr, offset);
-      offset += arr.length;
-    }
-    return result;
-  };
-
-  // DH1 = DH(IK_A, SPK_B)
-  const dh1 = dh(my.ik.privateKey, their.spk.publicKey);
-  // DH2 = DH(EK_A, IK_B) where EK_A is the private part of SPK (treated as ephemeral)
-  const dh2 = dh(my.spk.privateKey, their.ik.publicKey);
-  // DH3 = DH(EK_A, SPK_B)
-  const dh3 = dh(my.spk.privateKey, their.spk.publicKey);
-  // DH4 = DH(EK_A, OPK_B) if OPK provided
   let dh4 = new Uint8Array(0);
-  if (theirOpkIndex !== null && theirOpkIndex >= 0 && theirOpkIndex < their.opk.length) {
-    dh4 = dh(my.spk.privateKey, their.opk[theirOpkIndex].publicKey);
+  if (theirOpkIndex !== null && theirPublicKeys.opk) {
+    dh4 = await ecdh(my.spk.privateKey, theirPublicKeys.opk);
   }
 
-  // Concatenate all DH outputs
-  const dhVals = concatUint8Arrays([dh1, dh2, dh3, dh4]);
+  const concat = [dh1, dh2, dh3, dh4];
+  let totalLen = 0;
+  for (const b of concat) totalLen += b.length;
+  const combined = new Uint8Array(totalLen);
+  let offset = 0;
+  for (const b of concat) {
+    combined.set(b, offset);
+    offset += b.length;
+  }
 
-  // Derive shared secret using HKDF (using sodium.crypto_generichash as KDF)
-  // We'll use a fixed context string 'x3dh' prefixed to the input to act as HKDF info
-  const context = new TextEncoder().encode('x3dh');
-  const input = concatUint8Arrays([context, dhVals]);
-  const sharedSecret = sodiumInstance.crypto_generichash(32, input);
-
-  // Derive ratchet keys: split shared secret into send and receive keys
-  // Using HKDF-like: first 16 bytes for recv, next 16 for send (or vice versa)
-  const recvKey = sharedSecret.slice(0, 16);
-  const sendKey = sharedSecret.slice(16, 32);
-
-  return { sharedSecret, sendKey, recvKey };
+  const sharedSecret = await deriveKey(combined, 'x3dh', 32);
+  return {
+    sharedSecret,
+    sendKey: sharedSecret.slice(0, 16),
+    recvKey: sharedSecret.slice(16, 32),
+  };
 }

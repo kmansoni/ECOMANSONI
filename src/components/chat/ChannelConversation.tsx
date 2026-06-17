@@ -264,14 +264,15 @@ export function ChannelConversation({ channel, onBack, onLeave }: ChannelConvers
     const channelPins = supabase
       .channel(`channel-pins:${channel.id}`)
       .on(
-        "postgres_changes" as any,
+        'postgres_changes' as 'postgres_changes' & Record<string, unknown>,
         {
-          schema: "public",
-          table: "channel_pins",
+          event: '*',
+          schema: 'public',
+          table: 'channel_pins',
           filter: `channel_id=eq.${channel.id}`,
         },
-        (payload) => {
-          if (payload.eventType === "DELETE") {
+        (payload: Record<string, unknown>) => {
+          if (payload.eventType === 'DELETE') {
             setPinnedMessageId(null);
             return;
           }

@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { createClient } from "@/integrations/supabase/client";
+import { supabase } from "@/integrations/supabase/client";
 
 interface StarsBalanceDisplayProps {
   userId?: string;
@@ -9,7 +9,6 @@ interface StarsBalanceDisplayProps {
 export function StarsBalanceDisplay({ userId, onBalanceChange }: StarsBalanceDisplayProps) {
   const [balance, setBalance] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
-  const supabase = createClient();
 
   useEffect(() => {
     if (!userId) return;

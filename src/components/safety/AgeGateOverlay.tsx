@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { InfoCircledIcon } from '@radix-ui/react-icons';
+import { Info } from 'lucide-react';
 
 interface AgeGateOverlayProps {
   onSuccess?: () => void;
@@ -45,7 +45,7 @@ export const AgeGateOverlay: React.FC<AgeGateOverlayProps> = ({ onSuccess, onCan
         <form onSubmit={handleSubmit}>
           <CardContent className="space-y-4">
             <Alert>
-              <InfoCircledIcon className="h-4 w-4" />
+              <Info className="h-4 w-4" />
               <AlertDescription>
                 Пользователям младше 13 лет требуется аккаунт родителя.
               </AlertDescription>

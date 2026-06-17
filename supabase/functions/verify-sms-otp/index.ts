@@ -238,6 +238,15 @@ serve(async (req: Request) => {
         if (profileError) {
           console.error("[verify-sms-otp] Profile insert error:", profileError.message);
         }
+
+        // Sync auth_accounts so future phone lookups find this user
+        const { error: accountError } = await supabase.rpc("auth_upsert_account_v1", {
+          p_email: fakeEmail,
+          p_phone_e164: normalizedPhone,
+        });
+        if (accountError) {
+          console.error("[verify-sms-otp] auth_accounts upsert error:", accountError.message);
+        }
       }
     } else {
       userId = existingUser.id;
@@ -260,6 +269,15 @@ serve(async (req: Request) => {
           JSON.stringify({ error: "Ошибка аутентификации" }),
           { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } },
         );
+      }
+
+      // Sync auth_accounts so future phone lookups find this user
+      const { error: accountError } = await supabase.rpc("auth_upsert_account_v1", {
+        p_email: fakeEmail,
+        p_phone_e164: normalizedPhone,
+      });
+      if (accountError) {
+        console.error("[verify-sms-otp] auth_accounts upsert error:", accountError.message);
       }
     }
 

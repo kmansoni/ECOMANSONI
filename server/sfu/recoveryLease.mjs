@@ -1,5 +1,11 @@
 import Redis from "ioredis";
 
+const DEFAULT_LOG = {
+  fatal: (msg, meta) => console.error(JSON.stringify({ ts: Date.now(), level: "fatal", msg, ...meta })),
+  error: (msg, meta) => console.error(JSON.stringify({ ts: Date.now(), level: "error", msg, ...meta })),
+  warn: (msg, meta) => console.warn(JSON.stringify({ ts: Date.now(), level: "warn", msg, ...meta })),
+};
+
 const DEFAULT_LEASE_TTL_SEC = 30;
 const HEALTH_OK = 0;
 const HEALTH_YELLOW = 1;
@@ -87,7 +93,7 @@ const releaseLeaseLua = `
   return {1, "OK"}
 `;
 
-export function createRecoveryLease({ redisUrl, leaseTtlSec = DEFAULT_LEASE_TTL_SEC }) {
+export function createRecoveryLease({ redisUrl, leaseTtlSec = DEFAULT_LEASE_TTL_SEC, log = DEFAULT_LOG }) {
   const redis = new Redis(redisUrl, {
     lazyConnect: true,
     maxRetriesPerRequest: 1,
@@ -225,7 +231,10 @@ export function createRecoveryLease({ redisUrl, leaseTtlSec = DEFAULT_LEASE_TTL_
     async close() {
       try {
         redis.disconnect();
-      } catch {}
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        log.warn("[recoveryLease] close error", { error: msg });
+      }
     },
   };
 }

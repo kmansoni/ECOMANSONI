@@ -7,38 +7,46 @@ import type { Adjustments } from '@/components/editor/adjustmentsModel';
 import type { PeopleTag } from './PeopleTagOverlay';
 import { logger } from '@/lib/logger';
 
+export interface CarouselSlide {
+  id: string;
+  file: File;
+  previewUrl: string;
+  caption: string;
+  filterIdx: number;
+  filterIntensity: number;
+  adjustments: Adjustments;
+  mediaType: 'image' | 'video';
+  durationSec?: number;
+}
+
 /**
  * Полное состояние редактора контента
  * Хранится в CreateContentModal, передается в TabContentEditor
  */
 export interface EditorState {
-  // Filters
   selectedFilterIdx: number;
   filterIntensity: number;
 
-  // Adjustments
   adjustments: Adjustments;
 
-  // People Tags
   peopleTags: PeopleTag[];
 
-  // Schedule
   scheduledDate: Date | null;
 
-  // Location
   location: {
     name: string;
     lat: number;
     lng: number;
   } | null;
 
-  // Draft
   draftName: string;
   draftId: string | null;
 
-  // Privacy
   hideLikes: boolean;
   commentsDisabled: boolean;
+
+  carouselSlides: CarouselSlide[];
+  selectedSlideId: string | null;
 }
 
 /**
@@ -55,8 +63,12 @@ export type EditorAction =
   | { type: 'SET_DRAFT'; payload: { name: string; id: string | null } }
   | { type: 'SET_HIDE_LIKES'; payload: boolean }
   | { type: 'SET_COMMENTS_DISABLED'; payload: boolean }
+  | { type: 'ADD_CAROUSEL_SLIDE'; payload: CarouselSlide }
+  | { type: 'REMOVE_CAROUSEL_SLIDE'; payload: string }
+  | { type: 'UPDATE_CAROUSEL_SLIDE'; payload: { id: string; updates: Partial<Pick<CarouselSlide, 'caption' | 'filterIdx' | 'filterIntensity' | 'adjustments'>> } }
+  | { type: 'REORDER_CAROUSEL'; payload: { fromIndex: number; toIndex: number } }
+  | { type: 'SELECT_CAROUSEL_SLIDE'; payload: string | null }
   | { type: 'CLEAR_ALL' };
-
 /**
  * Reducer для EditorState
  * Гарантирует идемпотентность и безопасность
@@ -69,7 +81,7 @@ export function editorStateReducer(state: EditorState, action: EditorAction): Ed
         ...state,
         selectedFilterIdx: Math.max(0, Math.min(19, action.payload.idx)),
         filterIntensity: Math.max(0, Math.min(1, action.payload.intensity)),
-      };
+      }
 
     case 'SET_ADJUSTMENTS':
       return {
@@ -123,6 +135,54 @@ export function editorStateReducer(state: EditorState, action: EditorAction): Ed
     case 'SET_COMMENTS_DISABLED':
       return { ...state, commentsDisabled: !!action.payload };
 
+    case 'ADD_CAROUSEL_SLIDE': {
+      const exists = state.carouselSlides.some((s) => s.id === action.payload.id);
+      if (exists) {
+        logger.warn('[EditorState] Слайд уже существует в карусели', { slideId: action.payload.id });
+        return state;
+      }
+      return {
+        ...state,
+        carouselSlides: [...state.carouselSlides, action.payload],
+        selectedSlideId: action.payload.id,
+      };
+    }
+
+    case 'REMOVE_CAROUSEL_SLIDE': {
+      const next = state.carouselSlides.filter((s) => s.id !== action.payload);
+      return {
+        ...state,
+        carouselSlides: next,
+        selectedSlideId:
+          state.selectedSlideId === action.payload
+            ? (next[0]?.id ?? null)
+            : state.selectedSlideId,
+      };
+    }
+
+    case 'UPDATE_CAROUSEL_SLIDE': {
+      return {
+        ...state,
+        carouselSlides: state.carouselSlides.map((s) =>
+          s.id === action.payload.id ? { ...s, ...action.payload.updates } : s,
+        ),
+      };
+    }
+
+    case 'REORDER_CAROUSEL': {
+      const { fromIndex, toIndex } = action.payload;
+      if (fromIndex < 0 || toIndex < 0 || fromIndex >= state.carouselSlides.length || toIndex >= state.carouselSlides.length) {
+        return state;
+      }
+      const next = [...state.carouselSlides];
+      const [moved] = next.splice(fromIndex, 1);
+      next.splice(toIndex, 0, moved);
+      return { ...state, carouselSlides: next };
+    }
+
+    case 'SELECT_CAROUSEL_SLIDE':
+      return { ...state, selectedSlideId: action.payload };
+
     case 'CLEAR_ALL':
       return getDefaultEditorState();
 
@@ -156,6 +216,8 @@ export function getDefaultEditorState(adjustments?: Adjustments): EditorState {
     draftId: null,
     hideLikes: false,
     commentsDisabled: false,
+    carouselSlides: [],
+    selectedSlideId: null,
   };
 }
 
@@ -280,6 +342,23 @@ interface TabValidator {
 
 const tabValidators: Partial<Record<ValidTab, TabValidator>> = {
   publications: (state) => {
+    if (state.carouselSlides.length > 20) {
+      return { valid: false, error: 'Максимум 20 слайдов в карусели' };
+    }
+    if (state.carouselSlides.length > 0 && !state.selectedSlideId) {
+      return { valid: false, error: 'Выберите слайд для редактирования' };
+    }
+    for (const slide of state.carouselSlides) {
+      if (!slide.file) {
+        return { valid: false, error: 'У каждого слайда должен быть медиа-файл' };
+      }
+      if (slide.file.size > 50 * 1024 * 1024) {
+        return { valid: false, error: `Файл "${slide.file.name}" превышает 50 МБ` };
+      }
+      if (slide.caption.length > 2200) {
+        return { valid: false, error: `Подпись слайда "${slide.file.name}" превышает 2200 символов` };
+      }
+    }
     if (state.peopleTags.length > 50) {
       return { valid: true, warnings: ['Количество отметок превышает 50 человек'] };
     }
@@ -391,4 +470,39 @@ export function clearDraftFromStorage(key: string): void {
   } catch (e) {
     logger.error('[EditorState] Не удалось очистить черновик', { error: e });
   }
+}
+
+/**
+ * Создать CarouselSlide из файла + previewUrl
+ */
+export function createCarouselSlide(
+  file: File,
+  previewUrl: string,
+  overrides?: Partial<CarouselSlide>,
+): CarouselSlide {
+  const id =
+    typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+      ? crypto.randomUUID()
+      : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  return {
+    id,
+    file,
+    previewUrl,
+    caption: '',
+    filterIdx: 0,
+    filterIntensity: 1,
+    adjustments: {
+      brightness: 0,
+      contrast: 0,
+      saturation: 0,
+      warmth: 0,
+      shadows: 0,
+      highlights: 0,
+      vignette: 0,
+      sharpness: 0,
+      grain: 0,
+    },
+    mediaType: file.type.startsWith('video/') ? 'video' : 'image',
+    ...overrides,
+  };
 }

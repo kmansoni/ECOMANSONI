@@ -72,7 +72,7 @@ export function SocialLoginButtons({ tokens }: { tokens: ThemeTokens }) {
             whileTap={{ scale: 0.96 }}
             className={`flex flex-col sm:flex-row items-center justify-center gap-1.5 sm:gap-2 h-14 sm:h-12 rounded-xl backdrop-blur-xl transition-all duration-200 text-xs sm:text-sm font-medium border ${
               tokens.isDark
-                ? "text-white/70 hover:text-white border-white/[0.06] hover:border-white/[0.12] hover:bg-white/[0.05]"
+                ? `${tokens.textMuted} hover:${tokens.textPrimary} border-white/[0.06] hover:border-white/[0.12] hover:bg-white/[0.05]`
                 : "text-slate-700 hover:text-slate-900 bg-white/70 border-slate-300 hover:border-slate-400 hover:bg-white"
             }`}
           >

@@ -126,6 +126,8 @@ function LottieSticker({
   const animRef = useRef<any>(null);
   const [fallback, setFallback] = useState(false);
 
+  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
   useEffect(() => {
     let cancelled = false;
     let anim: any = null;
@@ -160,7 +162,7 @@ function LottieSticker({
             paths.forEach((p: Element) => p.setAttribute('d', ''));
           };
           fixPaths();
-          setInterval(fixPaths, 100); // Watch for new paths
+          intervalRef.current = setInterval(fixPaths, 100);
         }
 
         animRef.current = anim;
@@ -173,6 +175,7 @@ function LottieSticker({
     return () => {
       cancelled = true;
       anim?.destroy();
+      if (intervalRef.current) clearInterval(intervalRef.current);
     };
   }, [url]);
 

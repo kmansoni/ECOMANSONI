@@ -4,7 +4,11 @@ import { dbLoose } from '@/lib/supabase';
 import { useAuth } from '@/hooks/useAuth';
 import type { ContentType } from './useMediaEditor';
 import { uploadMedia } from '@/lib/mediaUpload';
+import { applyImageFilter } from '@/lib/applyImageFilter';
 import { logger } from '@/lib/logger';
+import { FILTERS } from '@/components/editor/photoFiltersModel';
+import { adjustmentsToFilterStyle } from '@/components/feed/editorStateModel';
+import type { CarouselSlide } from '@/components/feed/editorStateModel';
 
 function safeRandomUUID(): string {
   try {
@@ -17,12 +21,6 @@ function safeRandomUUID(): string {
   return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
 }
 
-/**
- * Unified Content Creator Hook
- * Handles creation for Stories, Posts, Reels, and Lives
- * Provides consistent API across all content types
- */
-
 export interface UnifiedContent {
   id: string;
   content_type: ContentType;
@@ -32,20 +30,21 @@ export interface UnifiedContent {
   media_url?: string;
   media_type?: 'image' | 'video';
   thumbnail_url?: string;
-  category?: string; // For Lives
+  category?: string;
   created_at: string;
 }
 
 export interface ContentCreationOptions {
   contentType: ContentType;
   caption?: string;
-  title?: string; // For Lives
-  category?: string; // For Lives: 'music', 'gaming', 'chat', 'performance', 'other'
+  title?: string;
+  category?: string;
   mediaUrl?: string;
   mediaType?: 'image' | 'video';
-  thumbnailUrl?: string; // For Lives
-  isPublished?: boolean; // For Posts
-  isFollowersOnly?: boolean; // For Lives
+  thumbnailUrl?: string;
+  isPublished?: boolean;
+  isFollowersOnly?: boolean;
+  carouselSlides?: CarouselSlide[];
 }
 
 export interface TextStoryOptions {
@@ -62,10 +61,8 @@ interface UseUnifiedContentCreatorReturn {
   activeContentType: ContentType;
   setActiveContentType: (type: ContentType) => void;
 
-  // Generic methods
   createContent: (options: ContentCreationOptions) => Promise<UnifiedContent | null>;
 
-  // Type-specific upload handlers
   uploadStoryMedia: (file: File, caption?: string) => Promise<UnifiedContent | null>;
   createTextStory: (options: TextStoryOptions) => Promise<UnifiedContent | null>;
   uploadPostMedia: (file: File, caption?: string, scheduledAt?: string | null, opts?: { hideLikes?: boolean; commentsDisabled?: boolean }) => Promise<UnifiedContent | null>;
@@ -88,8 +85,13 @@ interface UseUnifiedContentCreatorReturn {
     }
   ) => Promise<UnifiedContent | null>;
   createLiveSession: (title: string, category: string, thumbnailUrl?: string) => Promise<UnifiedContent | null>;
+  uploadCarouselPost: (
+    slides: CarouselSlide[],
+    caption?: string,
+    scheduledAt?: string | null,
+    opts?: { hideLikes?: boolean; commentsDisabled?: boolean }
+  ) => Promise<UnifiedContent | null>;
 
-  // Utilities
   getStorageBucket: (contentType: ContentType) => string;
 }
 
@@ -182,7 +184,7 @@ export function useUnifiedContentCreator(): UseUnifiedContentCreatorReturn {
       case 'reel':
         return 'reels-media';
       case 'live':
-        return 'live-media'; // For live thumbnails
+        return 'live-media';
       default:
         return 'post-media';
     }
@@ -199,11 +201,9 @@ export function useUnifiedContentCreator(): UseUnifiedContentCreatorReturn {
       setError(null);
 
       try {
-        // Upload to media server
         const uploadResult = await uploadMedia(file, { bucket: 'stories-media' });
         const publicUrl = uploadResult.url;
 
-        // Create story record
         const mediaType = file.type.startsWith('video/') ? 'video' : 'image';
         const { data: story, error: storyError } = await supabase
           .from('stories')
@@ -265,7 +265,6 @@ export function useUnifiedContentCreator(): UseUnifiedContentCreatorReturn {
       try {
         const isScheduled = !!scheduledAt;
 
-        // Create post record first
         const { data: post, error: postError } = await dbLoose
           .from('posts')
           .insert({
@@ -281,11 +280,9 @@ export function useUnifiedContentCreator(): UseUnifiedContentCreatorReturn {
 
         if (postError) throw postError;
 
-        // Upload media to media server
         const uploadResult = await uploadMedia(file, { bucket: 'post-media' });
         const publicUrl = uploadResult.url;
 
-        // Create media record
         const mediaType = file.type.startsWith('video/') ? 'video' : 'image';
         const { data: media, error: mediaError } = await dbLoose
           .from('post_media')
@@ -352,7 +349,6 @@ export function useUnifiedContentCreator(): UseUnifiedContentCreatorReturn {
         const ext = file.name.split('.').pop() ?? 'mp4';
         const objectPath = `${user.id}/reels/${clientPublishId}/original.${ext.toLowerCase()}`;
 
-        // Upload video to media server
         const uploadResult = await uploadMedia(file, { bucket: 'reels-media', path: objectPath });
         const publicUrl = uploadResult.url;
 
@@ -411,7 +407,6 @@ export function useUnifiedContentCreator(): UseUnifiedContentCreatorReturn {
       setError(null);
 
       try {
-        // Fix #2: blob URL из preview не работает на других устройствах — upload в Storage
         let stableThumbnailUrl: string | undefined = thumbnailUrl ?? undefined;
         if (thumbnailUrl?.startsWith('blob:')) {
           try {
@@ -424,7 +419,6 @@ export function useUnifiedContentCreator(): UseUnifiedContentCreatorReturn {
             const file = new File([blob], `live-cover-${Date.now()}.${ext}`, { type: blob.type || 'image/jpeg' });
             const uploadResult = await uploadMedia(file, { bucket: 'live-media' });
             stableThumbnailUrl = uploadResult.url;
-            // Revoke blob только после успешного upload
             try { URL.revokeObjectURL(thumbnailUrl); } catch {}
           } catch (err) {
             logger.warn('[useUnifiedContentCreator] Не удалось загрузить обложку эфира в Storage', { error: err });
@@ -439,7 +433,7 @@ export function useUnifiedContentCreator(): UseUnifiedContentCreatorReturn {
             title,
             category,
             thumbnail_url: stableThumbnailUrl,
-            status: 'preparing', // Will change to 'live' when user starts broadcasting
+            status: 'preparing',
             is_public: true,
           })
           .select()
@@ -467,6 +461,110 @@ export function useUnifiedContentCreator(): UseUnifiedContentCreatorReturn {
     [user]
   );
 
+  const uploadCarouselPost = useCallback(
+    async (
+      slides: CarouselSlide[],
+      caption?: string,
+      scheduledAt?: string | null,
+      opts?: { hideLikes?: boolean; commentsDisabled?: boolean }
+    ): Promise<UnifiedContent | null> => {
+      if (!user) {
+        setError('User not authenticated');
+        return null;
+      }
+
+      if (slides.length < 2) {
+        setError('Карусель требует минимум 2 слайда');
+        return null;
+      }
+
+      setIsLoading(true);
+      setError(null);
+
+      try {
+        const postInsert = await dbLoose
+          .from('posts')
+          .insert({
+            author_id: user.id,
+            content: caption || null,
+            is_published: !scheduledAt,
+            scheduled_at: scheduledAt || null,
+            hide_likes_count: opts?.hideLikes ?? false,
+            comments_disabled: opts?.commentsDisabled ?? false,
+          })
+          .select()
+          .single();
+
+        if (postInsert.error) throw postInsert.error;
+        const post = postInsert.data;
+
+        const processedSlides = await Promise.all(
+          slides.map(async (slide) => {
+            if (slide.mediaType === 'image') {
+              const processed = await applyImageFilter(slide.file, {
+                filterIdx: slide.filterIdx,
+                filterIntensity: slide.filterIntensity,
+                adjustments: slide.adjustments ?? {
+                  brightness: 0,
+                  contrast: 0,
+                  saturation: 0,
+                  warmth: 0,
+                  shadows: 0,
+                  highlights: 0,
+                  vignette: 0,
+                  sharpness: 0,
+                  grain: 0,
+                },
+              });
+              return { ...slide, processedFile: processed };
+            }
+            return { ...slide, processedFile: slide.file };
+          }),
+        );
+
+        const CONCURRENCY = 3;
+        for (let i = 0; i < processedSlides.length; i += CONCURRENCY) {
+          const batch = processedSlides.slice(i, i + CONCURRENCY);
+          await Promise.all(
+            batch.map(async (slide) => {
+              const uploadResult = await uploadMedia(slide.processedFile, {
+                bucket: 'post-media',
+                path: `${user.id}/carousel/${post.id}/${slide.id}`,
+              });
+              const mediaType = slide.mediaType === 'video' ? 'video' : 'image';
+              const { error: mediaError } = await dbLoose
+                .from('post_media')
+                .insert({
+                  post_id: post.id,
+                  media_url: uploadResult.url,
+                  media_type: mediaType,
+                  sort_order: processedSlides.indexOf(slide),
+                });
+              if (mediaError) throw mediaError;
+            }),
+          );
+        }
+
+        return {
+          id: post.id,
+          content_type: 'post',
+          author_id: user.id,
+          caption,
+          media_url: processedSlides[0].previewUrl,
+          media_type: processedSlides[0].mediaType === 'video' ? 'video' : 'image',
+          created_at: post.created_at,
+        };
+      } catch (err) {
+        const message = err instanceof Error ? err.message : 'Failed to create carousel post';
+        setError(message);
+        return null;
+      } finally {
+        setIsLoading(false);
+      }
+    },
+    [user, uploadMedia, applyImageFilter],
+  );
+
   const createContent = useCallback(
     async (options: ContentCreationOptions): Promise<UnifiedContent | null> => {
       switch (options.contentType) {
@@ -477,7 +575,7 @@ export function useUnifiedContentCreator(): UseUnifiedContentCreatorReturn {
           }
           return uploadStoryMedia(
             new File([options.mediaUrl], 'story'),
-            options.caption
+            options.caption,
           );
 
         case 'post':
@@ -487,7 +585,7 @@ export function useUnifiedContentCreator(): UseUnifiedContentCreatorReturn {
           }
           return uploadPostMedia(
             new File([options.mediaUrl], 'post'),
-            options.caption
+            options.caption,
           );
 
         case 'reel':
@@ -497,7 +595,18 @@ export function useUnifiedContentCreator(): UseUnifiedContentCreatorReturn {
           }
           return uploadReelMedia(
             new File([options.mediaUrl], 'reel'),
-            options.caption
+            options.caption,
+          );
+
+        case 'carousel':
+          if (!options.carouselSlides || options.carouselSlides.length < 2) {
+            setError('Для карусели нужно минимум 2 слайда');
+            return null;
+          }
+          return uploadCarouselPost(
+            options.carouselSlides,
+            options.caption,
+            undefined,
           );
 
         case 'live':
@@ -508,7 +617,7 @@ export function useUnifiedContentCreator(): UseUnifiedContentCreatorReturn {
           return createLiveSession(
             options.title,
             options.category || 'other',
-            options.thumbnailUrl
+            options.thumbnailUrl,
           );
 
         default:
@@ -516,7 +625,7 @@ export function useUnifiedContentCreator(): UseUnifiedContentCreatorReturn {
           return null;
       }
     },
-    [uploadStoryMedia, uploadPostMedia, uploadReelMedia, createLiveSession]
+    [uploadStoryMedia, uploadPostMedia, uploadReelMedia, createLiveSession, uploadCarouselPost],
   );
 
   return {
@@ -530,6 +639,7 @@ export function useUnifiedContentCreator(): UseUnifiedContentCreatorReturn {
     uploadPostMedia,
     uploadReelMedia,
     createLiveSession,
+    uploadCarouselPost,
     getStorageBucket,
   };
 }

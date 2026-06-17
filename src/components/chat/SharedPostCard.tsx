@@ -57,13 +57,13 @@ export function SharedPostCard({ postId, isOwn, messageId, onDelete }: SharedPos
           .eq("id", postId)
           .maybeSingle();
 
-        if (postError) throw postError;
-        if (!postData) {
-          setPost(null);
-          return;
-        }
+      if (postError) throw postError;
+      if (!postData) {
+        setPost(null);
+        return;
+      }
 
-        const authorId = String((postData as any).author_id || "");
+      const authorId = String(postData.author_id || "");
         const briefMap = await fetchUserBriefMap([authorId]);
         const profile = resolveUserBrief(authorId, briefMap);
 

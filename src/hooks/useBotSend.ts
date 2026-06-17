@@ -59,7 +59,6 @@ export function useBotSend(conversationId: string | undefined, botId: string) {
         type: 'message',
         content: {
           text: text.trim(),
-          message_id: messageId,
         },
         context: {
           platform_user_id: user.id,
@@ -76,11 +75,13 @@ export function useBotSend(conversationId: string | undefined, botId: string) {
       });
 
       // Шаг 3: Аналитика
-      await dbLoose.rpc('increment_bot_analytics', {
-        p_bot_id: botId,
-        p_date: new Date().toISOString().split('T')[0],
-        p_messages_received: 1,
-      }).catch(() => {});
+      try {
+        await dbLoose.rpc('increment_bot_analytics', {
+          p_bot_id: botId,
+          p_date: new Date().toISOString().split('T')[0],
+          p_messages_received: 1,
+        });
+      } catch {}
 
 // Invalidate messages and runs
        queryClient.invalidateQueries({ queryKey: ['bot-messages', conversationId] });

@@ -96,9 +96,7 @@ export function AppearanceAndEnergyCenter({ userId, isDark, mode, onOpenEnergy }
   }, [userId]);
 
   const applyThemeMode = (modeValue: UserAppearanceSettings["dark_theme"]) => {
-    if (modeValue === "system") setTheme("system");
-    if (modeValue === "light") setTheme("light");
-    if (modeValue === "dark") setTheme("dark");
+    setTheme(modeValue === "system" ? "dark" : modeValue);
   };
 
   const updateAppearance = async (patch: Partial<Omit<UserAppearanceSettings, "user_id" | "updated_at" | "created_at">>) => {

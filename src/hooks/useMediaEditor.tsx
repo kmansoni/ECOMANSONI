@@ -5,7 +5,7 @@ import { uploadMedia, type MediaBucket } from "@/lib/mediaUpload";
 import { logger } from "@/lib/logger";
 
 export type MediaType = "image" | "video";
-export type ContentType = "post" | "story" | "reel" | "live";
+export type ContentType = "post" | "story" | "reel" | "live" | "carousel";
 
 interface EditorConfig {
   aspectRatio?: number; // width / height, e.g., 1 for square, 9/16 for stories

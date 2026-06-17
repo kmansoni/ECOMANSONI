@@ -77,7 +77,8 @@ export function validateSfuStartupEnv() {
   const announcedIp = String(process.env.SFU_ANNOUNCED_IP ?? "").trim();
   if (enableMediasoup && !announcedIp && !IS_PROD_LIKE) {
     // Allow local dev without IP, but log warning
-    console.warn("[sfu] SFU_ANNOUNCED_IP not set - ICE candidates will show 0.0.0.0, media may not connect across networks");
+    const warn = { ts: Date.now(), level: "warn", msg: "SFU_ANNOUNCED_IP not set - ICE candidates will show 0.0.0.0, media may not connect across networks" };
+    console.warn(JSON.stringify(warn));
   }
 
   if (IS_PROD_LIKE && !isValidSecret(turnSharedSecret)) {

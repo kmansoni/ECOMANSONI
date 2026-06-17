@@ -38,26 +38,25 @@
       <meta name="referrer" content="strict-origin-when-cross-origin" />
       <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; script-src-elem 'self' 'unsafe-inline'; worker-src 'self' blob:; child-src 'self' blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' https: data: blob:; font-src 'self' https: data:; connect-src 'self' https: wss: ws:; media-src 'self' https: blob:; frame-src 'self' https:; object-src 'none'; base-uri 'self';" />
     <script src="/jeelizFaceFilter.js" defer></script>
-    <!-- TODO: Set the document title to the name of your application -->
-    <title>mansoni</title>
-    <meta name="description" content="Социальная сеть mansoni">
-    <meta name="author" content="mansoni" />
+    <title>Mansoni</title>
+    <meta name="description" content="Социальная сеть Mansoni — мини-приложения, боты, мессенджер, знакомства и маркетплейс" />
+    <meta name="author" content="Mansoni" />
 
-    <!-- TODO: Update og:title to match your application name -->
-    
-    
     <meta property="og:type" content="website" />
-     <meta property="og:image" content="" />
+    <meta property="og:image" content="/brand/logo.png" />
 
     <meta name="twitter:card" content="summary_large_image" />
     <meta name="twitter:site" content="@mansoni" />
-    <meta name="twitter:image" content="" />
-    <meta property="og:title" content="mansoni">
-  <meta name="twitter:title" content="mansoni">
-  <meta property="og:description" content="Социальная сеть mansoni">
-  <meta name="twitter:description" content="Социальная сеть mansoni">
-  <link rel="icon" type="image/png" href="https://storage.googleapis.com/gpt-engineer-file-uploads/cPeXRra4uUQ0AEG8Mui49FbVGp73/uploads/1769982762295-296e92f8a59e339a7d403032aab87b66-a2004440-7949-409c-8198-d96636af0cf2.png">
-  <link rel="manifest" href="/manifest.json">
+    <meta name="twitter:image" content="/brand/logo.png" />
+    <meta property="og:title" content="Mansoni" />
+    <meta name="twitter:title" content="Mansoni" />
+    <meta property="og:description" content="Социальная сеть Mansoni — мини-приложения, боты, мессенджер, знакомства и маркетплейс" />
+    <meta name="twitter:description" content="Социальная сеть Mansoni — мини-приложения, боты, мессенджер, знакомства и маркетплейс" />
+    <link rel="icon" type="image/png" href="/brand/logo.png" />
+    <link rel="icon" type="image/png" sizes="192x192" href="/brand/logo.png" />
+    <link rel="icon" type="image/png" sizes="512x512" href="/brand/logo.png" />
+    <link rel="apple-touch-icon" href="/brand/logo.png" />
+    <link rel="manifest" href="/manifest.json">
 </head>
 
   <body>
@@ -67,6 +66,41 @@
       // Service Worker registration — sw.js (media cache + push)
       if ('serviceWorker' in navigator) {
         window.addEventListener('load', function () {
+          var isLocalDev =
+            window.location.hostname === 'localhost' ||
+            window.location.hostname === '127.0.0.1' ||
+            window.location.hostname === '[::1]';
+
+          if (isLocalDev) {
+            Promise.all([
+              navigator.serviceWorker.getRegistrations()
+                .then(function (registrations) {
+                  return Promise.all(registrations.map(function (registration) {
+                    return registration.unregister();
+                  }));
+                }),
+              'caches' in window
+                ? caches.keys().then(function (keys) {
+                    return Promise.all(keys.map(function (key) {
+                      return caches.delete(key);
+                    }));
+                  })
+                : Promise.resolve(),
+            ])
+              .then(function () {
+                if (navigator.serviceWorker.controller && !sessionStorage.getItem('dev-sw-clean-reloaded')) {
+                  sessionStorage.setItem('dev-sw-clean-reloaded', '1');
+                  window.location.reload();
+                } else {
+                  sessionStorage.removeItem('dev-sw-clean-reloaded');
+                }
+              })
+              .catch(function (err) {
+                console.warn('[SW] Dev cleanup failed:', err);
+              });
+            return;
+          }
+
           navigator.serviceWorker.register('/sw.js', { scope: '/' })
             .then(function (registration) {
               // Проверяем обновление SW при каждой загрузке страницы

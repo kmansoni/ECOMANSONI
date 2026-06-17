@@ -200,7 +200,7 @@ export function ForwardMessageSheet({ open, onOpenChange, message }: ForwardMess
     const baseContent = (message.content || "").trim() || messagePreview(message);
     const content = withOptionalSignature(baseContent, senderName, hideSender ? false : withSignature);
 
-    const { data, error } = await supabase.rpc("send_group_message_v1" as any, {
+    const { data, error } = await supabase.rpc("send_group_message_v1", {
       p_group_id: groupId,
       p_content: content,
       p_media_url: message.media_url ?? null,
@@ -226,7 +226,7 @@ export function ForwardMessageSheet({ open, onOpenChange, message }: ForwardMess
     const baseContent = (message.content || "").trim() || messagePreview(message);
     const content = withOptionalSignature(baseContent, senderName, hideSender ? false : withSignature);
 
-    const { data, error } = await supabase.rpc("send_channel_message_v1" as any, {
+    const { data, error } = await supabase.rpc("send_channel_message_v1", {
       p_channel_id: channelId,
       p_content: content,
       p_silent: false,

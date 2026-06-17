@@ -8,7 +8,7 @@ import React, { memo, useCallback, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, MoreHorizontal, Share2, Bookmark, Link2, Flag, Copy } from 'lucide-react';
 import { toast } from 'sonner';
-import { Avatar } from '@/components/ui/avatar';
+import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar';
 import { cn } from '@/lib/utils';
 import type { ReelAuthor } from '@/types/reels';
 
@@ -117,12 +117,10 @@ const ReelTopBar = memo<ReelTopBarProps>(({
             aria-label={`Профиль @${author.username}`}
           >
             <div className="relative">
-              <Avatar
-                src={author.avatar_url ?? undefined}
-                fallback={author.username.charAt(0).toUpperCase()}
-                className="w-8 h-8 rounded-full border border-white/30 ring-2 ring-black/50"
-                imgClassName="object-cover"
-              />
+              <Avatar className="w-8 h-8 rounded-full border border-white/30 ring-2 ring-black/50">
+                <AvatarImage src={author.avatar_url ?? undefined} className="object-cover" />
+                <AvatarFallback>{author.username.charAt(0).toUpperCase()}</AvatarFallback>
+              </Avatar>
               {/* Верификация */}
               {author.is_verified && (
                 <span

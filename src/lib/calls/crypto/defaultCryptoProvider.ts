@@ -32,8 +32,6 @@ export class DefaultCryptoProvider implements CryptoProvider {
   }
 
   async createEpochKey(epoch: number): Promise<EpochKeyMaterial> {
-    // Staged/active contract: provider creates staged key, does not activate.
-    // Activation happens externally after REKEY_COMMIT quorum.
     return this.keyExchange.createStagedEpochKey(epoch);
   }
 
@@ -42,7 +40,6 @@ export class DefaultCryptoProvider implements CryptoProvider {
   }
 
   async processKeyPackage(pkg: KeyPackageData): Promise<EpochKeyMaterial> {
-    // Staged/active contract: inbound key is staged, not active.
     return this.keyExchange.processStagedKeyPackage(pkg);
   }
 
@@ -74,6 +71,10 @@ export class DefaultCryptoProvider implements CryptoProvider {
 
   getStagedEpochKey(): EpochKeyMaterial | null {
     return this.keyExchange.getStagedEpochKey();
+  }
+
+  getCurrentEpochKey(): EpochKeyMaterial | null {
+    return this.keyExchange.getActiveEpochKey();
   }
 
   getIdentity(): CallIdentity {

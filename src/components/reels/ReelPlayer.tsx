@@ -643,7 +643,6 @@ function ReelPlayerInner({
       <ReelProgressBar
         currentTime={currentTime}
         duration={duration}
-        speed={speed}
         className="z-[5]"
       />
     </div>

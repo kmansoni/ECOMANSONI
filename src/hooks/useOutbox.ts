@@ -139,6 +139,7 @@ export function useOutbox(
         mediaUrls: params.mediaUrls ?? [],
         messageType: params.messageType ?? "text",
         clientSeq,
+        status: "pending",
       });
 
       return localId;

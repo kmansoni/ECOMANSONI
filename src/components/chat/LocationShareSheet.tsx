@@ -104,7 +104,12 @@ export function LocationShareSheet({ isOpen, onClose, conversationId, onSent }: 
 
       // User marker
       const markerEl = document.createElement("div");
-      markerEl.innerHTML = `<div style="width:16px;height:16px;background:#3B82F6;border:3px solid white;border-radius:50%;box-shadow:0 0 8px rgba(59,130,246,0.6);"></div>`;
+      markerEl.style.width = "16px";
+      markerEl.style.height = "16px";
+      markerEl.style.background = "#3B82F6";
+      markerEl.style.border = "3px solid white";
+      markerEl.style.borderRadius = "50%";
+      markerEl.style.boxShadow = "0 0 8px rgba(59,130,246,0.6)";
       const marker = new ml.default.Marker({ element: markerEl })
         .setLngLat(mapCenter)
         .addTo(map);

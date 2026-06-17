@@ -16,6 +16,23 @@
         }
       ],
       "env": {}
+    },
+    "term-1781559958576-bsvx1g": {
+      "id": "term-1781559958576-bsvx1g",
+      "name": "Default Terminal",
+      "status": "active",
+      "createdAt": "2026-06-15T21:45:58.576Z",
+      "lastActivity": "2026-06-15T21:45:58.605Z",
+      "workingDir": "c:\\Users\\manso\\Desktop\\разработка\\mansoni",
+      "history": [
+        {
+          "command": "Get-ChildItem -Path \"C:\\Users\\manso\\Downloads\\element-call-livekit\\element-call-livekit\" -Directory | Select-Object Name",
+          "output": "\n[stderr] \"Get-ChildItem\" �� ���� ����७��� ��� ���譥�\r\n��������, �ᯮ��塞�� �ணࠬ��� ��� ������ 䠩���.\r\n",
+          "timestamp": "2026-06-15T21:45:58.605Z",
+          "exitCode": 255
+        }
+      ],
+      "env": {}
     }
   },
   "version": "3.0.0"

@@ -17,17 +17,15 @@
  *  - loading / error / hasMore / loadMore
  */
 
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/hooks/useAuth";
 import { logger } from "@/lib/logger";
 import { toast } from "sonner";
-import { validateCreativeInput, isValidUUID } from "@/lib/validators";
 import type {
   AdCreative,
   AdCreativeInsert,
   AdCreativeUpdate,
-  AdCreativeStatus,
 } from "@/lib/ads/types";
 
 const PAGE_SIZE = 25;
@@ -190,7 +188,8 @@ export function useAdCreatives(campaignId: string) {
           status: input.status ?? 'draft',
           frequency_cap: input.frequency_cap ?? 3,
           priority_order: input.priority_order ?? creatives.length,
-        } as any)
+          creative_hash: input.creative_hash ?? '',
+        })
         .select('*')
         .single();
 
@@ -232,12 +231,9 @@ export function useAdCreatives(campaignId: string) {
       return false;
     }
 
-    // Запрещаем менять campaign_id
-    const { campaign_id: _, ...safeUpdates } = updates as any;
-
     // Проверка на изменение type/cta после approval
     if (creative.status !== 'draft' && creative.status !== 'rejected') {
-      if ('type' in safeUpdates || 'call_to_action' in safeUpdates) {
+      if ('type' in updates || 'call_to_action' in updates) {
         toast.error('Нельзя менять тип или CTA после одобрения креатива');
         return false;
       }
@@ -246,7 +242,7 @@ export function useAdCreatives(campaignId: string) {
     try {
       const { data, error } = await supabase
         .from('ad_creatives')
-        .update(safeUpdates as any)
+        .update(updates)
         .eq('id', id)
         .select('*')
         .single();

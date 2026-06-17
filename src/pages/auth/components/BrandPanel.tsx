@@ -9,7 +9,7 @@ export function BrandPanel({ tokens }: { tokens: ThemeTokens }) {
       initial={{ opacity: 0, x: -40 }}
       animate={{ opacity: 1, x: 0 }}
       transition={{ duration: 0.8, ease: [0.22, 1, 0.36, 1], delay: 0.2 }}
-      className="hidden lg:flex flex-col justify-center w-[420px] xl:w-[480px] pr-8 xl:pr-12 py-8"
+      className="hidden lg:flex flex-col justify-center pl-4 xl:pl-6 w-[420px] xl:w-[480px] pr-8 xl:pr-12 py-8"
     >
       {/* Brand logo + tagline */}
       <div className="flex items-center gap-3 mb-2">
@@ -29,7 +29,7 @@ export function BrandPanel({ tokens }: { tokens: ThemeTokens }) {
           >
             mansoni
           </span>
-          <span className={`text-[11px] tracking-wide ${tokens.textMuted}`}>
+          <span className={`text-[11px] tracking-wide font-medium ${tokens.textSecondary}`}>
             Всё в одном приложении
           </span>
         </div>
@@ -53,7 +53,7 @@ export function BrandPanel({ tokens }: { tokens: ThemeTokens }) {
             <span className={`shrink-0 ${tokens.textPrimary}`}>{item.icon}</span>
             <div className="flex-1 min-w-0">
               <span className={`text-sm font-semibold ${tokens.textPrimary}`}>{item.label}</span>
-              <span className={`text-xs block mt-0.5 ${tokens.textMuted}`}>{item.desc}</span>
+              <span className={`text-xs block mt-0.5 font-medium ${tokens.textSecondary}`}>{item.desc}</span>
             </div>
             <ChevronRight className={`w-4 h-4 shrink-0 ${tokens.textFaint}`} />
           </motion.div>
@@ -76,7 +76,7 @@ export function BrandPanel({ tokens }: { tokens: ThemeTokens }) {
         <QrCode className={`w-5 h-5 ${tokens.textPrimary}`} />
         <div className="flex-1 min-w-0">
           <span className={`text-sm font-semibold ${tokens.textPrimary}`}>Войти по QR-коду</span>
-          <span className={`text-xs block mt-0.5 ${tokens.textMuted}`}>Быстрый вход с телефона</span>
+          <span className={`text-xs block mt-0.5 font-medium ${tokens.textSecondary}`}>Быстрый вход с телефона</span>
         </div>
         <ChevronRight className={`w-4 h-4 shrink-0 ${tokens.textFaint}`} />
       </motion.button>

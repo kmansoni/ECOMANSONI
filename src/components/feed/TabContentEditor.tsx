@@ -5,7 +5,7 @@
  * #3: Adjustments применяются к preview
  * #2: Fake buttons удалены
  */
-import { Sparkles, SlidersHorizontal, Users, CalendarClock, Eye, MapPin } from 'lucide-react';
+import { Sparkles, SlidersHorizontal, Users, CalendarClock, Eye, MapPin, Image } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -14,7 +14,8 @@ import { FILTERS } from '@/components/editor/photoFiltersModel';
 import { AdjustmentsPanel } from '@/components/editor/AdjustmentsPanel';
 import { PeopleTagOverlay } from './PeopleTagOverlay';
 import { SchedulePostPicker } from './SchedulePostPicker';
-import { adjustmentsToFilterStyle, type EditorState, type EditorAction } from './editorStateModel';
+import { CarouselEditor } from './CarouselEditor';
+import { adjustmentsToFilterStyle, type EditorState, type EditorAction, type CarouselSlide, createCarouselSlide } from './editorStateModel';
 import { useState, type CSSProperties } from 'react';
 
 type TabType = 'publications' | 'stories' | 'reels' | 'live';
@@ -70,8 +71,36 @@ export function TabContentEditor({
   const [showPeopleTags, setShowPeopleTags] = useState(false);
   const [showSchedule, setShowSchedule] = useState(false);
 
-  // Publications: полный набор инструментов
+  // Publications: полный набор инструментов + карусель
   if (activeTab === 'publications') {
+    const isCarousel = editorState.carouselSlides.length > 0;
+    const selectedSlide = isCarousel
+      ? editorState.carouselSlides.find((s) => s.id === editorState.selectedSlideId) ?? editorState.carouselSlides[0]
+      : null;
+
+    if (isCarousel && selectedSlide) {
+      const selectedFilter = FILTERS[selectedSlide.filterIdx] ?? FILTERS[0];
+      const adjStyle = adjustmentsToFilterStyle(selectedSlide.adjustments);
+      const filterCSS = selectedSlide.filterIdx > 0 && selectedFilter.style.filter
+        ? String(selectedFilter.style.filter)
+        : '';
+      const combinedFilter = [filterCSS, adjStyle.filter].filter(Boolean).join(' ');
+
+      return (
+        <div className="space-y-3 bg-zinc-900/50 rounded-lg p-4 max-h-[70vh] overflow-y-auto">
+          <CarouselEditor
+            slides={editorState.carouselSlides}
+            selectedSlideId={editorState.selectedSlideId}
+            onSelectSlide={(id) => dispatchEditor({ type: 'SELECT_CAROUSEL_SLIDE', payload: id })}
+            onAddSlide={(slide) => dispatchEditor({ type: 'ADD_CAROUSEL_SLIDE', payload: slide })}
+            onRemoveSlide={(id) => dispatchEditor({ type: 'REMOVE_CAROUSEL_SLIDE', payload: id })}
+            onReorderSlide={(from, to) => dispatchEditor({ type: 'REORDER_CAROUSEL', payload: { fromIndex: from, toIndex: to } })}
+            onUpdateSlide={(id, updates) => dispatchEditor({ type: 'UPDATE_CAROUSEL_SLIDE', payload: { id, updates } })}
+          />
+        </div>
+      );
+    }
+
     // Объединяем CSS-фильтр из выбранного Instagram-фильтра + adjustments
     const selectedFilter = FILTERS[editorState.selectedFilterIdx] ?? FILTERS[0];
     const adjStyle = adjustmentsToFilterStyle(editorState.adjustments);

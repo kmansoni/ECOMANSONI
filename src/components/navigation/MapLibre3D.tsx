@@ -322,7 +322,6 @@ const fillPaint: maplibregl.FillLayerSpecification['paint'] = {
               ['==', ['get', 'status'], 'proposed'], 'rgb(251, 191, 36)',
               'rgb(107, 114, 128)'
             ],
-            'fill-outline-width': 2,
             'fill-antialias': true
           };
 
@@ -382,6 +381,7 @@ const fillPaint: maplibregl.FillLayerSpecification['paint'] = {
           </div>
         `;
 
+        if (!map) return;
         new maplibregl.Popup({ closeButton: true, closeOnClick: false })
           .setLngLat([lngLat.lng, lngLat.lat])
           .setHTML(html)

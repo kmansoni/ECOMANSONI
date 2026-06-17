@@ -31,12 +31,12 @@ import { surveyService } from '@/lib/survey/surveyService';
 import { supabase } from '@/lib/supabase';
 import { Capacitor } from '@capacitor/core';
 import { Camera as CapacitorCamera, CameraResultType, CameraSource, Photo as CapacitorPhoto } from '@capacitor/camera';
-import { Geolocation } from '@capacitor/geolocation';
+import { Geolocation, GeolocationPosition } from '@capacitor/geolocation';
 import { Haptics, ImpactStyle } from '@capacitor/haptics';
 import { Device } from '@capacitor/device';
-import { isPlatform } from '@capacitor/core';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
+import type { CapturedPhoto } from '@/types/survey';
 
 // ---------------------------------------------------------------------------
 // Props
@@ -98,8 +98,8 @@ export function SurveyCaptureModal({ isOpen, onClose, onScanComplete }: SurveyCa
     // Camera
     if (Capacitor.isNativePlatform()) {
       const { Camera } = await import('@capacitor/camera');
-      const status = await Camera.checkPermission();
-      setCameraPermission(status.granted || status.limited);
+      const status = await Camera.checkPermissions();
+      setCameraPermission(status.camera === 'granted' || status.camera === 'limited');
     } else {
       // Web: request permission on first use
       try {
@@ -114,8 +114,9 @@ export function SurveyCaptureModal({ isOpen, onClose, onScanComplete }: SurveyCa
     // Location
     if (Capacitor.isNativePlatform()) {
       const { Geolocation } = await import('@capacitor/geolocation');
-      const status = await Geolocation.checkPermission();
-      setLocationPermission(status.granted || status.limited);
+      const status = await Geolocation.checkPermissions();
+      const perm = (status as any).location as string | undefined;
+      setLocationPermission(perm === 'granted' || perm === 'limited');
     } else {
       if ('geolocation' in navigator) {
         navigator.geolocation.getCurrentPosition(
@@ -208,8 +209,7 @@ export function SurveyCaptureModal({ isOpen, onClose, onScanComplete }: SurveyCa
     const options: PositionOptions = {
       enableHighAccuracy: true,
       timeout: 10000,
-      maximumAge: 0,
-      distanceFilter: 0.5  // meters
+      maximumAge: 0
     };
 
     watchIdRef.current = navigator.geolocation.watchPosition(
@@ -222,7 +222,7 @@ export function SurveyCaptureModal({ isOpen, onClose, onScanComplete }: SurveyCa
           lng: longitude,
           alt: altitude,
           accuracy,
-          heading: heading || 0,
+          heading: heading ?? 0,
           timestamp: Date.now()
         });
 
@@ -403,14 +403,14 @@ export function SurveyCaptureModal({ isOpen, onClose, onScanComplete }: SurveyCa
     }
   };
 
-  const getCurrentPosition = (): Promise<GeolocationPosition> => {
+  const getCurrentPosition = (): Promise<{ coords: { latitude: number; longitude: number; altitude: number | null; accuracy: number; heading: number } }> => {
     return new Promise((resolve, reject) => {
       if (Capacitor.isNativePlatform()) {
         Geolocation.getCurrentPosition({ enableHighAccuracy: true, timeout: 5000 })
-          .then(resolve)
+          .then(pos => resolve({ coords: { latitude: pos.coords.latitude, longitude: pos.coords.longitude, altitude: pos.coords.altitude, accuracy: pos.coords.accuracy, heading: pos.coords.heading ?? 0 } }))
           .catch(reject);
       } else {
-        navigator.geolocation.getCurrentPosition(resolve, reject, {
+        navigator.geolocation.getCurrentPosition(pos => resolve(pos), reject, {
           enableHighAccuracy: true,
           timeout: 5000
         });

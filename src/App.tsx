@@ -33,6 +33,8 @@ import { toast } from "sonner";
 import { AppErrorBoundary } from "@/components/system/AppErrorBoundary";
 import { RouteErrorBoundary } from "@/components/system/RouteErrorBoundary";
 import { ErrorBoundary } from "@/components/ui/ErrorBoundary";
+import { CreateStudioProvider } from "@/features/create/CreateStudioProvider";
+import { CreateStudioOverlayHost } from "@/features/create/CreateStudioOverlayHost";
 
 const HashtagPage = lazy(() => import("@/pages/HashtagPage").then(m => ({ default: m.HashtagPage })));
 const ExplorePage = lazy(() => import("@/pages/ExplorePage"));
@@ -98,6 +100,7 @@ const LiveViewerPage = lazy(() => import("./pages/LiveViewerPage"));
 const LiveExplorePage = lazy(() => import("./pages/LiveExplorePage"));
 const PeopleNearbyPage = lazy(() => import("./pages/PeopleNearbyPage").then(m => ({ default: m.PeopleNearbyPage })));
 const BusinessAccountPage = lazy(() => import("./pages/BusinessAccountPage"));
+const CreatorStudio = lazy(() => import("./pages/CreatorStudio"));
 const OrderDetailPage = lazy(() => import("@/pages/OrderDetailPage"));
 const GodmodePage = lazy(() => import("@/pages/GodmodePage"));
 const MusicPage = lazy(() => import("@/pages/MusicPage"));
@@ -250,19 +253,20 @@ const App = () => {
             }>
               <VideoCallProvider>
                 <ChatOpenProvider>
-                  <TooltipProvider>
+                <TooltipProvider>
+                  <CreateStudioProvider>
                     <SkipToContent />
                     <ColorFilterSVG />
-        {/* aria-live region для screen reader */}
-        <div
-          id="a11y-live-region"
-          aria-live="polite"
-          aria-atomic="true"
-          className="sr-only"
-        />
-        <Toaster />
-        <Sonner />
-        <GlobalCallOverlay />
+                    {/* aria-live region для screen reader */}
+                    <div
+                      id="a11y-live-region"
+                      aria-live="polite"
+                      aria-atomic="true"
+                      className="sr-only"
+                    />
+                    <Toaster />
+                    <Sonner />
+                    <GlobalCallOverlay />
                     <BrowserRouter
                       basename={ROUTER_BASENAME}
                       future={{ v7_startTransition: true, v7_relativeSplatPath: true }}
@@ -560,6 +564,11 @@ const App = () => {
                         <CreatorSubscriptionsPage />
                       </Suspense>
                     } />
+                    <Route path="/creator-studio" element={
+                      <Suspense fallback={<PageLoader />}>
+                        <CreatorStudio />
+                      </Suspense>
+                    } />
                     <Route path="/story-archive" element={
                       <Suspense fallback={<PageLoader />}>
                         <StoryArchivePage />
@@ -745,23 +754,24 @@ const App = () => {
                     <NotFound />
                   </Suspense>
                 } />
-                  </Routes>
-                  </PageTransition>
-                  </div>
-                  </SwipeBackGesture>
-                    </BrowserRouter>
-                  </TooltipProvider>
+                </Routes>
+                </PageTransition>
+                </div>
+                </SwipeBackGesture>
+                </BrowserRouter>
+                    </CreateStudioProvider>
+                </TooltipProvider>
                 </ChatOpenProvider>
-              </VideoCallProvider>
-            </ErrorBoundary>
-          </ReelsProvider>
-            </AppearanceRuntimeProvider>
-          </UnifiedCounterProvider>
-          </UserSettingsProvider>
-        </AuthProvider>
-      </MultiAccountProvider>
-          </AccountContainerProvider>
-    </AppErrorBoundary>
+                </VideoCallProvider>
+                </ErrorBoundary>
+                </ReelsProvider>
+                </AppearanceRuntimeProvider>
+                </UnifiedCounterProvider>
+                </UserSettingsProvider>
+                </AuthProvider>
+                </MultiAccountProvider>
+                </AccountContainerProvider>
+                </AppErrorBoundary>
   );
 };
 

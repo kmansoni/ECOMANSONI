@@ -7,16 +7,41 @@
       "health": 1,
       "taskCount": 0,
       "config": {
-        "description": "Главный оркестратор проекта Mansoni — 7 внутренних персон, роевой мозг",
+        "description": "Главный оркестратор Mansoni — 7 внутренних персон, роевой мозг. Умеет: вызывать скиллы (graphify, ruflo, verification-quality), управлять браузером без скриншотов, тестировать проект в реальном времени, подключать Fable модель для сложных задач.",
         "skills": [
-          ".github/skills/swarm-brain/SKILL.md",
-          ".github/skills/skills-catalog.md",
-          ".github/skills/infinite-context-protocol.md",
-          ".github/skills/orchestrator-laws/SKILL.md",
-          ".github/skills/swarm-protocol/SKILL.md",
-          ".github/skills/swarm-debate-protocol/SKILL.md"
+          "graphify",
+          "verification-quality",
+          "hooks-automation",
+          "pair-programming",
+          "swarm-orchestration",
+          "swarm-advanced"
         ],
-        "model": "opus"
+        "capabilities": {
+          "browser": {
+            "enabled": true,
+            "provider": "playwright",
+            "headless": false,
+            "viewport": {"width": 1920, "height": 1080},
+            "autoScreenshot": true
+          },
+          "skills": {
+            "graphify": {"trigger": "/graphify", "enabled": true},
+            "ruflo": {"trigger": "/ruflo", "enabled": true},
+            "verification": {"trigger": "/verify", "enabled": true},
+            "code-review": {"trigger": "/code-review", "enabled": true}
+          },
+          "fable": {
+            "enabled": true,
+            "autoRoute": true,
+            "domains": ["security", "e2ee", "complex-reasoning"]
+          },
+          "mcp": {
+            "enabled": true,
+            "servers": ["ruflo", "ruv-swarm"]
+          }
+        },
+        "model": "opus",
+        "maxTokens": 1000000
       },
       "createdAt": "2026-06-11T20:39:54.568Z",
       "domain": "orchestration",
@@ -84,7 +109,7 @@
       },
       "createdAt": "2026-06-11T20:41:02.596Z",
       "domain": "security",
-      "model": "sonnet",
+      "model": "fable",
       "modelRoutedBy": "explicit"
     },
     "mansoni-tester": {
@@ -132,7 +157,7 @@
       },
       "createdAt": "2026-06-11T20:44:11.938Z",
       "domain": "e2ee",
-      "model": "sonnet",
+      "model": "fable",
       "modelRoutedBy": "explicit"
     }
   },

@@ -61,35 +61,22 @@ skills:
   - .github/skills/core-web-vitals-optimizer/SKILL.md
   - .github/skills/deep-audit/SKILL.md
   - .github/skills/rug-quality-gate/SKILL.md
-  - .kilo/skills/a11y/SKILL.md
-  - .kilo/skills/competitive-ads-extractor/SKILL.md
-  - .kilo/skills/compliance/SKILL.md
-  - .kilo/skills/content-moderation/SKILL.md
-  - .kilo/skills/content-research-writer/SKILL.md
-  - .kilo/skills/crisis-mesh/SKILL.md
-  - .kilo/skills/database-performance/SKILL.md
-  - .kilo/skills/dev-browser-hidden/SKILL.md
-  - .kilo/skills/domain-name-brainstormer/SKILL.md
-  - .kilo/skills/frontend-design/SKILL.md
-  - .kilo/skills/image-enhancer/SKILL.md
-  - .kilo/skills/internal-comms/SKILL.md
-  - .kilo/skills/lead-research-assistant/SKILL.md
-  - .kilo/skills/llm-security/SKILL.md
-  - .kilo/skills/mcp-builder/SKILL.md
-  - .kilo/skills/meeting-insights-analyzer/SKILL.md
-  - .kilo/skills/mobile-native/SKILL.md
-  - .kilo/skills/multi-account/SKILL.md
-  - .kilo/skills/operation-pangolin/SKILL.md
-  - .kilo/skills/performance-budget/SKILL.md
-  - .kilo/skills/replication-crdt/SKILL.md
-  - .kilo/skills/slack-gif-creator/SKILL.md
-  - .kilo/skills/storage-management/SKILL.md
-  - .kilo/skills/theme-factory/SKILL.md
-  - .kilo/skills/time-handling/SKILL.md
-  - .kilo/skills/webrtc-sfu/SKILL.md
-  - .github/skills/calls-e2ee-audit/SKILL.md
-  - .kilo/skills/calls-e2ee-audit/SKILL.md
-  - .github/skills/superdesign/SKILL.md
+  # Browserbase — adversarial UI testing
+  - ui-test
+  # Browserbase — autonomous browser agent
+  - autobrowse
+  # Browserbase — browser automation
+  - browser
+  # Browserbase — CDP trace capture
+  - browser-trace
+  # Browserbase — constrained browser sandbox
+  - safe-browser
+  # Browserbase — OpenAPI from network traffic
+  - browser-to-api
+  # Browserbase — cookie sync for auth
+  - cookie-sync
+  # Playwright MCP — real browser testing
+  - playwright-mastery
 ---
 
 # Mansoni — Main Entry Point (Core Default)
@@ -553,19 +540,65 @@ Mansoni автоматически активирует релевантные �
 
 ---
 
-## LIVE BROWSER TESTING
+## LIVE BROWSER TESTING — Browserbase + Playwright MCP Оркестрация
 
-После каждого UI-изменения агент может запустить live-проверку:
+После каждого UI-изменения Mansoni оркестрирует real-time браузерное тестирование через рой агентов:
+
+### Режимы тестирования
+
+| Режим | Skill | Когда использовать |
+|-------|-------|-------------------|
+| **Diff-driven** | `ui-test` | PR review — тестирует только git diff |
+| **Exploratory** | `ui-test --explore` | Полное QA — гуляет по сайту как человек |
+| **Autobrowse** | `autobrowse` | Self-improving loop для стабильных flows |
+| **Playwright MCP** | `playwright` | Точные скриптовые тесты |
+
+### Пайплайн оркестрации
 
 ```
-1. Vite dev server (port 8080) — HMR мгновенно обновляет UI
-2. Playwright smoke: npx playwright test e2e/smoke.spec.ts
-3. Скриншот при падении → pw-screenshots/
-4. Console errors = blocker
-5. Mobile viewport (375px) обязателен
+1. Проверить: Vite dev server (port 8080) → жив?
+2. Если нет → npm run dev
+3. Определить тип: diff-driven / exploratory
+4. Запустить ui-test с browse CLI:
+   browse open http://localhost:8080 --local
+5. Воркфлоу:
+    Раунд 1 — Functional: core flows
+    Раунд 2 — Adversarial: сломать UI
+    Раунд 3 — Coverage: a11y, mobile, console
+6. Sub-agents (параллельно):
+   - Group A: auth + navigation
+   - Group B: forms + errors
+   - Group C: a11y + visual
+7. Собрать результаты → STEP_PASS / STEP_FAIL
+8. Если failure → screenshot + report
+9. Если автобrowse → улучшить strategy.md
+10. Закрепить паттерн на https://github.com/browserbase/skills
 ```
 
-Полный протокол: `.github/skills/live-browser-testing.md`
+### Assertion Protocol
+
+```
+STEP_PASS|<step-id>|<evidence>
+STEP_FAIL|<step-id>|<expected> → <actual>|<screenshot-path>
+```
+
+### Инструментарий
+
+- **browse CLI** — открыть браузер, клик, заполнить форму, скриншот
+- **browse eval** — JavaScript в контексте страницы (console errors, perf metrics, axe-core)
+- **browse snapshot** — accessibility tree для assertion
+- **Playwright MCP** — browser_snapshot, browser_click, browser_type, browser_evaluate
+- **browse network on/off** — захват трафика → browser-to-api → OpenAPI spec
+
+### UI Tests — быстрый старт (через browse CLI)
+
+```bash
+browse open http://localhost:8080 --local
+browse snapshot
+browse click @button-submit
+browse eval "JSON.stringify(window.__logs || [])"
+browse screenshot --path .context/ui-test-screenshots/test-result.png
+```
 
 ---
 

@@ -28,3 +28,6 @@
 - supabase-critical-hardening-pipeline
 - supabase-optional-resource-fallbacks
 - typescript-strict-phasing
+- early-e2ee-deployment-pattern (2026-06-12) — ALLOW-gate деплой для критических фич
+- nginx-version-compatibility-pattern (2026-06-12) — проверять целевую версию перед изменением
+- svg-to-emoji-flag-pattern (2026-06-12) — Unicode предпочтительнее SVG

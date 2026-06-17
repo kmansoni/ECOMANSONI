@@ -78,6 +78,8 @@ export interface MessageCallbacks {
   voicePlaybackRate: number;
   getWaveformHeights: (messageId: string) => number[];
   renderText: (text: string, userId?: string) => React.ReactNode;
+  onPin: (messageId: string) => void;
+  onForward: (messageId: string) => void;
 }
 
 export interface ChatMessageItemProps {
@@ -160,7 +162,7 @@ function ChatMessageItemInner({
   const isRead = message.is_read;
 
   const { bubbleClass, densityStyles, fontSizeSetting, bubbleStyleSetting, messageCornerRadius, autoDownloadPhotos, autoDownloadVideos, mediaTapEnabled, linkPreviewEnabled } = style;
-  const { onReply, onDelete, onReaction, onLongPressStart, onLongPressEnd, onManualLoad, onViewImage, onViewVideo, toggleSelected: toggleSel, getReactions, getMessageStatus, toggleVoicePlay, cycleVoiceSpeed, voicePlaybackRate, getWaveformHeights, renderText } = callbacks;
+  const { onReply, onDelete, onReaction, onLongPressStart, onLongPressEnd, onManualLoad, onViewImage, onViewVideo, toggleSelected: toggleSel, getReactions, getMessageStatus, toggleVoicePlay, cycleVoiceSpeed, voicePlaybackRate, getWaveformHeights, renderText, onPin, onForward } = callbacks;
 
   const textSizeClass =
     fontSizeSetting === "small"
@@ -684,8 +686,8 @@ function ChatMessageItemInner({
               isOwn={isOwn}
               onReply={() => onReply(message.id)}
               onReact={() => onReaction(message.id, "❤️")}
-              onPin={() => {}}
-              onForward={() => {}}
+              onPin={() => onPin(message.id)}
+              onForward={() => onForward(message.id)}
               onDelete={() => onDelete(message.id)}
             />
           )}

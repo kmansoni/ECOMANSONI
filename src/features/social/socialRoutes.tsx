@@ -17,6 +17,7 @@ const ARPage = lazy(() => import("../../pages/ARPage").then(m => ({ default: m.A
 const AudioRoomsPage = lazy(() => import("../../pages/AudioRoomsPage").then(m => ({ default: m.AudioRoomsPage })));
 const MusicPage = lazy(() => import("../../pages/MusicPage").then(m => ({ default: m.default })));
 const AIAssistantPage = lazy(() => import("../../pages/AIAssistantPage").then(m => ({ default: m.default })));
+const CreatorStudioPage = lazy(() => import("../../pages/CreatorStudio").then(m => ({ default: m.default })));
 const ExploreFeedPage = lazy(() => import("../../pages/ExploreFeedPage").then(m => ({ default: m.ExploreFeedPage })));
 
 export const socialRoutes = (): RouteObject[] => [
@@ -35,5 +36,6 @@ export const socialRoutes = (): RouteObject[] => [
   { path: "/services/music/*", lazy: () => Promise.resolve({ Component: MusicPage }) },
   { path: "/services/music", lazy: () => Promise.resolve({ Component: MusicPage }) },
   { path: "/ai-assistant", lazy: () => Promise.resolve({ Component: AIAssistantPage }) },
+  { path: "/creator-studio", lazy: () => Promise.resolve({ Component: CreatorStudioPage }) },
   { path: "/explore/:postIndex", lazy: () => Promise.resolve({ Component: ExploreFeedPage }) },
 ];

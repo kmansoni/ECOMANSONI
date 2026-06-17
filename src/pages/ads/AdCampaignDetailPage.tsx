@@ -108,7 +108,7 @@ export default function AdCampaignDetailPage() {
 
   const handleSubmitReview = async (creative: AdCreative) => {
     // Переводим в pending_review
-    await updateCreative(creative.id, { status: 'pending_review' as any });
+    await updateCreative(creative.id, { status: 'pending_review' });
     toast.success('Креатив отправлен на модерацию');
   };
 

@@ -224,8 +224,8 @@ export function useIncomingCalls(options: UseIncomingCallsOptions = {}) {
     logger.info("incoming_calls.setup", { userId: user.id });
 
     // === REALTIME SUBSCRIPTION (primary) ===
-    // NB: video_calls — это VIEW над calls. Realtime слушает WAL на ТАБЛИЦЕ calls,
-    // поэтому подписываемся на "calls" и маппим state→status.
+    // NB: video_calls is the primary table for call lifecycle.
+    // The old "calls" table is deprecated — all new calls go to video_calls.
     const channel = supabase
       .channel(`incoming-video-calls-${user.id}`)
       .on(
@@ -233,7 +233,7 @@ export function useIncomingCalls(options: UseIncomingCallsOptions = {}) {
         {
           event: "INSERT",
           schema: "public",
-          table: "calls",
+          table: "video_calls",
           filter: `callee_id=eq.${user.id}`,
         },
         async (payload) => {
@@ -258,7 +258,7 @@ export function useIncomingCalls(options: UseIncomingCallsOptions = {}) {
         {
           event: "UPDATE",
           schema: "public",
-          table: "calls",
+          table: "video_calls",
           filter: `callee_id=eq.${user.id}`,
         },
         (payload) => {

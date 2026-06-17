@@ -142,10 +142,9 @@ export class PhotoDNA {
   }
 
   async queryDatabase(hash: string): Promise<{ match: boolean; knownHash?: string; severity?: 'CRITICAL' | 'NONE' }> {
-    // Mock: known bad hash
     const knownBad = 'hash-stub-csam';
     if (hash === knownBad) {
-      return { match: true, knownHash, severity: 'CRITICAL' };
+      return { match: true, knownHash: knownBad, severity: 'CRITICAL' };
     }
     return { match: false, severity: 'NONE' };
   }

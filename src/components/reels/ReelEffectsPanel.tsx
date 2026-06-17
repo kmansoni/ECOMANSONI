@@ -6,7 +6,7 @@
 
 import React, { memo, useCallback, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { EyeOff } from 'lucide-react';
+import { EyeOff, Gauge, Sparkles, WandSparkles } from 'lucide-react';
 import { SPEED_PRESETS } from '@/hooks/useReelPlayback';
 import { cn } from '@/lib/utils';
 import type { EffectType, EffectPreset } from '@/types/reels/premium';

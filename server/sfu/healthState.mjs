@@ -37,6 +37,12 @@ export const HEALTH_RED = 2;
  * @property {(roomId: string, nodeId: string, leaseTerm: number, fenceToken?: FenceToken) => Promise<GateResult>} checkStability
  */
 
+const DEFAULT_LOG = {
+  fatal: (msg, meta) => console.error(JSON.stringify({ ts: Date.now(), level: "fatal", msg, ...meta })),
+  error: (msg, meta) => console.error(JSON.stringify({ ts: Date.now(), level: "error", msg, ...meta })),
+  warn: (msg, meta) => console.warn(JSON.stringify({ ts: Date.now(), level: "warn", msg, ...meta })),
+};
+
 const DEFAULT_REDIS_URL = process.env.REDIS_URL || "redis://redis.mansoni.ru:6379";
 
 const healthKey = (roomId) => `recovery:health:${roomId}`;
@@ -61,7 +67,7 @@ const bumpStateVersionLua = `
   return next
 `;
 
-export function createHealthState({ redisUrl = DEFAULT_REDIS_URL, leaseTtlSec = 30 }) {
+export function createHealthState({ redisUrl = DEFAULT_REDIS_URL, leaseTtlSec = 30, log = DEFAULT_LOG }) {
   const redis = new Redis(redisUrl, {
     lazyConnect: true,
     maxRetriesPerRequest: 1,
@@ -146,7 +152,10 @@ export function createHealthState({ redisUrl = DEFAULT_REDIS_URL, leaseTtlSec = 
     async close() {
       try {
         redis.disconnect();
-      } catch {}
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        log.warn("[healthState] close error", { error: msg });
+      }
     },
   };
 }

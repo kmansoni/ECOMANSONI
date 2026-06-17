@@ -137,7 +137,7 @@ export function UserSettingsProvider({ children }: { children: React.ReactNode }
       if (token !== refreshTokenRef.current) return; // stale — newer call already resolved
       setSettings(next);
       applyRootFlags(next);
-      setTheme(next.theme);
+      setTheme(next.theme === "system" ? "dark" : next.theme);
     } finally {
       if (token === refreshTokenRef.current) setLoading(false);
     }
@@ -150,7 +150,7 @@ export function UserSettingsProvider({ children }: { children: React.ReactNode }
       setSettings(next);
       applyRootFlags(next);
       if (patch.theme) {
-        setTheme(next.theme);
+        setTheme(next.theme === "system" ? "dark" : next.theme);
       }
     },
     [setTheme, userId],
@@ -166,7 +166,7 @@ export function UserSettingsProvider({ children }: { children: React.ReactNode }
     const unsubscribe = subscribeToUserSettings(userId, (next) => {
       setSettings(next);
       applyRootFlags(next);
-      setTheme(next.theme);
+      setTheme(next.theme === "system" ? "dark" : next.theme);
     });
 
     return unsubscribe;

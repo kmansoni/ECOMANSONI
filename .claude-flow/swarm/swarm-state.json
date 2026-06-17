@@ -4,7 +4,7 @@
       "swarmId": "swarm-1781210382687-mjkprx",
       "topology": "hierarchical",
       "maxAgents": 20,
-      "status": "running",
+      "status": "terminated",
       "agents": [
         "mansoni-queen",
         "mansoni-architect",
@@ -25,8 +25,28 @@
         "consensusMechanism": "majority"
       },
       "createdAt": "2026-06-11T20:39:42.687Z",
-      "updatedAt": "2026-06-11T20:39:42.687Z",
-      "pid": 18060
+      "updatedAt": "2026-06-12T01:27:50.568Z",
+      "pid": 18060,
+      "terminationReason": "host process 18060 exited"
+    },
+    "swarm-1781227670567-4seusa": {
+      "swarmId": "swarm-1781227670567-4seusa",
+      "topology": "hierarchical",
+      "maxAgents": 8,
+      "status": "running",
+      "agents": [],
+      "tasks": [],
+      "config": {
+        "topology": "hierarchical",
+        "maxAgents": 8,
+        "strategy": "specialized",
+        "communicationProtocol": "message-bus",
+        "autoScaling": true,
+        "consensusMechanism": "majority"
+      },
+      "createdAt": "2026-06-12T01:27:50.567Z",
+      "updatedAt": "2026-06-12T01:27:50.567Z",
+      "pid": 8148
     }
   },
   "version": "3.0.0"

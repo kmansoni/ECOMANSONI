@@ -235,6 +235,10 @@ async function createFallbackController() {
         workerCount: 0,
       };
     },
+
+    async close() {
+      rooms.clear();
+    },
   };
 }
 
@@ -258,18 +262,20 @@ async function createMediasoupController() {
   );
 
   const workers = [];
+  const workerStatus = []; // "running" | "restarting"
 
   async function spawnWorker(index) {
     const minPort = BASE_PORT + index * PORTS_PER_WORKER;
     const maxPort = minPort + PORTS_PER_WORKER - 1;
     const w = await mediasoup.createWorker({
       logLevel: process.env.MEDIASOUP_LOG_LEVEL ?? process.env.SFU_MEDIASOUP_LOG_LEVEL ?? "warn",
-      logTags: ["info", "ice", "dtls", "rtp", "srtp", "rtcp"],
+      logTags: ["info", "ice", "dtls", "dtls", "rtcp"],
       rtcMinPort: minPort,
       rtcMaxPort: maxPort,
     });
     w.on("died", () => {
       console.warn(`[mediasoup] Worker ${index} died — invalidating affected rooms, restarting in 2s`);
+      workerStatus[index] = "restarting";
       // Invalidate routers belonging to this worker so ensureRouter() recreates them
       for (const room of rooms.values()) {
         if (room.workerIndex === index) {
@@ -279,10 +285,13 @@ async function createMediasoupController() {
       }
       setTimeout(async () => {
         try {
-          workers[index] = await spawnWorker(index);
+          const newWorker = await spawnWorker(index);
+          workers[index] = newWorker;
+          workerStatus[index] = "running";
           console.log(`[mediasoup] Worker ${index} restarted`);
         } catch (e) {
           console.error(`[mediasoup] Worker ${index} restart failed: ${e?.message ?? e}`);
+          workerStatus[index] = "failed";
         }
       }, 2000);
     });
@@ -291,14 +300,21 @@ async function createMediasoupController() {
 
   for (let i = 0; i < numWorkers; i++) {
     workers.push(await spawnWorker(i));
+    workerStatus.push("running");
   }
   console.log(`[mediasoup] Started ${workers.length} workers`);
 
   let nextWorkerIdx = 0;
   function getNextWorker() {
-    const w = workers[nextWorkerIdx % workers.length];
+    // Skip workers that are restarting
+    const startIdx = nextWorkerIdx % workers.length;
+    let attempts = 0;
+    while (workerStatus[startIdx + attempts % workers.length] === "restarting" && attempts < workers.length) {
+      attempts++;
+    }
+    const idx = (startIdx + attempts) % workers.length;
     nextWorkerIdx++;
-    return w;
+    return workers[idx];
   }
 
   const rooms = new Map();
@@ -572,6 +588,25 @@ async function createMediasoupController() {
         consumerCount,
         workerCount: workers.length,
       };
+    },
+
+    async close() {
+      // Close all rooms and their resources
+      for (const room of rooms.values()) {
+        for (const transport of room.transports.values()) {
+          try { transport.close(); } catch {}
+        }
+        if (room.router) {
+          try { room.router.close(); } catch {}
+        }
+      }
+      rooms.clear();
+
+      // Close all workers
+      for (const worker of workers) {
+        try { worker.close(); } catch {}
+      }
+      workers.length = 0;
     },
   };
 }
