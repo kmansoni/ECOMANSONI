@@ -359,6 +359,73 @@ export async function decryptWithGroupTree(
   return new Uint8Array(decrypted);
 }
 
+// ─── Persistence ────────────────────────────────────────────────────────────────
+
+import { logger } from '@/lib/logger';
+
+const TREE_KEY_PREFIX = 'gkt:';
+
+/**
+ * Persists a group key tree to IndexedDB via the SecureKeyStore wrapper.
+ * Call this after every membership change.
+ *
+ * Requires the SecureKeyStore singleton to be unlocked.
+ *
+ * Usage:
+ *   import { persistGroupTree, loadGroupTree, listPersistedTreeIds } from './groupKeyTree';
+ *   await persistGroupTree(tree, secureKeyStore);
+ *   const loaded = await loadGroupTree(conversationId, secureKeyStore);
+ */
+export async function persistGroupTree(
+  tree: GroupKeyTree,
+  store: { storeWrappedKey(id: string, key: CryptoKey, format: 'raw', type: 'group'): Promise<void> },
+): Promise<void> {
+  const keyId = `${TREE_KEY_PREFIX}${tree.conversationId}`;
+  try {
+    const raw = exportGroupKeyTree(tree);
+    const keyBuf = new TextEncoder().encode(JSON.stringify(raw));
+    const key = await crypto.subtle.importKey('raw', keyBuf, 'AES-GCM', false, ['encrypt', 'decrypt']);
+    await store.storeWrappedKey(keyId, key, 'raw', 'group');
+    logger.debug('[GroupKeyTree] persisted', { conversationId: tree.conversationId, epoch: tree.epoch });
+  } catch (err) {
+    logger.warn('[GroupKeyTree] persist failed', { conversationId: tree.conversationId, error: err });
+    throw err;
+  }
+}
+
+export async function loadGroupTree(
+  conversationId: string,
+  store: {
+    unwrapKey(
+      id: string,
+      algorithm: AlgorithmIdentifier,
+      extractable: boolean,
+      keyUsages: KeyUsage[],
+    ): Promise<CryptoKey | null>;
+  },
+): Promise<GroupKeyTree | null> {
+  const keyId = `${TREE_KEY_PREFIX}${conversationId}`;
+  try {
+    const key = await store.unwrapKey(keyId, { name: 'AES-GCM' }, false, ['encrypt', 'decrypt']);
+    if (!key) return null;
+    const exported = await crypto.subtle.exportKey('raw', key);
+    const raw = JSON.parse(new TextDecoder().decode(exported)) as GroupKeyTreeExport;
+    const tree = await importGroupKeyTree(raw);
+    logger.debug('[GroupKeyTree] loaded', { conversationId, epoch: tree.epoch });
+    return tree;
+  } catch (err) {
+    logger.warn('[GroupKeyTree] load failed', { conversationId, error: err });
+    return null;
+  }
+}
+
+export async function deletePersistedTree(
+  conversationId: string,
+  store: { deleteWrappedKey(id: string): Promise<void> },
+): Promise<void> {
+  await store.deleteWrappedKey(`${TREE_KEY_PREFIX}${conversationId}`);
+}
+
 // ─── Utilities ────────────────────────────────────────────────────────────────
 
 export function getGroupKeyTree(conversationId: string): GroupKeyTree | null {

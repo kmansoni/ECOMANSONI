@@ -58,13 +58,12 @@ export class E2EEKeyStore {
   /** In-flight guard to prevent concurrent identity key pair creation */
   private _identityInFlight: Map<string, Promise<{ publicKey: CryptoKey; privateKey: CryptoKey; fingerprint: string; isNew: boolean }>> = new Map();
 
-  private static readonly FIXED_PASSPHRASE = "fixed-passphrase-for-e2ee-keystore";
-  private static readonly FIXED_SALT = new Uint8Array([
-    0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc, 0xde, 0xf0,
-    0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc, 0xde, 0xf0,
-    0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc, 0xde, 0xf0,
-    0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc, 0xde, 0xf0
-  ]);
+  // Identity private keys are NON-EXTRACTABLE by design — WebCrypto prevents export.
+  // Browser XSS cannot extract private keys; memory is isolated per-origin.
+  // If IndexedDB is unavailable, falls back to memory (lost on reload — correct for ephemeral secrets).
+  //
+  // IMPORTANT: Do NOT re-add passphrase-based wrapping here.
+  // SecureKeyStore (below) handles passphrase-wrapped backup/export separately.
 
   constructor(config: KeyStoreConfig = {}) {
     this.dbName = config.dbName ?? 'e2ee-keystore';
