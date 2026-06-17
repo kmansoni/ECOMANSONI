@@ -231,6 +231,21 @@ export const e2eeDb = {
         p_key_version: keyVersion,
       }) as QueryResult<EnableConversationEncryptionResult>;
     },
+
+    /**
+     * consume_opk — атомарное удаление OPK.
+     * Supabase RPC: результат оборачивается в { data, error }.
+     * data = { consumed_id: string | null } | null
+     */
+    consumeOPK(opkId: string, userId: string): Promise<{
+      data: { consumed_id: string | null } | null;
+      error: { message: string } | null;
+    }> {
+      return db.rpc('consume_opk', {
+        p_opk_id: opkId,
+        p_user_id: userId,
+      }) as Promise<{ data: { consumed_id: string | null } | null; error: { message: string } | null }>;
+    },
   },
 
   /**

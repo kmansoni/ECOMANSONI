@@ -6,9 +6,12 @@
  *
  * Lifecycle:
  *   generate  → publish (Supabase)
- *   consume   → атомарное удаление при X3DH initiation (server enforces via validate-key-session)
+ *   consume   → атомарное удаление при X3DH initiation (server enforces via consume_opk RPC)
  *   replenish → автоматический refill когда запас ниже MIN_OPK_COUNT
  *   revoke    → явный отзыв скомпрометированных ключей
+ *
+ * CRITICAL: Всегда используй consumeOPK() для удаления — он атомарный.
+ * Никогда не используй deleteByIds() для consumption — это race-prone.
  *
  * Таргет: постоянный запас MIN_OPK_COUNT..MAX_OPK_COUNT на сервере.
  */
@@ -140,7 +143,39 @@ export async function replenishOPKsIfNeeded(
   return { replenished: toGenerate };
 }
 
-// ─── Revocation ───────────────────────────────────────────────────────────────
+// ─── Consumption (ATOMIC — single RPC) ─────────────────────────────────────────────
+
+/**
+ * Атомарно потребляет один OPK — single-use enforcement.
+ *
+ * Использует RPC consume_opk который выполняет DELETE + RETURNING в одной транзакции.
+ * Предотвращает race condition: два concurrent X3DH handshake не могут использовать
+ * один и тот же OPK.
+ *
+ * @returns id потреблённого ключа, или null если ключ не найден/уже потреблён.
+ */
+export async function consumeOPK(
+  opkId: string,
+  userId: string,
+): Promise<{ consumed: boolean; error?: string }> {
+  const { data, error } = await e2eeDb.rpc.consumeOPK(opkId, userId);
+
+  if (error) {
+    return { consumed: false, error: error.message };
+  }
+
+  const row = Array.isArray(data) ? data[0] : data;
+  const consumedId = row?.consumed_id ?? null;
+
+  if (!consumedId) {
+    // OPK уже использован или не существует
+    return { consumed: false, error: 'OPK already consumed or invalid' };
+  }
+
+  return { consumed: true };
+}
+
+// ─── Revocation ─────────────────────────────────────────────────────────────
 
 /**
  * Отзывает конкретные OPK (при подозрении на компрометацию).

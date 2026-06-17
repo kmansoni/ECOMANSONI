@@ -169,35 +169,49 @@ Deno.serve(async (req: Request): Promise<Response> => {
   }
 
   // ── 5. OPK single-use enforcement ──────────────────────────────────────
+  // Use atomic consume_opk RPC (DELETE + RETURNING in single transaction).
+  // Falls back to direct DELETE for backwards compatibility.
   let consumedOpkId: string | undefined;
   if (preKeyBundle.oneTimePreKeyId) {
     const opkId = preKeyBundle.oneTimePreKeyId;
 
-    // Atomic delete-and-check: only delete if record exists and belongs to userId
-    const { data: opkRow, error: opkErr } = await supabase
-      .from('one_time_prekeys')
-      .delete()
-      .eq('id', opkId)
-      .eq('user_id', userId)
-      .select('id')
-      .maybeSingle();
+    // Try atomic RPC first
+    const { data: rpcResult, error: rpcErr } = await supabase.rpc('consume_opk', {
+      p_opk_id: opkId,
+      p_user_id: userId,
+    });
 
-    if (opkErr) {
-      // Log server-side, return generic error (do not reveal DB schema)
-      console.error('[validate-key-session] OPK delete error:', opkErr.message);
-      return jsonResponse({ valid: false, reason: 'OPK validation error' }, 500, req);
+    let consumed: boolean = false;
+
+    if (!rpcErr) {
+      const row = Array.isArray(rpcResult) ? rpcResult[0] : rpcResult;
+      consumed = !!row?.consumed_id;
+      if (consumed) consumedOpkId = row.consumed_id;
+    } else {
+      // Fallback: direct DELETE (for environments where RPC isn't available yet)
+      const { data: opkRow, error: opkErr } = await supabase
+        .from('one_time_prekeys')
+        .delete()
+        .eq('id', opkId)
+        .eq('user_id', userId)
+        .select('id')
+        .maybeSingle();
+
+      if (opkErr) {
+        console.error('[validate-key-session] OPK consume error:', opkErr.message);
+        return jsonResponse({ valid: false, reason: 'OPK validation error' }, 500, req);
+      }
+      consumed = !!opkRow;
+      if (consumed) consumedOpkId = opkRow?.id;
     }
 
-    if (!opkRow) {
-      // OPK already consumed or never existed — reject
+    if (!consumed) {
       return jsonResponse(
         { valid: false, reason: 'One-time pre-key already used or invalid' },
         422,
         req,
       );
     }
-
-    consumedOpkId = opkRow.id;
   }
 
   // ── 6. All checks passed ────────────────────────────────────────────────
