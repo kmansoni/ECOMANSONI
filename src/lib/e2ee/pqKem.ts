@@ -1,76 +1,32 @@
 import { logger } from '@/lib/logger';
+import { ml_kem768 } from '@noble/post-quantum/ml-kem.js';
 
 /**
  * Post-Quantum Readiness — Hybrid KEM abstraction
  *
- * Status: PLACEHOLDER / ROADMAP
- *
- * ML-KEM-768 (formerly Kyber-768, NIST FIPS 203) is not yet available
- * in Web Crypto API (as of 2025). This module provides:
- *
- * 1. A feature-flag check (`isPQAvailable()`)
- * 2. A hybrid encapsulation interface that combines:
- *    - ECDH P-256 (classical) — provides current security
- *    - ML-KEM-768 (PQ) — provides post-quantum security when available
- * 3. A shim that falls back to ECDH-only when PQ is unavailable,
- *    with a console warning so we know when to integrate the real impl
- * 4. Combiners following NIST SP 800-227 / IETF hybrid KEM recommendations
- *
- * Integration path:
- * - When `@noble/post-quantum` or Web Crypto ML-KEM landing:
- *   replace `_mlkemStub()` with real implementation
- * - Feature flag: enable via `localStorage.setItem('e2ee_pq', '1')`
- *   or environment variable `VITE_E2EE_PQ=1`
- *
- * Hybrid KEM combiner (following draft-ietf-tls-hybrid-design):
- *   sharedSecret = HKDF(ECDH_secret || MLKEM_secret, info="hybrid-kem-v1")
+ * Hybrid scheme: ECDH P-256 + ML-KEM-768 (NIST FIPS 203)
+ * When PQ_ENABLED: combines both ECDH and ML-KEM secrets
+ * When disabled: falls back to ECDH-only (graceful degradation)
  */
 
 import { toBase64, fromBase64 } from './utils';
 
-// ─── Feature flag ─────────────────────────────────────────────────────────────
+const PQ_ENABLED = String(import.meta.env.VITE_E2EE_PQ ?? "false").trim() === "1";
 
-function _isPQFlagEnabled(): boolean {
-  try {
-    // 1. Build-time env var (Vite)
-    if (import.meta.env.VITE_E2EE_PQ === '1') return true;
-    // 2. Runtime override (useful for staged rollout)
-    if (typeof localStorage !== 'undefined' &&
-        localStorage.getItem('e2ee_pq') === '1') return true;
-  } catch { /* SSR / Deno / no DOM */ }
-  return false;
-}
-
-/**
- * Returns true if PQ-KEM is available and enabled.
- * Currently always false until ML-KEM Web Crypto integration is complete.
- */
 export function isPQAvailable(): boolean {
-  return _isPQFlagEnabled() && _isMLKEMAvailable();
-}
-
-/** Placeholder: check if ML-KEM is available in the current runtime. */
-function _isMLKEMAvailable(): boolean {
-  // Future: check `crypto.subtle.generateKey({ name: 'ML-KEM-768' }, ...)`
-  // For now: always false (not in any browser/Deno as of 2025)
-  return false;
+  return PQ_ENABLED;
 }
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 export interface HybridKEMResult {
-  /** Combined shared secret (from ECDH + optional PQ) */
   sharedSecret: CryptoKey;
-  /** Classical ECDH encapsulation (ephemeral public key SPKI, base64) */
   ecdhCiphertext: string;
-  /** PQ-KEM encapsulation output (base64). Empty string if PQ unavailable */
   pqCiphertext: string;
-  /** Whether PQ component was used */
   pqUsed: boolean;
 }
 
 export interface HybridKEMDecapResult {
-  /** Recovered shared secret (must match encapsulation) */
   sharedSecret: CryptoKey;
   pqUsed: boolean;
 }
@@ -112,41 +68,44 @@ async function _ecdhDecap(
   );
 }
 
-// ─── PQ stub ──────────────────────────────────────────────────────────────────
+// ─── ML-KEM-768 ───────────────────────────────────────────────────────────────
 
-/**
- * STUB: ML-KEM-768 is not available. Returns zeros as a placeholder.
- * Replace this when integrating a real ML-KEM implementation.
- */
-function _mlkemStub(): never {
-  throw new Error("Post-Quantum KEM (ML-KEM-768) is not supported in this runtime. Please enable a compatible implementation.");
+async function _mlkemEncap(publicKey: Uint8Array): Promise<{
+  cipherText: Uint8Array;
+  sharedSecret: Uint8Array;
+}> {
+  return ml_kem768.encapsulate(publicKey);
+}
+
+async function _mlkemDecap(
+  cipherText: Uint8Array,
+  secretKey: Uint8Array
+): Promise<Uint8Array> {
+  return ml_kem768.decapsulate(cipherText, secretKey);
 }
 
 // ─── Hybrid combiner ─────────────────────────────────────────────────────────
 
-/**
- * Combines ECDH shared secret and (optional) PQ shared secret using HKDF.
- * If PQ is disabled, only ECDH contributes to the output.
- *
- * Follows draft-ietf-tls-hybrid-design concatenation combiner:
- *   concat = ECDH_secret || PQ_secret
- *   output = HKDF-SHA-256(concat, info="hybrid-kem-v1")
- */
 async function _combineSecrets(
   ecdhSecret: ArrayBuffer,
-  pqSecret: ArrayBuffer | null,
-  info = 'hybrid-kem-v1',
+  mlkemSecret: Uint8Array | null,
 ): Promise<CryptoKey> {
-  const combined = pqSecret
-    ? _concat(new Uint8Array(ecdhSecret), new Uint8Array(pqSecret))
-    : new Uint8Array(ecdhSecret);
+  const ecdhBytes = new Uint8Array(ecdhSecret);
+  const combined = mlkemSecret
+    ? new Uint8Array(ecdhBytes.length + mlkemSecret.length)
+    : ecdhBytes;
+
+  if (mlkemSecret) {
+    combined.set(ecdhBytes, 0);
+    combined.set(mlkemSecret, ecdhBytes.length);
+  }
 
   const hkdfKey = await crypto.subtle.importKey(
     'raw',
-    combined as unknown as Uint8Array<ArrayBuffer>,
+    combined,
     'HKDF',
     false,
-    ['deriveKey'],
+    ['deriveBits'],
   );
 
   return crypto.subtle.deriveKey(
@@ -154,7 +113,7 @@ async function _combineSecrets(
       name: 'HKDF',
       hash: 'SHA-256',
       salt: new Uint8Array(32),
-      info: new TextEncoder().encode(info),
+      info: new TextEncoder().encode('hybrid-kem-v1'),
     },
     hkdfKey,
     { name: 'AES-GCM', length: 256 },
@@ -163,47 +122,31 @@ async function _combineSecrets(
   );
 }
 
-function _concat(a: Uint8Array, b: Uint8Array): Uint8Array {
-  const out = new Uint8Array(a.length + b.length);
-  out.set(a);
-  out.set(b, a.length);
-  return out;
-}
-
 // ─── Public API ───────────────────────────────────────────────────────────────
 
-/**
- * Hybrid KEM encapsulation — called by initiator (sender).
- *
- * @param recipientPublicKey  ECDH P-256 public key of recipient
- * @returns { sharedSecret, ecdhCiphertext, pqCiphertext, pqUsed }
- */
 export async function hybridEncapsulate(
   recipientPublicKey: CryptoKey,
 ): Promise<HybridKEMResult> {
   try {
     const ecdhResult = await _ecdhEncap(recipientPublicKey);
-    let pqResult = { sharedBits: new ArrayBuffer(0), encap: "" };
-    let pqUsed = false;
+
+    let mlkemCipherText: Uint8Array | undefined;
+    let mlkemSecret: Uint8Array | undefined;
 
     if (isPQAvailable()) {
-      pqResult = await _mlkemStub(); // Replace with real PQ-KEM when available
-      pqUsed = true;
+      const mlkemKp = ml_kem768.keygen();
+      const mlkemResult = ml_kem768.encapsulate(mlkemKp.publicKey);
+      mlkemCipherText = mlkemResult.cipherText;
+      mlkemSecret = mlkemResult.sharedSecret;
     }
 
-    const combinedSecret = await crypto.subtle.importKey(
-      "raw",
-      new Uint8Array([...new Uint8Array(ecdhResult.sharedBits), ...new Uint8Array(pqResult.sharedBits)]),
-      { name: "HKDF" },
-      false,
-      ["deriveBits"]
-    );
+    const combinedSecret = await _combineSecrets(ecdhResult.sharedBits, mlkemSecret ?? null);
 
     return {
       sharedSecret: combinedSecret,
       ecdhCiphertext: toBase64(ecdhResult.encap),
-      pqCiphertext: toBase64(new TextEncoder().encode(pqResult.encap)),
-      pqUsed,
+      pqCiphertext: mlkemCipherText ? toBase64(mlkemCipherText) : "",
+      pqUsed: !!mlkemSecret,
     };
   } catch (error) {
     logger.error("Hybrid KEM encapsulation failed", error);
@@ -211,31 +154,21 @@ export async function hybridEncapsulate(
   }
 }
 
-/**
- * Hybrid KEM decapsulation — called by recipient.
- *
- * @param ecdhCiphertextB64   ECDH encapsulation (ephemeral public key, base64)
- * @param pqCiphertextB64     PQ encapsulation (base64, empty string if PQ not used)
- * @param recipientPrivateKey ECDH P-256 private key of recipient
- * @param pqPrivateKey        PQ private key (not yet typed; pass null until ML-KEM lands)
- */
 export async function hybridDecapsulate(
   ecdhCiphertextB64: string,
   pqCiphertextB64: string,
   recipientPrivateKey: CryptoKey,
-  pqPrivateKey: unknown = null,
+  pqSecretKey: Uint8Array | null = null,
 ): Promise<HybridKEMDecapResult> {
   const ecdhBits = await _ecdhDecap(fromBase64(ecdhCiphertextB64), recipientPrivateKey);
 
-  let pqBits: ArrayBuffer | null = null;
-  let pqUsed = false;
+  let mlkemSecret: Uint8Array | null = null;
 
-  if (pqCiphertextB64 && isPQAvailable() && pqPrivateKey !== null) {
-    // Future: const pqDecap = await mlkem768.decap(fromBase64(pqCiphertextB64), pqPrivateKey);
-    // pqBits = pqDecap.sharedSecret;
-    pqUsed = true;
+  if (pqCiphertextB64 && isPQAvailable() && pqSecretKey) {
+    const cipherText = fromBase64(pqCiphertextB64);
+    mlkemSecret = await _mlkemDecap(cipherText, pqSecretKey);
   }
 
-  const sharedSecret = await _combineSecrets(ecdhBits, pqBits);
-  return { sharedSecret, pqUsed };
+  const sharedSecret = await _combineSecrets(ecdhBits, mlkemSecret);
+  return { sharedSecret, pqUsed: !!mlkemSecret };
 }
