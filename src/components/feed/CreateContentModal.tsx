@@ -2,7 +2,7 @@ import { useState, useRef, useEffect, useCallback, useReducer } from 'react';
 import {
   X, Image, Film, Radio, Camera, Loader2, RotateCw, Upload,
   Zap, ZapOff, Timer, Settings, Sparkles, Music2, FlipHorizontal,
-  Wand2, User, ChevronDown,
+  Wand2, User,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -27,12 +27,15 @@ import {
   editorStateReducer,
   validateEditorState,
   validateMediaFile,
+  type CarouselSlide,
 } from './editorStateModel';
 import { logger } from '@/lib/logger';
 import { applyImageFilter } from '@/lib/applyImageFilter';
 import { GalleryEntryButton } from '@/features/create/gallery/GalleryEntryButton';
 import type { GalleryMediaKind, GalleryPermissionState } from '@/features/create/gallery/galleryTypes';
 import { isNativeGalleryAvailable, pickNativeGalleryMedia } from '@/features/create/gallery/nativeGalleryAdapter';
+import { MediaPickerModal } from '@/features/create/gallery/MediaPickerModal';
+import type { PickerSelection } from '@/features/create/gallery/mediaPickerTypes';
 
 interface CreateContentModalProps {
   isOpen: boolean;
@@ -102,6 +105,7 @@ export function CreateContentModal({ isOpen, onClose, onSuccess, initialTab = 'p
     uploadPostMedia,
     uploadReelMedia,
     createLiveSession,
+    uploadCarouselPost,
   } = useUnifiedContentCreator();
 
   const [activeTab, setActiveTab] = useState<TabType>(initialTab);
@@ -137,6 +141,7 @@ export function CreateContentModal({ isOpen, onClose, onSuccess, initialTab = 'p
   const [galleryPermission, setGalleryPermission] = useState<GalleryPermissionState>('unknown');
   const [lastGalleryThumbnailUrl, setLastGalleryThumbnailUrl] = useState<string | null>(null);
   const [lastGalleryMediaKind, setLastGalleryMediaKind] = useState<GalleryMediaKind | null>(null);
+  const [showMediaPickerModal, setShowMediaPickerModal] = useState(false);
   const [reelEffectPreset, setReelEffectPreset] = useState<(typeof REEL_EFFECT_PRESETS)[number]['id']>('none');
   const [reelFaceEnhance, setReelFaceEnhance] = useState(false);
   const [reelAiEnhance, setReelAiEnhance] = useState(false);
@@ -172,7 +177,6 @@ export function CreateContentModal({ isOpen, onClose, onSuccess, initialTab = 'p
   const cameraHostRef = useRef<CameraHostHandle | null>(null);
   const publishInFlightRef = useRef(false);
   const captureTimerRef = useRef<number | null>(null);
-  const screenFlashVideoRef = useRef<HTMLVideoElement | null>(null);
   // Fix #5: guard publish button on unmount during in-flight publish
   const unmountRef = useRef(false);
   // Fix #7: prevent camera restart during bootstrap until tab switch is committed
@@ -182,103 +186,52 @@ export function CreateContentModal({ isOpen, onClose, onSuccess, initialTab = 'p
   // Fix B: guard от двойного тапа — preventDefault на capturePhoto/recordVideo
   const captureInFlightRef = useRef(false);
 
-  // Fix #5: window-level guard — если юзер ушёл со страницы во время публикации,
-  // сбрасываем publishInFlightRef при следующей загрузке модуля
+  // Mount/unmount guard + ChatOpen sync
   useEffect(() => {
     unmountRef.current = false;
+    setIsCreatingContent(isOpen);
     return () => {
       unmountRef.current = true;
+      setIsCreatingContent(false);
       if (publishInFlightRef.current) {
         publishInFlightRef.current = false;
-        logger.warn('[CreateContentModal] Размонтирование во время публикации, сброшен publishInFlightRef');
+        logger.warn('[CreateContentModal] Unmounted during publish');
       }
-    };
-  }, []);
-
-  useEffect(() => {
-    // Fix #10: unmount cleanup для blob URL — не зависит от previewUrl,
-    // гарантированно вызывается при размонтировании независимо от React bail-out
-    return () => {
-      if (captureTimerRef.current) {
-        window.clearInterval(captureTimerRef.current);
-        captureTimerRef.current = null;
-      }
-      // Этот return выполняется при РАЗМОНТИРОВАНИИ, даже если previewUrl не изменился
-    };
-  }, []);
-
-  // Fix #10: отдельный эффект на изменение previewUrl — отзывает старые blob
-  useEffect(() => {
-    return () => {
-      if (previewUrl && previewUrl.startsWith('blob:')) {
-        try {
-          URL.revokeObjectURL(previewUrl);
-        } catch (e) {
-          logger.warn('[CreateContentModal] Не удалось отозвать object URL', { error: e });
-        }
-      }
-    };
-  }, [previewUrl]);
-
-  // Fix #10: то же для lastGalleryThumbnailUrl
-  useEffect(() => {
-    return () => {
-      if (lastGalleryThumbnailUrl && lastGalleryThumbnailUrl.startsWith('blob:')) {
-        try {
-          URL.revokeObjectURL(lastGalleryThumbnailUrl);
-        } catch (e) {
-          logger.warn('[CreateContentModal] Не удалось отозвать thumbnail object URL', { error: e });
-        }
-      }
-    };
-  }, [lastGalleryThumbnailUrl]);
-
-  useEffect(() => {
-    setIsCreatingContent(isOpen);
-
-    return () => {
-      setIsCreatingContent(false);
     };
   }, [isOpen, setIsCreatingContent]);
 
-  // Fix #5: сброс unmountRef при повторном открытии модала
+  // Blob URL cleanup + timer cleanup (no deps — guaranteed on unmount regardless of React bail-out)
   useEffect(() => {
-    if (isOpen) {
-      unmountRef.current = false;
-    }
+    return () => {
+      if (captureTimerRef.current) { window.clearInterval(captureTimerRef.current); captureTimerRef.current = null; }
+      if (previewUrl?.startsWith('blob:')) { try { URL.revokeObjectURL(previewUrl); } catch {} }
+      if (lastGalleryThumbnailUrl?.startsWith('blob:')) { try { URL.revokeObjectURL(lastGalleryThumbnailUrl); } catch {} }
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Body scroll lock
+  useEffect(() => {
+    if (isOpen) { document.body.style.overflow = 'hidden'; }
+    else { document.body.style.overflow = ''; }
+    return () => { document.body.style.overflow = ''; };
   }, [isOpen]);
-  // Предотвращает race: переключение с live→publications пока камера ещё инициализируется.
+
+  // Tab switch bootstrap guard
   useEffect(() => {
     if (isTabSwitchBootstrapping.current) {
-      // Снимаем флаг после того как commit произошёл
-      const t = setTimeout(() => {
-        isTabSwitchBootstrapping.current = false;
-      }, 100);
+      const t = setTimeout(() => { isTabSwitchBootstrapping.current = false; }, 100);
       return () => clearTimeout(t);
     }
   }, [activeTab]);
-
-  // Lock body scroll when modal open
-  useEffect(() => {
-    if (isOpen) {
-      document.body.style.overflow = 'hidden';
-    } else {
-      document.body.style.overflow = '';
-    }
-    return () => { document.body.style.overflow = ''; };
-  }, [isOpen]);
 
   // Reels recording timer
   useEffect(() => {
     if (isCameraRecording && activeTab === 'reels') {
       reelRecordingStartRef.current = Date.now();
       setReelRecordingElapsedMs(0);
-      const intervalId = window.setInterval(() => {
-        setReelRecordingElapsedMs(Date.now() - reelRecordingStartRef.current);
-      }, 200);
-      return () => {
-        window.clearInterval(intervalId);
-      };
+      const id = window.setInterval(() => { setReelRecordingElapsedMs(Date.now() - reelRecordingStartRef.current); }, 200);
+      return () => window.clearInterval(id);
     } else {
       setReelRecordingElapsedMs(0);
     }
@@ -503,9 +456,78 @@ export function CreateContentModal({ isOpen, onClose, onSuccess, initialTab = 'p
   }, [activeTab, clearStoredReelPublishId, getVideoDurationSeconds]);
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
+    const files = Array.from(e.target.files ?? []);
+    if (files.length === 0) return;
+
+    if (isCarouselMode) {
+      void addCarouselFiles(files);
+      return;
+    }
+
+    const file = files[0];
     if (file) {
       void applyGalleryFile(file);
+    }
+  };
+
+  const addCarouselFiles = async (files: File[]) => {
+    const remaining = 20 - editorState.carouselSlides.length;
+    if (remaining <= 0) {
+      toast.error('Максимум 20 слайдов в карусели');
+      return;
+    }
+
+    const toProcess = files.slice(0, remaining);
+    if (files.length > remaining) {
+      toast.warning(`Добавлено только ${remaining} из ${files.length} файлов (лимит 20)`);
+    }
+
+    for (const file of toProcess) {
+      if (file.size > 50 * 1024 * 1024) {
+        toast.error(`Файл "${file.name}" превышает 50 МБ`);
+        continue;
+      }
+      const url = URL.createObjectURL(file);
+      const slide = {
+        id: crypto.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(16).slice(2)}`,
+        file,
+        previewUrl: url,
+        caption: '',
+        filterIdx: 0,
+        filterIntensity: 1,
+        adjustments: {
+          brightness: 0,
+          contrast: 0,
+          saturation: 0,
+          warmth: 0,
+          shadows: 0,
+          highlights: 0,
+          vignette: 0,
+          sharpness: 0,
+          grain: 0,
+        },
+        mediaType: file.type.startsWith('video/') ? 'video' : 'image',
+      } as CarouselSlide;
+      dispatchEditor({ type: 'ADD_CAROUSEL_SLIDE', payload: slide });
+    }
+
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  };
+
+  const handleMediaPickerSelect = async (selection: PickerSelection) => {
+    try {
+      const files: File[] = [];
+      for (const item of selection.items) {
+        const response = await fetch(item.url);
+        const blob = await response.blob();
+        const file = new File([blob], item.name, { type: blob.type || (item.kind === 'video' ? 'video/mp4' : 'image/jpeg') });
+        files.push(file);
+      }
+      await addCarouselFiles(files);
+      setShowMediaPickerModal(false);
+    } catch (error) {
+      logger.error('[CreateContentModal] Ошибка импорта из MediaPickerModal', { error });
+      toast.error('Не удалось загрузить выбранные файлы');
     }
   };
 
@@ -539,7 +561,40 @@ export function CreateContentModal({ isOpen, onClose, onSuccess, initialTab = 'p
     return true;
   };
 
+  const getCarouselCaption = useCallback(() => {
+    const parts: string[] = [];
+    if (caption.trim()) parts.push(caption.trim());
+    for (const slide of editorState.carouselSlides) {
+      if (slide.caption.trim()) parts.push(slide.caption.trim());
+    }
+    return parts.join('\n\n');
+  }, [caption, editorState.carouselSlides]);
+
   const publishMediaContent = async (): Promise<boolean> => {
+    const isCarousel = editorState.carouselSlides.length > 0;
+    if (isCarousel) {
+      const fullCaption = getCarouselCaption();
+      const scheduledAt = editorState.scheduledDate?.toISOString() || null;
+      const result = await uploadCarouselPost(
+        editorState.carouselSlides,
+        fullCaption,
+        scheduledAt,
+        {
+          hideLikes: editorState.hideLikes,
+          commentsDisabled: editorState.commentsDisabled,
+        },
+      );
+      if (result && scheduledAt) toast.info(`Карусель запланирована на ${new Date(scheduledAt).toLocaleString('ru')}`);
+      if (result) {
+        toast.success('Карусель успешно загружена!');
+        onSuccess?.(result.content_type);
+        resetForm();
+        onClose();
+        return true;
+      }
+      return false;
+    }
+
     if (!selectedFile) { toast.error('Выберите медиа-файл'); return false; }
     const fileValidation = validateMediaFile(selectedFile, activeTab);
     if (!fileValidation.valid) { toast.error(fileValidation.error || 'Некорректный файл'); return false; }
@@ -648,6 +703,7 @@ export function CreateContentModal({ isOpen, onClose, onSuccess, initialTab = 'p
   };
 
   const resetForm = () => {
+    dispatchEditor({ type: 'CLEAR_ALL' });
     setCaption('');
     setTitle('');
     setSelectedFile(null);
@@ -803,10 +859,17 @@ export function CreateContentModal({ isOpen, onClose, onSuccess, initialTab = 'p
   }, []);
 
   const galleryAccept = activeTab === 'live' ? 'image/*' : activeTab === 'reels' ? 'video/*' : 'image/*,video/*';
+  const isCarouselMode = activeTab === 'publications' && editorState.carouselSlides.length > 0;
 
   const openGalleryPicker = () => {
     setQuickPanel(null);
     setShowCameraSettings(false);
+
+    if (isCarouselMode) {
+      setShowMediaPickerModal(true);
+      return;
+    }
+
     void (async () => {
       try {
         if (activeTab !== 'reels' && await isNativeGalleryAvailable()) {
@@ -1671,6 +1734,14 @@ export function CreateContentModal({ isOpen, onClose, onSuccess, initialTab = 'p
           setShowReelEditor(false);
         }}
         onCancel={() => setShowReelEditor(false)}
+      />
+
+      <MediaPickerModal
+        isOpen={showMediaPickerModal}
+        onClose={() => setShowMediaPickerModal(false)}
+        onSelect={handleMediaPickerSelect}
+        maxFiles={20}
+        accept={galleryAccept}
       />
     </div>
   );
