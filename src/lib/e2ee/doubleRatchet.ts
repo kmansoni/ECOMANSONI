@@ -779,3 +779,61 @@ export class DoubleRatchetE2E {
 }
 
 export type { RatchetState };
+
+// ─── Deniability ────────────────────────────────────────────────────────────────
+
+/**
+ * Deniability utilities for Double Ratchet sessions.
+ *
+ * Deniability model (Signal Protocol / MLS approach):
+ *
+ * 1. X3DH auth is deniable because:
+ *    - Identity keys are signed with ECDSA (self-certifying, not PKI)
+ *    - No trusted third party (CA) involved
+ *    - Any party knowing the identity key can produce the same signature
+ *
+ * 2. Double Ratchet is deniable because:
+ *    - Message authentication uses symmetric-key MAC (derived from shared secret)
+ *    - No asymmetric signature by the sender
+ *    - Any party with the session key can produce the same MAC
+ *
+ * 3. In practice, deniability means:
+ *    - Transcript cannot be used as evidence against the sender
+ *    - Third parties cannot verify who sent a message
+ *    - Only the intended recipient can decrypt (but cannot prove authorship)
+ *
+ * STS-style Deniable Key Confirmation:
+ * - Both parties compute a shared secret using their ratchet keys
+ * - This confirms both parties have the same session without a verifiable signature
+ * - Useful for voice call authentication where PKI is impractical
+ */
+
+/**
+ * Computes a deniable shared secret between two ratchet key pairs.
+ * Uses ECDH directly (no signature) — any party with the keys can compute the same secret.
+ *
+ * Unlike X3DH (which uses OPK + signed keys), this is used within an established
+ * session for mutual key confirmation without leaving a verifiable signature.
+ *
+ * @param localPrivateKey  Own ephemeral/ratchet private key
+ * @param remotePublicKey  Peer's ephemeral/ratchet public key
+ * @returns Deniable shared secret (32 bytes via HKDF-SHA-256)
+ */
+export async function computeDenyableSharedSecret(
+  localPrivateKey: CryptoKey,
+  remotePublicKey: CryptoKey,
+): Promise<ArrayBuffer> {
+  const shared = await crypto.subtle.deriveBits(
+    { name: 'ECDH', public: remotePublicKey },
+    localPrivateKey,
+    256,
+  );
+
+  // Derive a fixed-length shared secret via HKDF to prevent bias
+  const ikm = await crypto.subtle.importKey('raw', shared, 'HKDF', false, ['deriveBits']);
+  return crypto.subtle.deriveBits(
+    { name: 'HKDF', hash: 'SHA-256', salt: new Uint8Array(32), info: new TextEncoder().encode('e2ee-denyable-confirm-v1') },
+    ikm,
+    256,
+  );
+}
