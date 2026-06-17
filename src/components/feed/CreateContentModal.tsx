@@ -1,12 +1,9 @@
 import { useState, useRef, useEffect, useCallback, useReducer } from 'react';
 import {
-  X, Image, Film, Radio, Camera, Loader2, RotateCw, Upload,
-  Zap, ZapOff, Timer, Settings, Sparkles, Music2, FlipHorizontal,
-  Wand2, User,
+  Image, Film, Radio, Camera, Loader2, RotateCw,
+  FlipHorizontal, Wand2, Music2,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
@@ -31,17 +28,23 @@ import {
 } from './editorStateModel';
 import { logger } from '@/lib/logger';
 import { applyImageFilter } from '@/lib/applyImageFilter';
-import { GalleryEntryButton } from '@/features/create/gallery/GalleryEntryButton';
 import type { GalleryMediaKind, GalleryPermissionState } from '@/features/create/gallery/galleryTypes';
-import { isNativeGalleryAvailable, pickNativeGalleryMedia } from '@/features/create/gallery/nativeGalleryAdapter';
-import { MediaPickerModal } from '@/features/create/gallery/MediaPickerModal';
-import type { PickerSelection } from '@/features/create/gallery/mediaPickerTypes';
-import { CreateContentProvider } from './CreateContentContext';
-import { CameraTopBar } from './CameraTopBar';
-import { GalleryPicker } from './GalleryPicker';
-import { TextStoryEditor } from './TextStoryEditor';
-import { PublishFooter } from './PublishFooter';
+import { GalleryPicker, EmptyGalleryState } from './create/GalleryPicker';
+import { PublishFooter } from './create/PublishFooter';
+import { TextStoryEditor } from './create/TextStoryEditor';
+import { LiveStreamSetup } from './create/LiveStreamSetup';
 import { QuickPanels } from './create/QuickPanels';
+import { MediaPickerModal } from '@/features/create/gallery/MediaPickerModal';
+import { CreateContentProvider } from './CreateContentContext';
+import { CameraTopBar } from './create/CameraTopBar';
+import { CameraSettingsPanel } from './create/CameraSettingsPanel';
+import { CameraSidebarTools } from './create/CameraSidebarTools';
+import { RecordingTimerRing } from './create/RecordingTimerRing';
+import { BASE_ZOOM_LEVELS, RECORDING_DURATIONS } from './create/cameraConstants';
+
+const ZOOM_LEVELS_LABELS: Record<number, string> = {
+  0.5: '0.5x', 1: '1x', 2: '2x', 3: '3x', 5: '5x', 8: '8x', 15: '15x',
+};
 
 interface CreateContentModalProps {
   isOpen: boolean;
@@ -62,17 +65,17 @@ const TABS: Array<{ id: TabType; label: string; icon: LucideIcon; contentType: C
   { id: 'live', label: 'Прямой эфир', icon: Radio, contentType: 'live' },
 ];
 
-const BASE_ZOOM_LEVELS = [0.5, 1, 2, 3, 5, 8, 15] as const;
-const ZOOM_LEVELS_LABELS: Record<number, string> = {
-  0.5: '0.5x', 1: '1x', 2: '2x', 3: '3x', 5: '5x', 8: '8x', 15: '15x',
-};
+const TEXT_STORY_BACKGROUNDS = [
+  { id: 'gradient-aurora', label: 'Аврора', className: 'from-slate-950 via-violet-700 to-cyan-500' },
+  { id: 'sunset', label: 'Закат', className: 'from-red-950 via-orange-500 to-yellow-300' },
+  { id: 'forest', label: 'Лес', className: 'from-emerald-950 via-green-600 to-lime-300' },
+  { id: 'graphite', label: 'Графит', className: 'from-slate-950 via-slate-600 to-gray-900' },
+] as const;
 
-const RECORDING_DURATIONS = [
-  { label: '30с', ms: 30_000 },
-  { label: '1м', ms: 60_000 },
-  { label: '3м', ms: 180_000 },
-  { label: '10м', ms: 600_000 },
-  { label: '15м', ms: 900_000 },
+const TEXT_STORY_FONTS = [
+  { id: 'classic', label: 'Classic', className: 'font-sans' },
+  { id: 'serif', label: 'Serif', className: 'font-serif' },
+  { id: 'mono', label: 'Mono', className: 'font-mono' },
 ] as const;
 
 export function CreateContentModal({ isOpen, onClose, onSuccess, initialTab = 'publications' }: CreateContentModalProps) {
@@ -109,8 +112,8 @@ export function CreateContentModal({ isOpen, onClose, onSuccess, initialTab = 'p
   const [screenFlashActive, setScreenFlashActive] = useState(false);
   const [storyComposeMode, setStoryComposeMode] = useState<StoryComposeMode>('camera');
   const [textStoryText, setTextStoryText] = useState('');
-  const [textStoryBackgroundId, setTextStoryBackgroundId] = useState('gradient-aurora');
-  const [textStoryFontId, setTextStoryFontId] = useState('classic');
+  const [textStoryBackgroundId, setTextStoryBackgroundId] = useState<(typeof TEXT_STORY_BACKGROUNDS)[number]['id']>('gradient-aurora');
+  const [textStoryFontId, setTextStoryFontId] = useState<(typeof TEXT_STORY_FONTS)[number]['id']>('classic');
   const [textStoryAlign, setTextStoryAlign] = useState<'left' | 'center' | 'right'>('center');
   const [zoomIndex, setZoomIndex] = useState(0);
   const [captureTimerSec, setCaptureTimerSec] = useState(0);
@@ -134,10 +137,9 @@ export function CreateContentModal({ isOpen, onClose, onSuccess, initialTab = 'p
   const [showMediaPickerModal, setShowMediaPickerModal] = useState(false);
 
   // ── Reels ────────────────────────────────────────────────────
-  const [reelEffectPreset, setReelEffectPreset] = useState('none');
+  const [reelEffectPreset, setReelEffectPreset] = useState<string>('none');
   const [reelFaceEnhance, setReelFaceEnhance] = useState(false);
   const [reelAiEnhance, setReelAiEnhance] = useState(false);
-  const [reelMaxDurationSec, setReelMaxDurationSec] = useState<60 | 90>(60);
   const [reelTaggedUsers, setReelTaggedUsers] = useState('');
   const [reelLocationName, setReelLocationName] = useState('');
   const [reelAudience, setReelAudience] = useState<'public' | 'followers' | 'private'>('public');
@@ -197,8 +199,8 @@ export function CreateContentModal({ isOpen, onClose, onSuccess, initialTab = 'p
   }, []);
 
   useEffect(() => {
-    if (isOpen) { document.body.style.overflow = 'hidden'; }
-    else { document.body.style.overflow = ''; }
+    if (isOpen) document.body.style.overflow = 'hidden';
+    else document.body.style.overflow = '';
     return () => { document.body.style.overflow = ''; };
   }, [isOpen]);
 
@@ -237,20 +239,13 @@ export function CreateContentModal({ isOpen, onClose, onSuccess, initialTab = 'p
     if (reelClientPublishId) return reelClientPublishId;
     const storageKey = getReelsPublishStorageKey();
     let resolvedId: string | null = null;
-    if (storageKey) {
-      try { resolvedId = sessionStorage.getItem(storageKey); } catch {}
-    }
-    if (!resolvedId && storageKey) {
-      try { resolvedId = localStorage.getItem(storageKey); } catch {}
-    }
+    if (storageKey) { try { resolvedId = sessionStorage.getItem(storageKey); } catch {} }
+    if (!resolvedId && storageKey) { try { resolvedId = localStorage.getItem(storageKey); } catch {} }
     if (!resolvedId) {
       resolvedId = typeof crypto.randomUUID === 'function'
         ? crypto.randomUUID()
         : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
-      if (storageKey) {
-        try { sessionStorage.setItem(storageKey, resolvedId); } catch {}
-        try { localStorage.setItem(storageKey, resolvedId); } catch {}
-      }
+      if (storageKey) { try { sessionStorage.setItem(storageKey, resolvedId); } catch {} try { localStorage.setItem(storageKey, resolvedId); } catch {} }
     }
     setReelClientPublishId(resolvedId);
     return resolvedId;
@@ -288,17 +283,28 @@ export function CreateContentModal({ isOpen, onClose, onSuccess, initialTab = 'p
     }
   }, []);
 
-  const setPreviewFromCapture = (file: File, url: string) => {
-    captureInFlightRef.current = false;
+  const applyGalleryFile = useCallback(async (file: File, providedPreviewUrl?: string) => {
     dispatchEditor({ type: 'CLEAR_ALL' });
-    if (previewUrl) URL.revokeObjectURL(previewUrl);
+    if (activeTab === 'reels' && file.type.startsWith('video/')) {
+      const duration = await getVideoDurationSeconds(file);
+      if (duration != null && duration > 90) {
+        toast.error('Выберите видео короче 90 секунд.');
+        if (providedPreviewUrl) URL.revokeObjectURL(providedPreviewUrl);
+        if (fileInputRef.current) fileInputRef.current.value = '';
+        return;
+      }
+    }
     setSelectedFile(file);
+    const url = providedPreviewUrl ?? URL.createObjectURL(file);
     setPreviewUrl(url);
+    setGalleryPermission('granted');
+    setLastGalleryMediaKind(file.type.startsWith('video/') ? 'video' : 'image');
+    setLastGalleryThumbnailUrl(file.type.startsWith('image/') ? url : null);
     setCameraMode('gallery');
     setShowCaptionEditor(true);
     setReelClientPublishId(null);
     clearStoredReelPublishId();
-  };
+  }, [activeTab, clearStoredReelPublishId, getVideoDurationSeconds]);
 
   const handleTabChange = useCallback((tabId: TabType) => {
     if (isCameraRecording) { toast.error('Остановите запись перед переключением режима'); return; }
@@ -335,65 +341,16 @@ export function CreateContentModal({ isOpen, onClose, onSuccess, initialTab = 'p
     } else if (e.key === 'Escape') handleClose();
   };
 
-  const applyGalleryFile = useCallback(async (file: File, providedPreviewUrl?: string) => {
+  const setPreviewFromCapture = (file: File, url: string) => {
+    captureInFlightRef.current = false;
     dispatchEditor({ type: 'CLEAR_ALL' });
-    if (activeTab === 'reels' && file.type.startsWith('video/')) {
-      const duration = await getVideoDurationSeconds(file);
-      if (duration != null && duration > 90) {
-        toast.error('Выберите видео короче 90 секунд.');
-        if (providedPreviewUrl) URL.revokeObjectURL(providedPreviewUrl);
-        if (fileInputRef.current) fileInputRef.current.value = '';
-        return;
-      }
-    }
+    if (previewUrl) URL.revokeObjectURL(previewUrl);
     setSelectedFile(file);
-    const url = providedPreviewUrl ?? URL.createObjectURL(file);
     setPreviewUrl(url);
-    setGalleryPermission('granted');
-    setLastGalleryMediaKind(file.type.startsWith('video/') ? 'video' : 'image');
-    setLastGalleryThumbnailUrl(prev => { if (prev?.startsWith('blob:')) URL.revokeObjectURL(prev); return file.type.startsWith('image/') ? URL.createObjectURL(file) : null; });
     setCameraMode('gallery');
     setShowCaptionEditor(true);
     setReelClientPublishId(null);
     clearStoredReelPublishId();
-  }, [activeTab, clearStoredReelPublishId, getVideoDurationSeconds]);
-
-  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(e.target.files ?? []);
-    if (files.length === 0) return;
-    if (isCarouselMode) { void addCarouselFiles(files); return; }
-    const file = files[0];
-    if (file) void applyGalleryFile(file);
-  };
-
-  const addCarouselFiles = async (files: File[]) => {
-    const remaining = 20 - editorState.carouselSlides.length;
-    if (remaining <= 0) { toast.error('Максимум 20 слайдов в карусели'); return; }
-    const toProcess = files.slice(0, remaining);
-    if (files.length > remaining) toast.warning(`Добавлено только ${remaining} из ${files.length} файлов (лимит 20)`);
-    for (const file of toProcess) {
-      if (file.size > 50 * 1024 * 1024) { toast.error(`Файл "${file.name}" превышает 50 МБ`); continue; }
-      const url = URL.createObjectURL(file);
-      const slide = { id: crypto.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(16).slice(2)}`, file, previewUrl: url, caption: '', filterIdx: 0, filterIntensity: 1, adjustments: { brightness: 0, contrast: 0, saturation: 0, warmth: 0, shadows: 0, highlights: 0, vignette: 0, sharpness: 0, grain: 0 }, mediaType: file.type.startsWith('video/') ? 'video' : 'image' } as CarouselSlide;
-      dispatchEditor({ type: 'ADD_CAROUSEL_SLIDE', payload: slide });
-    }
-    if (fileInputRef.current) fileInputRef.current.value = '';
-  };
-
-  const handleMediaPickerSelect = async (selection: PickerSelection) => {
-    try {
-      const files: File[] = [];
-      for (const item of selection.items) {
-        const response = await fetch(item.url);
-        const blob = await response.blob();
-        files.push(new File([blob], item.name, { type: blob.type || (item.kind === 'video' ? 'video/mp4' : 'image/jpeg') }));
-      }
-      await addCarouselFiles(files);
-      setShowMediaPickerModal(false);
-    } catch (error) {
-      logger.error('[CreateContentModal] Ошибка импорта из MediaPickerModal', { error });
-      toast.error('Не удалось загрузить выбранные файлы');
-    }
   };
 
   // ── Publish logic ─────────────────────────────────────────────
@@ -442,7 +399,7 @@ export function CreateContentModal({ isOpen, onClose, onSuccess, initialTab = 'p
     if (!fileValidation.valid) { toast.error(fileValidation.error || 'Некорректный файл'); return false; }
     if (activeTab === 'reels' && selectedFile.type.startsWith('video/')) {
       const duration = await getVideoDurationSeconds(selectedFile);
-      if (duration != null && duration > reelMaxDurationSec) { toast.error(`Максимальная длительность: ${reelMaxDurationSec}с`); return false; }
+      if (duration != null && duration > reelMaxRecordingMs / 1000) { toast.error(`Максимальная длительность: ${Math.round(reelMaxRecordingMs / 1000)}с`); return false; }
     }
     if (activeTab === 'reels') {
       const hashtagVerdict = await checkHashtagsAllowedForText(caption.trim());
@@ -457,7 +414,7 @@ export function CreateContentModal({ isOpen, onClose, onSuccess, initialTab = 'p
     switch (activeTab) {
       case 'publications': result = await uploadPostMedia(processedFile, caption, scheduledAt, { hideLikes: editorState.hideLikes, commentsDisabled: editorState.commentsDisabled }); break;
       case 'stories': result = await uploadStoryMedia(selectedFile, caption); break;
-      case 'reels': result = await uploadReelMedia(selectedFile, caption, { clientPublishId: getStableReelPublishId(), musicTitle, musicTrackId: selectedMusicTrackId, effectPreset: reelEffectPreset, faceEnhance: reelFaceEnhance, aiEnhance: reelAiEnhance, maxDurationSec: reelMaxDurationSec, taggedUsers: reelTaggedUsers.split(',').map(v => v.trim()).filter(Boolean), locationName: reelLocationName.trim() || null, visibility: reelAudience, allowComments: reelAllowComments, allowRemix: reelAllowRemix }); break;
+      case 'reels': result = await uploadReelMedia(selectedFile, caption, { clientPublishId: getStableReelPublishId(), musicTitle, musicTrackId: selectedMusicTrackId, effectPreset: reelEffectPreset, faceEnhance: reelFaceEnhance, aiEnhance: reelAiEnhance, maxDurationSec: Math.round(reelMaxRecordingMs / 1000), taggedUsers: reelTaggedUsers.split(',').map(v => v.trim()).filter(Boolean), locationName: reelLocationName.trim() || null, visibility: reelAudience, allowComments: reelAllowComments, allowRemix: reelAllowRemix }); break;
       default: return false;
     }
     if (result) { toast.success(`${TABS.find(t => t.id === activeTab)?.label ?? 'Контент'} успешно загружен!`); onSuccess?.(result.content_type); resetForm(); onClose(); return true; }
@@ -488,7 +445,7 @@ export function CreateContentModal({ isOpen, onClose, onSuccess, initialTab = 'p
     setPreviewUrl(null); setCategory('other'); setMusicTitle(''); setSelectedMusicTrackId(null);
     setAudioQuery(''); setAudioTracks([]); setQuickPanel(null); setShowCameraSettings(false);
     setReelEffectPreset('none'); setReelFaceEnhance(false); setReelAiEnhance(false);
-    setReelMaxDurationSec(60); setReelMaxRecordingMs(RECORDING_DURATIONS[0].ms);
+    setReelMaxRecordingMs(RECORDING_DURATIONS[0].ms);
     setReelTaggedUsers(''); setReelLocationName(''); setReelAudience('public');
     setReelAllowComments(true); setReelAllowRemix(true);
     setCameraMode('camera'); setShowCaptionEditor(false); setCaptureTimerSec(0); setTimerCountdown(null);
@@ -571,25 +528,9 @@ export function CreateContentModal({ isOpen, onClose, onSuccess, initialTab = 'p
 
   const handleCameraDebugChange = useCallback((snapshot: CameraDebugSnapshot) => setCameraDebug(snapshot), []);
 
-  const openGalleryPicker = () => {
-    setQuickPanel(null); setShowCameraSettings(false);
-    if (isCarouselMode) { setShowMediaPickerModal(true); return; }
-    void (async () => {
-      try {
-        if (activeTab !== 'reels' && await isNativeGalleryAvailable()) {
-          const picked = await pickNativeGalleryMedia();
-          if (picked) {
-            setGalleryPermission(picked.permission);
-            if (picked.permission === 'denied') { toast.error('Доступ к галерее запрещен в настройках устройства'); return; }
-            if (picked.file) await applyGalleryFile(picked.file, picked.previewUrl);
-          }
-          return;
-        }
-        if (!fileInputRef.current) { setGalleryPermission('unavailable'); toast.error('Галерея недоступна в этом окружении'); return; }
-        fileInputRef.current?.click();
-      } catch (error) { logger.error('[CreateContentModal] Ошибка выбора медиа из галереи', { error }); toast.error('Не удалось открыть галерею'); }
-    })();
-  };
+  const onPhotoCaptured = (file: File, url: string) => { setPreviewFromCapture(file, url); toast.success('Фото сохранено'); };
+  const onVideoRecorded = (file: File, url: string) => { setPreviewFromCapture(file, url); toast.success('Видео сохранено'); };
+  const onCameraError = (err: unknown) => { logger.error('[CreateContentModal] Ошибка доступа к камере', { error: err }); toast.error('Не удалось открыть камеру'); setCameraMode('gallery'); };
 
   const flipCamera = () => {
     setFacingMode(prev => {
@@ -599,15 +540,34 @@ export function CreateContentModal({ isOpen, onClose, onSuccess, initialTab = 'p
     });
   };
 
-  const onPhotoCaptured = (file: File, url: string) => { setPreviewFromCapture(file, url); toast.success('Фото сохранено'); };
-  const onVideoRecorded = (file: File, url: string) => { setPreviewFromCapture(file, url); toast.success('Видео сохранено'); };
-  const onCameraError = (err: unknown) => { logger.error('[CreateContentModal] Ошибка доступа к камере', { error: err }); toast.error('Не удалось открыть камеру'); setCameraMode('gallery'); };
+  // ── Gallery callbacks ────────────────────────────────────────
+  const handleGalleryFileSelected = (file: File, url: string) => { void applyGalleryFile(file, url); };
+  const handleGalleryCarouselAdded = (files: File[]) => {
+    const remaining = 20 - editorState.carouselSlides.length;
+    if (remaining <= 0) { toast.error('Максимум 20 слайдов в карусели'); return; }
+    const toProcess = files.slice(0, remaining);
+    if (files.length > remaining) toast.warning(`Добавлено только ${remaining} из ${files.length} файлов (лимит 20)`);
+    for (const file of toProcess) {
+      if (file.size > 50 * 1024 * 1024) { toast.error(`Файл "${file.name}" превышает 50 МБ`); continue; }
+      const url = URL.createObjectURL(file);
+      const slide = { id: crypto.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(16).slice(2)}`, file, previewUrl: url, caption: '', filterIdx: 0, filterIntensity: 1, adjustments: { brightness: 0, contrast: 0, saturation: 0, warmth: 0, shadows: 0, highlights: 0, vignette: 0, sharpness: 0, grain: 0 }, mediaType: file.type.startsWith('video/') ? 'video' : 'image' } as CarouselSlide;
+      dispatchEditor({ type: 'ADD_CAROUSEL_SLIDE', payload: slide });
+    }
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  };
+  const handleGalleryPermissionChange = (permission: GalleryPermissionState) => setGalleryPermission(permission);
+  const handleGalleryThumbnailChange = (url: string | null, kind: GalleryMediaKind | null) => {
+    if (lastGalleryThumbnailUrl?.startsWith('blob:')) try { URL.revokeObjectURL(lastGalleryThumbnailUrl); } catch {}
+    setLastGalleryThumbnailUrl(url);
+    setLastGalleryMediaKind(kind);
+  };
+
+  const textBgChange = (id: string) => setTextStoryBackgroundId(id as typeof TEXT_STORY_BACKGROUNDS[number]['id']);
+  const textFontChange = (id: string) => setTextStoryFontId(id as typeof TEXT_STORY_FONTS[number]['id']);
 
   // ── Context value ─────────────────────────────────────────────
   const contextValue = {
-    // App shell
     activeTab, isPublishing, isLoading, handlePublish, handleClose,
-    // Camera
     isCameraReady, isCameraRecording, timerCountdown, flashMode, screenFlashActive,
     facingMode, zoomIndex, zoomLabel, captureTimerSec, showCameraSettings, cameraDebug,
     reelMaxRecordingMs, reelRecordingElapsedMs, cameraHostRef,
@@ -617,44 +577,42 @@ export function CreateContentModal({ isOpen, onClose, onSuccess, initialTab = 'p
     flipCamera, setShowCameraSettings,
     onPhotoCaptured, onVideoRecorded, onCameraError,
     isActive: isCameraActive, mode: captureMode, previewZoom: BASE_ZOOM_LEVELS[zoomIndex],
-    // Gallery
-    galleryPermission, lastGalleryThumbnailUrl, lastGalleryMediaKind, openGalleryPicker,
-    // Preview
+    cameraMode, isCameraAvailable, isTextStoryMode,
+    galleryPermission, lastGalleryThumbnailUrl, lastGalleryMediaKind, openGalleryPicker: () => { setQuickPanel(null); setShowCameraSettings(false); setShowMediaPickerModal(true); },
     previewUrl, selectedFile, resetForm, setPreviewUrl, setSelectedFile,
-    // Caption / editor
     showCaptionEditor, caption, editorState, dispatchEditor, setCaption,
-    // Live
     title, category, setTitle, setCategory,
-    // Audio / effects
     quickPanel, setQuickPanel, musicTitle, selectedMusicTrackId,
     setMusicTitle: setMusicTitle, setSelectedMusicTrackId: setSelectedMusicTrackId,
     reelEffectPreset, setReelEffectPreset,
-    // Text story
+    reelFaceEnhance, setReelFaceEnhance, reelAiEnhance, setReelAiEnhance,
+    setReelMaxRecordingMs, audioQuery,
     textStoryText, setTextStoryText, textStoryBackgroundId, setTextStoryBackgroundId,
     textStoryFontId, setTextStoryFontId, textStoryAlign, setTextStoryAlign,
-    // Gallery picker
-    galleryAccept, isCarouselMode, fileInputRef, handleFileSelect,
+    galleryAccept, isCarouselMode, fileInputRef,
+    handleFileSelect: (e: React.ChangeEvent<HTMLInputElement>) => {
+      const files = Array.from(e.target.files ?? []);
+      if (files.length === 0) return;
+      if (isCarouselMode) { handleGalleryCarouselAdded(files); return; }
+      const file = files[0];
+      if (file) void applyGalleryFile(file);
+    },
   };
 
-  // ── Render ────────────────────────────────────────────────────
   if (!isOpen) return null;
 
-  const FlashIcon = flashMode === 'off' ? ZapOff : Zap;
-  const flashColor = flashMode === 'screen' ? 'text-white' : flashMode === 'on' ? 'text-yellow-400' : flashMode === 'auto' ? 'text-blue-400' : 'text-white/70';
-
   return (
-    <CreateContentProvider value={contextValue}>
-      <div
-        role="dialog"
-        aria-modal="true"
-        aria-label="Создание контента"
-        className={cn('fixed inset-y-0 right-0 z-[999] bg-black flex flex-col', isMobile ? 'left-0' : 'left-[84px]')}
-        onTouchStart={handleTouchStart}
-        onTouchEnd={handleTouchEnd}
-        onKeyDown={handleKeyDown}
-        tabIndex={-1}
-      >
-        {/* ── Full-screen camera / preview ─────────────────────────── */}
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-label="Создание контента"
+      className={cn('fixed inset-y-0 right-0 z-[999] bg-black flex flex-col', isMobile ? 'left-0' : 'left-[84px]')}
+      onTouchStart={handleTouchStart}
+      onTouchEnd={handleTouchEnd}
+      onKeyDown={handleKeyDown}
+      tabIndex={-1}
+    >
+      {/* ── Full-screen camera / preview ─────────────────────────── */}
         <div className="relative flex-1 overflow-hidden bg-black">
           {/* Camera feed */}
           {isCameraAvailable && (
@@ -693,86 +651,39 @@ export function CreateContentModal({ isOpen, onClose, onSuccess, initialTab = 'p
 
           {/* Empty gallery state */}
           {cameraMode === 'gallery' && !previewUrl && activeTab !== 'live' && !isTextStoryMode && (
-            <div onClick={() => fileInputRef.current?.click()} className="absolute inset-0 flex flex-col items-center justify-center gap-4 cursor-pointer text-white/50 hover:text-white/80 transition-colors">
-              <Upload className="w-20 h-20 opacity-40" />
-              <p className="text-base font-medium">Нажмите чтобы выбрать медиа</p>
-            </div>
+            <EmptyGalleryState onClick={() => fileInputRef.current?.click()} />
           )}
 
           {/* Text story */}
-          <TextStoryEditor />
-
-          {/* Live preview / title */}
-          {activeTab === 'live' && !previewUrl && (
-            <div className="absolute inset-0 flex flex-col items-center justify-center gap-6 px-8">
-              <div onClick={() => fileInputRef.current?.click()} className="w-40 h-40 rounded-full border-2 border-dashed border-white/30 flex flex-col items-center justify-center cursor-pointer hover:border-white/60 transition-colors">
-                <Image className="w-10 h-10 text-white/40 mb-2" />
-                <span className="text-xs text-white/40">Обложка</span>
-              </div>
-              <Input placeholder="Название трансляции..." value={title} onChange={(e) => setTitle(e.target.value)} maxLength={50}
-                className="bg-white/10 border-white/20 text-white placeholder:text-white/40 text-center text-lg h-12 rounded-2xl" />
-              <select value={category} onChange={(e) => setCategory(e.target.value)} className="w-full bg-white/10 border border-white/20 text-white rounded-2xl px-4 py-3 text-sm appearance-none">
-                <option value="other">Другое</option><option value="music">Музыка</option><option value="gaming">Игры</option><option value="chat">Разговор</option><option value="performance">Перформанс</option>
-              </select>
-            </div>
+          {isTextStoryMode && !previewUrl && (
+            <TextStoryEditor
+              text={textStoryText}
+              onTextChange={setTextStoryText}
+              backgroundId={textStoryBackgroundId}
+              onBackgroundChange={textBgChange}
+              fontId={textStoryFontId}
+              onFontChange={textFontChange}
+              align={textStoryAlign}
+              onAlignChange={setTextStoryAlign}
+            />
           )}
 
-          {/* ── Top bar ──────────────────────────────────────────── */}
-          <CameraTopBar onClose={handleClose} onPublish={handlePublish} isTextStoryMode={isTextStoryMode} />
+          {/* Live setup */}
+          {activeTab === 'live' && !previewUrl && (
+            <LiveStreamSetup
+              title={title}
+              onTitleChange={setTitle}
+              category={category}
+              onCategoryChange={setCategory}
+              onOpenCoverPicker={() => fileInputRef.current?.click()}
+            />
+          )}
+
+          {/* ── TOP BAR ──────────────────────────────────────────── */}
+          <CameraTopBar />
 
           {/* Camera settings panel */}
-          {cameraMode === 'camera' && isCameraAvailable && showCameraSettings && !previewUrl && !isTextStoryMode && (
-            <div className="absolute right-4 top-16 z-30 w-72 rounded-2xl border border-white/20 bg-black/70 backdrop-blur-md p-4 text-white shadow-2xl">
-              <div className="mb-3 flex items-center justify-between">
-                <span className="text-sm font-semibold">Настройки камеры</span>
-                <button onClick={() => setShowCameraSettings(false)} className="text-xs text-white/70 hover:text-white">Закрыть</button>
-              </div>
-              <div className="space-y-4 text-xs">
-                <div>
-                  <div className="mb-2 flex items-center justify-between text-white/80"><span>Зум</span><span>{zoomLabel}</span></div>
-                  <div className="grid grid-cols-4 gap-2">
-                    {BASE_ZOOM_LEVELS.map((level, index) => (
-                      <button key={level} onClick={() => setZoomLevelIndex(index)}
-                        className={cn('rounded-full border px-2 py-1.5 font-semibold transition-colors', zoomIndex === index ? 'border-blue-300 bg-blue-600/70 text-white' : 'border-white/15 bg-white/10 text-white/80 hover:bg-white/15')}>
-                        {level}x
-                      </button>
-                    ))}
-                  </div>
-                  <p className="mt-2 text-[11px] text-white/50">
-                    {cameraDebug?.supportsZoom ? 'Используется аппаратный зум камеры.' : 'Используется цифровой зум предпросмотра.'}
-                  </p>
-                </div>
-                <div className="grid grid-cols-2 gap-2">
-                  <button onClick={cycleFlash} className={cn('rounded-xl border px-3 py-2 text-left transition-colors', flashMode !== 'off' ? 'border-yellow-300/70 bg-yellow-500/20 text-yellow-100' : 'border-white/15 bg-white/10 text-white/80 hover:bg-white/15')}>
-                    <div className="font-semibold">Вспышка</div>
-                    <div className="text-[11px] opacity-70">
-                      {facingMode === 'user' ? flashMode === 'screen' ? 'Экран: вкл' : 'Экран: выкл' : flashMode === 'on' ? 'Вкл' : 'Выкл'}
-                    </div>
-                  </button>
-                  <button onClick={cycleTimer} className={cn('rounded-xl border px-3 py-2 text-left transition-colors', captureTimerSec > 0 ? 'border-yellow-300/70 bg-yellow-500/20 text-yellow-100' : 'border-white/15 bg-white/10 text-white/80 hover:bg-white/15')}>
-                    <div className="font-semibold">Таймер</div>
-                    <div className="text-[11px] opacity-70">{captureTimerSec > 0 ? `${captureTimerSec}с` : 'Выкл'}</div>
-                  </button>
-                </div>
-                <div>
-                  <div className="mb-2 text-white/80 text-xs">Макс. длительность записи</div>
-                  <div className="grid grid-cols-5 gap-1">
-                    {RECORDING_DURATIONS.map((d) => (
-                      <button key={d.ms} onClick={() => setReelMaxRecordingMs(d.ms)}
-                        className={cn('rounded-lg border px-1 py-1.5 text-center font-semibold text-[10px] transition-colors', reelMaxRecordingMs === d.ms ? 'border-blue-300 bg-blue-600/70 text-white' : 'border-white/15 bg-white/10 text-white/80 hover:bg-white/15')}>
-                        {d.label}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-                <div className="rounded-xl border border-white/10 bg-white/5 p-3 text-white/70">
-                  <div>Камера: {facingMode === 'environment' ? 'задняя' : 'фронтальная'}</div>
-                  <div>Torch: {cameraDebug?.supportsTorch ? 'доступен' : 'недоступен'}</div>
-                  <div>Зум: {cameraDebug?.supportsZoom ? 'аппаратный' : 'цифровой'}</div>
-                </div>
-              </div>
-            </div>
-          )}
+          <CameraSettingsPanel />
 
           {/* ── Add audio label ──────────────────────────────────── */}
           {cameraMode === 'camera' && isCameraAvailable && !isTextStoryMode && (
@@ -786,27 +697,16 @@ export function CreateContentModal({ isOpen, onClose, onSuccess, initialTab = 'p
           )}
 
           {/* ── Left sidebar tools ────────────────────────────────── */}
-          {cameraMode === 'camera' && isCameraAvailable && !isTextStoryMode && (
-            <div className="absolute left-3 top-1/2 -translate-y-1/2 z-20 flex flex-col gap-5">
-              {[
-                { icon: Music2, label: 'Аудио', active: quickPanel === 'audio', onClick: () => { setQuickPanel('audio'); void loadAudioTracks(audioQuery); } },
-                { icon: Sparkles, label: 'Эффекты', active: quickPanel === 'effects' || reelEffectPreset !== 'none', onClick: () => setQuickPanel('effects') },
-                { icon: Timer, label: `${reelMaxDurationSec}с`, active: reelMaxDurationSec === 90, onClick: () => { setReelMaxDurationSec((p) => (p === 60 ? 90 : 60)); toast.success(`Ограничение: ${reelMaxDurationSec === 60 ? 90 : 60}с`); } },
-                { icon: User, label: 'Лицо', active: reelFaceEnhance, onClick: () => { setReelFaceEnhance((p) => !p); toast.success(`Режим лица: ${!reelFaceEnhance ? 'включен' : 'выключен'}`); } },
-                { icon: Wand2, label: 'AI', active: reelAiEnhance, onClick: () => { setReelAiEnhance((p) => !p); toast.success(`AI-режим: ${!reelAiEnhance ? 'включен' : 'выключен'}`); } },
-              ].map(({ icon: Icon, label, active, onClick }) => (
-                <button key={label} onClick={onClick} className="flex flex-col items-center gap-0.5" aria-label={label}>
-                  <div className={cn('w-9 h-9 rounded-full backdrop-blur-sm flex items-center justify-center border', active ? 'bg-blue-600/70 border-blue-300/60' : 'bg-black/30 border-transparent')}>
-                    <Icon className="w-5 h-5 text-white" />
-                  </div>
-                  <span className="text-[10px] text-white/80 font-medium">{label}</span>
-                </button>
-              ))}
-            </div>
-          )}
+          <CameraSidebarTools onLoadAudioTracks={loadAudioTracks} />
 
           {/* ── Quick panels ──────────────────────────────────────── */}
-          <QuickPanels onLoadAudioTracks={loadAudioTracks} audioTracks={audioTracks} isAudioLoading={isAudioLoading} audioQuery={audioQuery} setAudioQuery={setAudioQuery} />
+          <QuickPanels
+            onLoadAudioTracks={loadAudioTracks}
+            audioTracks={audioTracks}
+            isAudioLoading={isAudioLoading}
+            audioQuery={audioQuery}
+            setAudioQuery={setAudioQuery}
+          />
 
           {/* ── Story mode toggle ─────────────────────────────────── */}
           {activeTab === 'stories' && !previewUrl && (
@@ -857,36 +757,27 @@ export function CreateContentModal({ isOpen, onClose, onSuccess, initialTab = 'p
           {/* ── Bottom camera controls ─────────────────────────────── */}
           {cameraMode === 'camera' && isCameraAvailable && !isTextStoryMode && (
             <div className="absolute bottom-28 left-0 right-0 z-20 flex items-center justify-between px-8">
-              <GalleryEntryButton
+              {/* Gallery */}
+              <GalleryPicker
+                activeTab={activeTab}
+                isCarouselMode={isCarouselMode}
                 thumbnailUrl={lastGalleryThumbnailUrl}
                 mediaKind={lastGalleryMediaKind}
                 permission={galleryPermission}
-                disabled={isCameraRecording || timerCountdown != null}
-                onClick={openGalleryPicker}
+                fileInputRef={fileInputRef}
+                onFileSelected={handleGalleryFileSelected}
+                onCarouselFilesAdded={handleGalleryCarouselAdded}
+                onPermissionChange={handleGalleryPermissionChange}
+                onThumbnailChange={handleGalleryThumbnailChange}
+                currentSlideCount={editorState.carouselSlides.length}
               />
 
-              {/* Main capture */}
+              {/* Capture */}
               <div className="flex flex-col items-center gap-2">
                 {!isCameraReady && <Loader2 className="w-5 h-5 text-white/60 animate-spin" />}
 
                 {isCameraRecording && (
-                  <div className="relative flex items-center justify-center">
-                    <svg className="w-[88px] h-[88px] -rotate-90" viewBox="0 0 88 88">
-                      <circle cx="44" cy="44" r="40" fill="none" stroke="white/20" strokeWidth="4" />
-                      <circle cx="44" cy="44" r="40" fill="none"
-                        stroke={reelRecordingElapsedMs < reelMaxRecordingMs * 0.5 ? '#22c55e' : reelRecordingElapsedMs < reelMaxRecordingMs * 0.75 ? '#eab308' : '#ef4444'}
-                        strokeWidth="4" strokeLinecap="round"
-                        strokeDasharray={`${2 * Math.PI * 40}`}
-                        strokeDashoffset={`${2 * Math.PI * 40 * (1 - reelRecordingElapsedMs / reelMaxRecordingMs)}`}
-                        className="transition-all duration-200" />
-                    </svg>
-                    <div className="absolute inset-0 flex flex-col items-center justify-center">
-                      <span className="text-[10px] font-bold text-white/80">
-                        {Math.floor(reelRecordingElapsedMs / 60000)}:{String(Math.floor((reelRecordingElapsedMs % 60000) / 1000)).padStart(2, '0')}
-                      </span>
-                      <span className="text-[9px] text-white/50">/ {reelMaxRecordingMs >= 60000 ? `${reelMaxRecordingMs / 60000}м` : `${reelMaxRecordingMs / 1000}с`}</span>
-                    </div>
-                  </div>
+                  <RecordingTimerRing elapsedMs={reelRecordingElapsedMs} maxMs={reelMaxRecordingMs} />
                 )}
 
                 {!isCameraRecording && (
@@ -915,6 +806,7 @@ export function CreateContentModal({ isOpen, onClose, onSuccess, initialTab = 'p
                 {timerCountdown != null && <span className="text-xs text-white/80 font-medium">Таймер: {timerCountdown}</span>}
               </div>
 
+              {/* Flip */}
               <button onClick={flipCamera} disabled={isCameraRecording}
                 className="w-12 h-12 rounded-full bg-black/30 backdrop-blur-sm flex items-center justify-center" aria-label="Перевернуть камеру">
                 <FlipHorizontal className="w-5 h-5 text-white" />
@@ -938,7 +830,13 @@ export function CreateContentModal({ isOpen, onClose, onSuccess, initialTab = 'p
             </div>
           )}
 
-          <input ref={fileInputRef} type="file" accept={galleryAccept} onChange={handleFileSelect} className="hidden" />
+          <input ref={fileInputRef} type="file" accept={galleryAccept} onChange={(e) => {
+            const files = Array.from(e.target.files ?? []);
+            if (files.length === 0) return;
+            if (isCarouselMode) { handleGalleryCarouselAdded(files); return; }
+            const file = files[0];
+            if (file) void applyGalleryFile(file);
+          }} className="hidden" />
         </div>
 
         {/* ── Bottom tab bar ─────────────────────────────────────── */}
@@ -947,7 +845,7 @@ export function CreateContentModal({ isOpen, onClose, onSuccess, initialTab = 'p
             {TABS.map((tab) => {
               const isActive = activeTab === tab.id;
               return (
-                <button key={tab.id} role="tab" aria-selected={isActive} aria-controls={`create-panel-${tab.id}`}
+                <button key={tab.id} role="tab" aria-selected={isActive}
                   onClick={() => handleTabChange(tab.id)} disabled={isCameraRecording}
                   className={cn('flex-1 py-3 flex flex-col items-center justify-center gap-0.5 transition-all', isActive ? 'text-white' : 'text-white/40', isCameraRecording && 'opacity-40 cursor-not-allowed')}>
                   <span className={cn('text-[11px] tracking-wide transition-all', isActive ? 'font-bold text-white' : 'font-normal')}>{tab.label.toUpperCase()}</span>
@@ -958,8 +856,16 @@ export function CreateContentModal({ isOpen, onClose, onSuccess, initialTab = 'p
           </div>
         </div>
 
-        {/* ── Publish footer (live only) ────────────────────────── */}
-        <PublishFooter />
+        {/* ── Publish footer ─────────────────────────────────────── */}
+        <PublishFooter
+          activeTab={activeTab}
+          isPublishing={isPublishing}
+          isLoading={isLoading}
+          canPublish={!!previewUrl || isCarouselMode || activeTab === 'live'}
+          onPublish={handlePublish}
+          onCancel={handleClose}
+          title={title}
+        />
 
         {/* ── Error banner ─────────────────────────────────────── */}
         {error && (
@@ -990,12 +896,22 @@ export function CreateContentModal({ isOpen, onClose, onSuccess, initialTab = 'p
         <MediaPickerModal
           isOpen={showMediaPickerModal}
           onClose={() => setShowMediaPickerModal(false)}
-          onSelect={handleMediaPickerSelect}
+          onSelect={async (selection) => {
+            try {
+              const files: File[] = [];
+              for (const item of selection.items) {
+                const response = await fetch(item.url);
+                const blob = await response.blob();
+                files.push(new File([blob], item.name, { type: blob.type || (item.kind === 'video' ? 'video/mp4' : 'image/jpeg') }));
+              }
+              handleGalleryCarouselAdded(files);
+              setShowMediaPickerModal(false);
+            } catch (error) { logger.error('[CreateContentModal] Импорт', { error }); toast.error('Не удалось загрузить файлы'); }
+          }}
           maxFiles={20}
           accept={galleryAccept}
         />
       </div>
-    </CreateContentProvider>
   );
 }
 

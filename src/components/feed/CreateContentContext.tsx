@@ -41,10 +41,27 @@ export interface CreateContentContextValue {
   onVideoRecorded: (file: File, url: string) => void;
   onCameraError: (err: unknown) => void;
 
+  // ── Camera (mode derived) ─────────────────────────────────────
+  cameraMode: 'camera' | 'gallery';
+
+  // ── Reels enhancement ─────────────────────────────────────────
+  reelFaceEnhance: boolean;
+  setReelFaceEnhance: (v: boolean) => void;
+  reelAiEnhance: boolean;
+  setReelAiEnhance: (v: boolean) => void;
+  setReelMaxRecordingMs: (v: number) => void;
+
+  // ── Audio query ───────────────────────────────────────────────
+  audioQuery: string;
+
   // CameraHost raw props
   isActive: boolean;
   mode: CaptureMode;
   previewZoom: number;
+
+  // Derived
+  isCameraAvailable: boolean;
+  isTextStoryMode: boolean;
 
   // ── Gallery ──────────────────────────────────────────────────
   galleryPermission: GalleryPermissionState;
