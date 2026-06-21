@@ -54,7 +54,7 @@ services:
       - /etc/letsencrypt:/etc/letsencrypt:ro
     command: ["-c", "/etc/coturn/turnserver.conf", "-n", "--no-cli", "--log-file=stdout"]
     healthcheck:
-      test: ["CMD-SHELL", "nc -z 127.0.0.1 3478 || exit 1"]
+      test: ["CMD-SHELL", "nc -z 127.0.0.1 3478 && nc -z 127.0.0.1 5349 || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 3

@@ -417,8 +417,11 @@ async function authenticateRequest(req: Request): Promise<AuthResult | null> {
   }
 
   const allowAnon = Deno.env.get("TURN_ALLOW_ANON_DEV") === "1";
-  if (allowAnon && !isProductionEnv()) {
-    return { userId: "dev-anon", authType: "jwt" };
+  if (allowAnon) {
+    if (isProductionEnv()) {
+      logEvent("turn.auth.anon_in_production_blocked", {});
+    }
+    return null;
   }
 
   const authHeader = req.headers.get("authorization") ?? req.headers.get("Authorization") ?? "";
@@ -618,6 +621,7 @@ serve(async (req) => {
   const auth = await authenticateRequest(req);
   if (!auth) {
     metrics.unauthorized += 1;
+    logEvent("turn.issue.unauthorized", { requestId, ip: getClientIp(req) });
     return makeJsonResponse(corsHeaders, 401, { error: "unauthorized", requestId });
   }
 
@@ -625,6 +629,7 @@ serve(async (req) => {
   const nonce = extractNonce(req, body);
   const replay = await enforceReplayProtection(auth.userId, nonce, corsHeaders);
   if (replay) {
+    logEvent("turn.issue.replay_blocked", { requestId, userId: auth.userId, ip: clientIp });
     const latencyMs = Math.max(1, nowMs() - startedAt);
     metrics.sumLatencyMs += latencyMs;
     metrics.maxLatencyMs = Math.max(metrics.maxLatencyMs, latencyMs);
@@ -633,6 +638,7 @@ serve(async (req) => {
 
   const rl = await enforceTurnIssueRateLimit(auth.userId, clientIp, corsHeaders);
   if (rl) {
+    logEvent("turn.issue.rate_limited", { requestId, userId: auth.userId, ip: clientIp });
     const latencyMs = Math.max(1, nowMs() - startedAt);
     metrics.sumLatencyMs += latencyMs;
     metrics.maxLatencyMs = Math.max(metrics.maxLatencyMs, latencyMs);
@@ -733,8 +739,22 @@ serve(async (req) => {
     metrics.errors += 1;
     metrics.sumLatencyMs += latencyMs;
     metrics.maxLatencyMs = Math.max(metrics.maxLatencyMs, latencyMs);
+    const errMsg = error instanceof Error ? error.message : String(error);
 
     const stunUrls = getStunUrls();
+
+    // Fail-closed: only return STUN-only fallback for transient errors.
+    // Misconfig (missing secret, invalid env) → hard 500 so ops is alerted.
+    const isMisconfig = errMsg.includes("turn_shared_secret_missing")
+      || errMsg.includes("_missing")
+      || errMsg.includes("misconfigured");
+
+    if (isMisconfig || isProductionEnv()) {
+      logEvent("turn.issue.error_critical", { requestId, latencyMs, error: errMsg });
+      return makeJsonResponse(corsHeaders, 500, { error: "turn_credentials_unavailable" });
+    }
+
+    logEvent("turn.issue.error_transient_fallback_stun", { requestId, latencyMs, error: errMsg });
 
     await writeAuditLog({
       request_id: requestId,
@@ -747,12 +767,6 @@ serve(async (req) => {
       ttl_seconds: ttlSeconds,
       error_code: "turn_credentials_unavailable",
       region_hint: normalizeEnv(Deno.env.get("TURN_REGION") ?? "global"),
-    });
-
-    logEvent("turn.issue.error", {
-      requestId,
-      latencyMs,
-      error: error instanceof Error ? error.message : String(error),
     });
 
     return makeJsonResponse(corsHeaders, 200, {
