@@ -14,7 +14,134 @@ import { X3DH, PreKeyBundle, InitiatorResult } from './x3dh';
 import { DoubleRatchetE2E, RatchetState, RatchetHeader } from './doubleRatchet';
 import { E2EEKeyStore } from './keyStore';
 import { toBase64, fromBase64 } from './utils';
+import { encryptForStorage, decryptFromStorage } from '@/auth/localStorageCrypto';
 import { logger } from '@/lib/logger';
+
+// ─── Secret blob IndexedDB storage ─────────────────────────────────────────
+// Shared between SecretChatManager and useSecretChat.
+// Kept in sync via the same IndexedDB store + same encryption keys.
+
+const SECRET_CHAT_DB = 'secret-chat-e2ee-v1';
+const SECRET_CHAT_STORE = 'kv';
+
+function openSecretChatDb(): Promise<IDBDatabase> {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open(SECRET_CHAT_DB, 1);
+    req.onupgradeneeded = () => {
+      const db = req.result;
+      if (!db.objectStoreNames.contains(SECRET_CHAT_STORE)) {
+        db.createObjectStore(SECRET_CHAT_STORE, { keyPath: 'id' });
+      }
+    };
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+async function readSecretBlob(id: string): Promise<string | null> {
+  try {
+    const db = await openSecretChatDb();
+    const value = await new Promise<string | null>((resolve, reject) => {
+      const tx = db.transaction(SECRET_CHAT_STORE, 'readonly');
+      const store = tx.objectStore(SECRET_CHAT_STORE);
+      const req = store.get(id);
+      req.onsuccess = () => {
+        const row = req.result as { id: string; value: string } | undefined;
+        resolve(row?.value ?? null);
+      };
+      req.onerror = () => reject(req.error);
+    });
+    db.close();
+    if (value) return value;
+  } catch { /* best-effort */ }
+
+  try {
+    return localStorage.getItem(id);
+  } catch { return null; }
+}
+
+async function writeSecretBlob(id: string, value: string): Promise<void> {
+  try {
+    const db = await openSecretChatDb();
+    await new Promise<void>((resolve, reject) => {
+      const tx = db.transaction(SECRET_CHAT_STORE, 'readwrite');
+      const store = tx.objectStore(SECRET_CHAT_STORE);
+      const req = store.put({ id, value });
+      req.onsuccess = () => resolve();
+      req.onerror = () => reject(req.error);
+    });
+    db.close();
+  } catch { /* best-effort */ }
+}
+
+async function deleteSecretBlob(id: string): Promise<void> {
+  try {
+    const db = await openSecretChatDb();
+    await new Promise<void>((resolve, reject) => {
+      const tx = db.transaction(SECRET_CHAT_STORE, 'readwrite');
+      const store = tx.objectStore(SECRET_CHAT_STORE);
+      const req = store.delete(id);
+      req.onsuccess = () => resolve();
+      req.onerror = () => reject(req.error);
+    });
+    db.close();
+  } catch { /* best-effort */ }
+  try {
+    localStorage.removeItem(id);
+  } catch { /* best-effort */ }
+}
+
+// ─── OPK helpers ────────────────────────────────────────────────────────────────
+
+const IK_STORAGE_KEY = (userId: string) => `e2ee_ik_${userId}`;
+
+interface StoredIdentityKeys {
+  oneTimePreKeys?: Array<{ publicKey: string; privateKey: string }>;
+}
+
+async function findOpkPrivateBySpki(
+  userId: string,
+  opkSpki: string,
+): Promise<CryptoKeyPair | null> {
+  const stored = await readSecretBlob(IK_STORAGE_KEY(userId));
+  if (!stored) return null;
+
+  try {
+    const decrypted = await decryptFromStorage(stored);
+    if (!decrypted) return null;
+
+    const parsed = JSON.parse(decrypted) as StoredIdentityKeys;
+    const match = (parsed.oneTimePreKeys ?? []).find(
+      (entry) => entry.publicKey === opkSpki,
+    );
+    if (!match) return null;
+
+    return await X3DH.importEcdhKeyPair(match.publicKey, match.privateKey);
+  } catch {
+    return null;
+  }
+}
+
+async function removeOpkFromSecretBlob(
+  userId: string,
+  opkSpki: string,
+): Promise<void> {
+  const stored = await readSecretBlob(IK_STORAGE_KEY(userId));
+  if (!stored) return;
+
+  try {
+    const decrypted = await decryptFromStorage(stored);
+    if (!decrypted) return;
+
+    const parsed = JSON.parse(decrypted) as StoredIdentityKeys;
+    parsed.oneTimePreKeys = (parsed.oneTimePreKeys ?? []).filter(
+      (entry) => entry.publicKey !== opkSpki,
+    );
+
+    const reEncrypted = await encryptForStorage(JSON.stringify(parsed));
+    await writeSecretBlob(IK_STORAGE_KEY(userId), reEncrypted);
+  } catch { /* best-effort */ }
+}
 
 // ─── Типы ───────────────────────────────────────────────────────────────────
 
@@ -225,14 +352,27 @@ export class SecretChatManager {
   }
 
   /**
-   * Принятие секретного чата (ответный)
-   * Обрабатывает X3DH-раунд и инициализирует Double Ratchet
+   * Принятие секретного чата (Responder / Bob).
+   * Выполняет X3DH responder handshake и инициализирует Double Ratchet.
+   *
+   * SECURITY (STORAGE-1 fix):
+   *   1. Атомарно потребляем OPK в БД через consume_opk_by_spki RPC.
+   *      RPC выполняет DELETE + RETURNING в одной транзакции — предотвращает race
+   *      когда два concurrent инициатора пытаются использовать один OPK.
+   *      Второй инициатор получает null → OPK не задействован → reduced secrecy,
+   *      но сессия не сломана.
+   *   2. Приватный ключ OPK читается из secretBlob по SPKI.
+   *   3. Полная CryptoKeyPair (включая приватный ключ) передаётся в X3DH для DH4.
+   *   4. Приватный ключ удаляется из secretBlob ПОСЛЕ завершения X3DH.
+   *
+   * @param opkSpki  base64 SPKI потреблённого OPK (от инициатора: initiator_used_one_time_prekey_public)
    */
   async acceptSecretChat(
     conversationId: string,
     initiatorId: string,
     initiatorEphemeralKey: string,
-    initiatorIdentityKey: string
+    initiatorIdentityKey: string,
+    opkSpki?: string | null,
   ): Promise<AcceptSecretChatResult> {
     try {
       if (!this.userId) {
@@ -240,12 +380,9 @@ export class SecretChatManager {
       }
 
       const sessionKey = `session:${conversationId}:${initiatorId}`;
-
       if (this.sessions.has(sessionKey)) {
         return { success: true, sessionId: sessionKey };
       }
-
-      const identityKeyPair = await this.keyStore.getOrCreateIdentityKeyPair(this.userId);
 
       const ecdhPrivate = await this.keyStore.getKey(`identity:${this.userId}:private`);
       const ecdhPublic = await this.keyStore.getKey(`identity:${this.userId}:public`);
@@ -254,13 +391,6 @@ export class SecretChatManager {
         throw new KeyNotFoundError('Identity key not found');
       }
 
-      const { data: signedPreKey } = await supabase
-        .from('user_encryption_keys')
-        .select('public_key_raw')
-        .eq('user_id', this.userId)
-        .eq('type', 'signed_prekey')
-        .single();
-
       const spkPrivate = await this.keyStore.getKey(`signed_prekey:${this.userId}:private`);
       const spkPublic = await this.keyStore.getKey(`signed_prekey:${this.userId}:public`);
 
@@ -268,26 +398,34 @@ export class SecretChatManager {
         throw new KeyNotFoundError('Signed pre-key not found');
       }
 
-      const { data: opkData } = await supabase
-        .from('one_time_prekeys')
-        .select('public_key_spki, id')
-        .eq('user_id', this.userId)
-        .limit(1)
-        .single();
+      // ── STORAGE-1: atomic OPK consumption ───────────────────────────────────
+      // consume_opk_by_spki atomically DELETEs OPK from DB and returns its SPKI.
+      // Null = OPK already consumed by concurrent handshake (DB-enforced rollback).
+      let opkKeyPair: CryptoKeyPair | null = null;
+      if (opkSpki) {
+        const consumeResult = await e2eeDb.rpc.consumeOPKBySpki(opkSpki, this.userId);
+        if (consumeResult.data) {
+          // DB deleted OPK — now read private key from secretBlob
+          opkKeyPair = await findOpkPrivateBySpki(this.userId, consumeResult.data);
+        }
+      }
 
-      const opkPrivate = opkData ? await this.keyStore.getKey(`opk:${this.userId}:${opkData.id}:private`) : null;
-
+      // ── X3DH responder key agreement ───────────────────────────────────────
+      // DH4 = DH(OPK_B.priv, EK_A.pub) — private key IS required for DH4
       const sharedSecret = await X3DH.responderKeyAgreement({
         identityKeyPair: { privateKey: ecdhPrivate, publicKey: ecdhPublic },
         signedPreKeyPair: { privateKey: spkPrivate, publicKey: spkPublic },
-        oneTimePreKeyPair: opkPrivate ? {
-          privateKey: opkPrivate,
-          publicKey: await crypto.subtle.importKey('spki', fromBase64(initiatorEphemeralKey), { name: 'ECDH', namedCurve: 'P-256' }, true, []),
-        } : null,
-        oneTimePreKeyWasUsed: !!opkPrivate,
+        oneTimePreKeyPair: opkKeyPair,
+        oneTimePreKeyWasUsed: !!opkKeyPair,
         ephemeralPublicKey: initiatorEphemeralKey,
         initiatorIdentityPublicKey: initiatorIdentityKey,
       });
+
+      // ── Remove consumed OPK private key from secretBlob ─────────────────────
+      // After X3DH so DH4 derivation succeeded; best-effort so UI never breaks
+      if (opkSpki) {
+        await removeOpkFromSecretBlob(this.userId, opkSpki);
+      }
 
       const ratchetState = await DoubleRatchetE2E.initBob(sharedSecret);
 
@@ -304,18 +442,11 @@ export class SecretChatManager {
 
       this.sessions.set(sessionKey, session);
 
-      if (opkData) {
-        await this.keyStore.deleteKey(`opk:${this.userId}:${opkData.id}`);
-        await supabase
-          .from('one_time_prekeys')
-          .delete()
-          .eq('id', opkData.id);
-      }
-
       logger.info('[SecretChatManager] acceptSecretChat', {
         conversationId,
         initiatorId,
         sessionId: sessionKey,
+        opkUsed: !!opkKeyPair,
       });
 
       return { success: true, sessionId: sessionKey };

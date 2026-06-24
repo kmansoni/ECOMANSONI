@@ -245,6 +245,25 @@ export const e2eeDb = {
         target_user_id: userId,
       }) as Promise<{ data: string | null; error: { message: string } | null }>;
     },
+
+    /**
+     * consume_opk_by_spki — атомарное удаление конкретного OPK по base64 SPKI (STORAGE-1 fix).
+     * Supabase RPC (20260624000001).
+     * Returns: base64 SPKI удалённого OPK | null.
+     * Null = OPK не найден или уже потреблён (race window — DB rollback).
+     *
+     * Responder получает SPKI от инициатора (secret_chats.initiator_used_one_time_prekey_public),
+     * затем ищет приватный ключ в secretBlob по этому SPKI.
+     */
+    consumeOPKBySpki(
+      spki: string,
+      userId: string,
+    ): Promise<{ data: string | null; error: { message: string } | null }> {
+      return db.rpc('consume_opk_by_spki', {
+        p_spki: spki,
+        p_user_id: userId,
+      }) as Promise<{ data: string | null; error: { message: string } | null }>;
+    },
   },
 
   /**
