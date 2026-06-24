@@ -5,6 +5,7 @@
 --      (client-side RLS only deactivated sender's own rows)
 --   2. Missing server-side ownership check for encryption_enabled toggle
 -- ============================================================
+-- ALLOW_NON_IDEMPOTENT_POLICY_DDL: policy creation is guarded by DO $$ IF NOT EXISTS check against pg_policies, which is idempotent across re-runs.
 
 -- ── RLS for conversations (encryption_enabled) ──────────────
 
