@@ -742,7 +742,7 @@ export function useVideoCallSfu(options: UseVideoCallSfuOptions = {}): UseVideoC
     setConnectionStateSynced("connecting");
     logger.info("video_call_sfu.start_call_connecting", { callId: call.id.slice(0, 8) });
     return call;
-  }, [user, releaseLocalMedia, setConnectionStateSynced, setStatusSynced, calleeProfile]);
+  }, [user, releaseLocalMedia, setConnectionStateSynced, setStatusSynced]);
 
   // ---------------------------------------------------------------------------
   // answerCall
@@ -907,7 +907,13 @@ export function useVideoCallSfu(options: UseVideoCallSfuOptions = {}): UseVideoC
           applyCallRowUpdate(updated);
         }
       )
-      .subscribe();
+      .subscribe((status, err) => {
+        if (err) {
+          logger.warn("video_call_sfu.realtime_status_error", { status, error: err });
+        } else {
+          logger.info("video_call_sfu.realtime_status", { status });
+        }
+      });
 
     // Fallback reconciliation in case Realtime event is dropped or delayed.
     const pollTimer = window.setInterval(() => {

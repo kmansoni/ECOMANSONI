@@ -14,6 +14,7 @@ import {
   CALLS_V2_ENDPOINTS,
   MEDIA_BOOTSTRAP_RETRY_BACKOFF_MS,
   REQUIRE_SFRAME,
+  TURN_REQUIRED_MISSING_ERROR,
   canSendE2eeReady,
   extractRouterCapsFromJoinPayload,
   hasE2eeSupport,
@@ -396,6 +397,15 @@ screenStream,
       }
 
       await sfuManager.loadDevice(routerRtpCapabilities as import("mediasoup-client").types.RtpCapabilities);
+
+      // P0 #6 fix: fail-closed if REQUIRE_SFRAME but no relay candidates.
+      // Bootstrapping without TURN behind symmetric NAT (mobile/carrier-grade) = guaranteed ICE failure.
+      if (REQUIRE_SFRAME && (!iceServersSnapshot || iceServersSnapshot.length === 0)) {
+        const err = new Error(TURN_REQUIRED_MISSING_ERROR);
+        logger.error("[VideoCallContext] TURN required for E2EE call but relay candidates unavailable — aborting bootstrap");
+        reportMediaBootstrapFailure(roomId, callId, err);
+        return;
+      }
 
       // P0-1 fix: subscribe BEFORE sending transportCreate so we never miss the server event.
       // acceptRecent:false prevents matching a stale cached event from a previous bootstrap.

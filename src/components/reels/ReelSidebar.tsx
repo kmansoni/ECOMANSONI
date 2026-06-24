@@ -28,7 +28,8 @@ interface ReelSidebarProps {
   isReposted: boolean;
   reactionCounts: ReactionCount[];
   myReaction: string | null;
-  onLike: () => void;
+  onLike: (reelId: string) => void;
+  onLikesOpen?: (reelId: string) => void;
   onComment: () => void;
   onShare: () => void;
   onSave: () => void;
@@ -65,10 +66,11 @@ interface LikeButtonProps {
   isLiked: boolean;
   emoji: string;
   count: number;
-  onClick: () => void;
+  onClick: (reelId: string) => void;
+  reelId: string;
 }
 
-const LikeButton = memo<LikeButtonProps>(({ isLiked, emoji, count, onClick }) => {
+const LikeButton = memo<LikeButtonProps>(({ isLiked, emoji, count, onClick, reelId }) => {
   const [particles, setParticles] = useState<{ id: number; angle: number; color: string }[]>([]);
   const [showRing, setShowRing] = useState(false);
   const timeoutRef = useRef<ReturnType<typeof setTimeout>>();
@@ -85,7 +87,7 @@ const LikeButton = memo<LikeButtonProps>(({ isLiked, emoji, count, onClick }) =>
 
   const handleClick = useCallback(() => {
     void triggerHaptic();
-    onClick();
+    onClick(reelId);
 
     if (!isLiked) {
       const newParticles = Array.from({ length: 12 }, (_, i) => ({
@@ -102,7 +104,7 @@ const LikeButton = memo<LikeButtonProps>(({ isLiked, emoji, count, onClick }) =>
       if (ringTimeoutRef.current) clearTimeout(ringTimeoutRef.current);
       ringTimeoutRef.current = setTimeout(() => setShowRing(false), 600);
     }
-  }, [isLiked, onClick]);
+  }, [isLiked, onClick, reelId]);
 
   return (
     <div className="flex flex-col items-center gap-1">
@@ -344,6 +346,7 @@ MoreButton.displayName = 'MoreButton';
 // ============================================================================
 
 const ReelSidebar = memo<ReelSidebarProps>(({
+  reelId,
   metrics,
   isLiked,
   isSaved,
@@ -351,6 +354,7 @@ const ReelSidebar = memo<ReelSidebarProps>(({
   reactionCounts,
   myReaction,
   onLike,
+  onLikesOpen,
   onComment,
   onShare,
   onSave,
@@ -372,7 +376,26 @@ const ReelSidebar = memo<ReelSidebarProps>(({
       aria-label="Действия"
       className="absolute right-4 bottom-[120px] flex flex-col items-center gap-4 z-30"
     >
-      <LikeButton isLiked={isLiked} emoji={currentEmoji} count={displayCount} onClick={onLike} />
+      {/* Like emoji + count as two separate interactive targets */}
+      <div className="flex flex-col items-center gap-1">
+        <LikeButton isLiked={isLiked} emoji={currentEmoji} count={displayCount} onClick={onLike} reelId={reelId} />
+        {onLikesOpen && displayCount > 0 && (
+          <motion.button
+            type="button"
+            whileTap={{ scale: 0.88 }}
+            onClick={() => onLikesOpen?.(reelId)}
+            className="text-white/70 text-[11px] font-semibold drop-shadow-[0_2px_8px_rgba(0,0,0,0.5)] hover:text-white transition-colors"
+            aria-label="Посмотреть кто поставил лайк"
+          >
+            {formatCount(displayCount)}
+          </motion.button>
+        )}
+        {!onLikesOpen && (
+          <span className="text-white/70 text-[11px] font-semibold drop-shadow-[0_2px_8px_rgba(0,0,0,0.5)]">
+            {formatCount(displayCount)}
+          </span>
+        )}
+      </div>
 
       <ActionButton
         icon={<MessageCircle size={24} className="text-white" />}

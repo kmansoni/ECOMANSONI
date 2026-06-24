@@ -58,7 +58,7 @@ function VideoCallDemoControls() {
   return (
     <div className="p-4 max-w-md mx-auto space-y-4">
       {!isActive ? (
-        <GlassCard className="p-6 space-y-4">
+        <GlassCard tokens={tokens} className="p-6 space-y-4">
           <h2 className="text-xl font-semibold text-white mb-4">Начать видеозвонок</h2>
           
           <div className="space-y-3">
@@ -104,7 +104,7 @@ function VideoCallDemoControls() {
           </div>
         </GlassCard>
       ) : (
-        <GlassCard className="p-6">
+        <GlassCard tokens={tokens} className="p-6">
           <h2 className="text-xl font-semibold text-white mb-4">Управление звонком</h2>
           
           <div className="space-y-4">
@@ -172,7 +172,7 @@ function VideoCallDemoControls() {
         </GlassCard>
       )}
       
-      <GlassCard className="p-4">
+      <GlassCard tokens={tokens} className="p-4">
         <h3 className="text-white/60 text-sm font-medium mb-2">Состояние звонка</h3>
         <div className="space-y-1 text-sm">
           <div className="flex justify-between">

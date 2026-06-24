@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { CommentsSheet } from "@/components/feed/CommentsSheet";
 import { ShareSheet } from "@/components/feed/ShareSheet";
+import { LikesSheet } from "@/components/feed/LikesSheet";
 import { formatDistanceToNow } from "date-fns";
 import { ru } from "date-fns/locale";
 import { logger } from "@/lib/logger";
@@ -60,6 +61,7 @@ export function PostDetailPage() {
   const [fetchError, setFetchError] = useState<string | null>(null);
   const [showComments, setShowComments] = useState(false);
   const [showShare, setShowShare] = useState(false);
+  const [showLikes, setShowLikes] = useState(false);
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
   const [frameAspectRatio, setFrameAspectRatio] = useState(1);
 
@@ -328,13 +330,19 @@ export function PostDetailPage() {
         {/* Actions */}
         <div className="flex items-center justify-between px-4 py-3">
           <div className="flex items-center gap-4">
-            <button onClick={handleLike} className="flex items-center gap-1">
+            <button onClick={handleLike} className="flex items-center gap-1" aria-label="Лайк">
               <Heart
                 className={`w-6 h-6 transition-colors ${
-                  post.isLiked ? "fill-red-500 text-red-500" : ""
+                  post.isLiked ? "fill-destructive text-destructive" : ""
                 }`}
               />
-              <span className="text-sm font-medium">{post.likes_count}</span>
+            </button>
+            <button
+              onClick={() => { if (post.likes_count > 0) setShowLikes(true); }}
+              className="text-sm font-medium hover:underline"
+              aria-label="Посмотреть кто поставил лайк"
+            >
+              {post.likes_count}
             </button>
             <button onClick={() => setShowComments(true)} className="flex items-center gap-1">
               <MessageCircle className="w-6 h-6" />
@@ -390,6 +398,14 @@ export function PostDetailPage() {
             prev ? { ...prev, shares_count: prev.shares_count + Math.max(1, sharedToCount) } : prev,
           );
         }}
+      />
+
+      {/* Likes Sheet */}
+      <LikesSheet
+        postId={post.id}
+        likeCount={post.likes_count}
+        isOpen={showLikes}
+        onClose={() => setShowLikes(false)}
       />
     </div>
   );

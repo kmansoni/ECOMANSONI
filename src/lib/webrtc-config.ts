@@ -65,7 +65,7 @@ function bytesToBase64(bytes: Uint8Array): string {
     if (byte === undefined) continue;
     binary += String.fromCharCode(byte);
   }
-  return btoa(binary);
+  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 }
 
 function buildTurnRequestMetadata(): { nonce: string; requestId: string } {
@@ -187,13 +187,18 @@ async function fetchTurnCredentials(): Promise<{ iceServers: RTCIceServer[] | nu
 function computeCacheTtl(ttlFromServerMs: number): number {
   if (ttlFromServerMs <= 0) return DEFAULT_CACHE_TTL_MS;
 
-  // Prefer caching until "credential TTL - 1h" when possible.
-  if (ttlFromServerMs > 60 * 60 * 1000) {
-    return Math.max(MIN_CACHE_TTL_MS, ttlFromServerMs - 60 * 60 * 1000);
+  // S-2 fix: keep 5-minute buffer before server-side credential expiry.
+  // Previously: cache was allowed to expire up to 1 hour AFTER server expiry.
+  // Now: cache never survives past server TTL minus buffer.
+  const BUFFER_MS = 5 * 60 * 1000;
+
+  // For short-lived credentials (≤1h): refresh well before expiry.
+  if (ttlFromServerMs <= 60 * 60 * 1000) {
+    return Math.max(MIN_CACHE_TTL_MS, ttlFromServerMs - BUFFER_MS);
   }
 
-  // For <=1h credentials, keep conservative refresh cadence.
-  return Math.max(MIN_CACHE_TTL_MS, Math.floor(ttlFromServerMs * 0.5));
+  // For long-lived credentials (>1h): refresh 5 min before expiry.
+  return Math.max(MIN_CACHE_TTL_MS, ttlFromServerMs - BUFFER_MS);
 }
 
 function parseTurnResponse(parsed: TurnCredentialsResponse): { iceServers: RTCIceServer[] | null; ttlMs: number } {

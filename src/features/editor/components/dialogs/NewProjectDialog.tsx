@@ -7,6 +7,7 @@ import { Film, Plus } from 'lucide-react';
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogHeader,
   DialogTitle,
   DialogFooter,
@@ -78,6 +79,9 @@ export const NewProjectDialog = React.memo(function NewProjectDialog({
             <Film className="h-5 w-5" />
             Новый проект
           </DialogTitle>
+          <DialogDescription className="sr-only">
+            Create a new video editing project.
+          </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4 py-2">

@@ -11,7 +11,7 @@ import { ml_kem768 } from '@noble/post-quantum/ml-kem.js';
 
 import { toBase64, fromBase64 } from './utils';
 
-const PQ_ENABLED = String(import.meta.env.VITE_E2EE_PQ ?? "false").trim() === "1";
+const PQ_ENABLED = String(import.meta.env.VITE_E2EE_PQ_ENABLED ?? "false").trim() === "true";
 
 export function isPQAvailable(): boolean {
   return PQ_ENABLED;
@@ -22,6 +22,7 @@ export function isPQAvailable(): boolean {
 export interface HybridKEMResult {
   sharedSecret: CryptoKey;
   ecdhCiphertext: string;
+  /** ML-KEM ciphertext — sender encapsulates recipient's pubKey */
   pqCiphertext: string;
   pqUsed: boolean;
 }
@@ -38,7 +39,7 @@ async function _ecdhEncap(
 ): Promise<{ sharedBits: ArrayBuffer; encap: ArrayBuffer }> {
   const ephemeralPair = await crypto.subtle.generateKey(
     { name: 'ECDH', namedCurve: 'P-256' },
-    true,
+    false,
     ['deriveBits'],
   );
   const sharedBits = await crypto.subtle.deriveBits(
@@ -124,18 +125,24 @@ async function _combineSecrets(
 
 // ─── Public API ───────────────────────────────────────────────────────────────
 
+/**
+ * Initiator (Alice) performs ML-KEM encapsulation against recipient's (Bob's) pubKey.
+ * Protocol: Alice ← Bob's ML-KEM pubKey | Alice encapsulates → sends ciphertext
+ * Recipient (Bob): decapsulates(ciphertext, hisPrivateKey) → same sharedSecret
+ */
 export async function hybridEncapsulate(
-  recipientPublicKey: CryptoKey,
+  recipientECDH: CryptoKey,
+  recipientMlKemPublicKey: Uint8Array | null,
 ): Promise<HybridKEMResult> {
   try {
-    const ecdhResult = await _ecdhEncap(recipientPublicKey);
+    const ecdhResult = await _ecdhEncap(recipientECDH);
 
     let mlkemCipherText: Uint8Array | undefined;
     let mlkemSecret: Uint8Array | undefined;
 
-    if (isPQAvailable()) {
-      const mlkemKp = ml_kem768.keygen();
-      const mlkemResult = ml_kem768.encapsulate(mlkemKp.publicKey);
+    if (isPQAvailable() && recipientMlKemPublicKey) {
+      // FIX CRYPTO-1: encapsulate in recipient's pubKey, not our own.
+      const mlkemResult = ml_kem768.encapsulate(recipientMlKemPublicKey);
       mlkemCipherText = mlkemResult.cipherText;
       mlkemSecret = mlkemResult.sharedSecret;
     }
@@ -154,19 +161,24 @@ export async function hybridEncapsulate(
   }
 }
 
+/**
+ * Decapsulate the ML-KEM ciphertext using our private key.
+ * Must be called with our own private ML-KEM key (the one whose pubKey we published).
+ */
 export async function hybridDecapsulate(
   ecdhCiphertextB64: string,
   pqCiphertextB64: string,
-  recipientPrivateKey: CryptoKey,
-  pqSecretKey: Uint8Array | null = null,
+  recipientECDH: CryptoKey,
+  recipientMlKemPrivateKey: Uint8Array | null,
 ): Promise<HybridKEMDecapResult> {
-  const ecdhBits = await _ecdhDecap(fromBase64(ecdhCiphertextB64), recipientPrivateKey);
+  const ecdhBits = await _ecdhDecap(fromBase64(ecdhCiphertextB64), recipientECDH);
 
   let mlkemSecret: Uint8Array | null = null;
 
-  if (pqCiphertextB64 && isPQAvailable() && pqSecretKey) {
-    const cipherText = fromBase64(pqCiphertextB64);
-    mlkemSecret = await _mlkemDecap(cipherText, pqSecretKey);
+  if (pqCiphertextB64 && isPQAvailable() && recipientMlKemPrivateKey) {
+    // FIX CRYPTO-1: decapsulate with OUR private key, using the ciphertext from sender.
+    const cipherText = new Uint8Array(fromBase64(pqCiphertextB64));
+    mlkemSecret = await _mlkemDecap(cipherText, recipientMlKemPrivateKey);
   }
 
   const sharedSecret = await _combineSecrets(ecdhBits, mlkemSecret);

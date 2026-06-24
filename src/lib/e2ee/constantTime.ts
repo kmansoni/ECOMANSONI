@@ -13,9 +13,8 @@
  * Time is O(n) where n = max(a.length, b.length) — never short-circuits.
  */
 export function safeEqualBytes(a: Uint8Array, b: Uint8Array): boolean {
-  // Length check must also be timing-safe — XOR lengths so we always loop
   const len = Math.max(a.length, b.length);
-  let diff = a.length ^ b.length; // non-zero if lengths differ
+  let diff = a.length ^ b.length;
   for (let i = 0; i < len; i++) {
     diff |= (a[i] ?? 0) ^ (b[i] ?? 0);
   }
@@ -33,21 +32,17 @@ export function safeEqualBuffer(a: ArrayBuffer, b: ArrayBuffer): boolean {
 
 /**
  * Constant-time hex string equality check.
- * Case-insensitive. Rejects malformed hex.
+ * Case-insensitive. Single-pass accumulator — no early return, no dummy loop.
  */
 export function safeEqualHex(a: string, b: string): boolean {
   const aLow = a.toLowerCase();
   const bLow = b.toLowerCase();
-  if (aLow.length !== bLow.length) {
-    // Still do a dummy loop to prevent branch-based leakage
-    for (let i = 0; i < Math.max(aLow.length, bLow.length); i++) {
-      void (aLow.charCodeAt(i) ^ bLow.charCodeAt(i));
-    }
-    return false;
-  }
-  let diff = 0;
-  for (let i = 0; i < aLow.length; i++) {
-    diff |= aLow.charCodeAt(i) ^ bLow.charCodeAt(i);
+  let diff = aLow.length ^ bLow.length;
+  const len = Math.max(aLow.length, bLow.length);
+  for (let i = 0; i < len; i++) {
+    const ca = i < aLow.length ? aLow.charCodeAt(i) : 0;
+    const cb = i < bLow.length ? bLow.charCodeAt(i) : 0;
+    diff |= ca ^ cb;
   }
   return diff === 0;
 }
@@ -56,22 +51,16 @@ export function safeEqualHex(a: string, b: string): boolean {
 
 /**
  * Constant-time base64 string equality (after normalizing padding).
- * Both strings must be the same base64 encoding of the same bytes.
  */
 export function safeEqualBase64(a: string, b: string): boolean {
-  // Normalize: strip whitespace and trailing '='
-  const normalize = (s: string) => s.replace(/\s/g, '').replace(/=+$/, '');
-  return safeEqualHex(normalize(a), normalize(b)); // re-uses constant-time charCode loop
+  const normalize = (s: string) => s.replace(/\s/g, "").replace(/=+$/, "");
+  return safeEqualHex(normalize(a), normalize(b));
 }
 
 // ─── Generic string comparison ────────────────────────────────────────────────
 
 /**
- * Constant-time string equality.
- * Compares UTF-16 code units; suitable for ASCII secrets like TOTP codes,
- * session tokens, OTP pins.
- *
- * NOT suitable for Unicode strings with combining characters.
+ * Constant-time string equality. O(n) always.
  */
 export function safeEqual(a: string, b: string): boolean {
   let diff = a.length ^ b.length;
@@ -82,38 +71,23 @@ export function safeEqual(a: string, b: string): boolean {
   return diff === 0;
 }
 
-// ─── HMAC-based token equality (WebCrypto) ───────────────────────────────────
+// ─── Token equality ─────────────────────────────────────────────────────────
 
 /**
- * Cryptographically secure token comparison using HMAC-SHA-256.
- * This is the gold standard for comparing MAC tags, because even
- * the XOR loop above could in theory be optimized away by JIT.
- * With HMAC, timing differences cannot leak the secret.
- *
- * Both `a` and `b` are UTF-8 strings (e.g. API tokens, CSRF tokens).
+ * Constant-time token comparison. Delegates to safeEqualBytes for O(n) no-short-circuit.
  */
 export async function safeEqualTokens(a: string, b: string): Promise<boolean> {
-  const key = await crypto.subtle.generateKey(
-    { name: 'HMAC', hash: 'SHA-256' },
-    false,
-    ['sign'],
-  );
   const enc = new TextEncoder();
-  const [macA, macB] = await Promise.all([
-    crypto.subtle.sign('HMAC', key, enc.encode(a)),
-    crypto.subtle.sign('HMAC', key, enc.encode(b)),
-  ]);
-  return safeEqualBuffer(macA, macB);
+  return safeEqualBytes(enc.encode(a), enc.encode(b));
 }
 
-// ─── Numeric PIN comparison ───────────────────────────────────────────────────
+// ─── Numeric PIN comparison ──────────────────────────────────────────────────
 
 /**
  * Constant-time comparison of numeric PINs / OTP codes.
- * Converts both to the same zero-padded string length before comparing.
  */
 export function safeEqualPin(a: string | number, b: string | number): boolean {
-  const strA = String(a).padStart(10, '0');
-  const strB = String(b).padStart(10, '0');
+  const strA = String(a).padStart(10, "0");
+  const strB = String(b).padStart(10, "0");
   return safeEqual(strA, strB);
 }

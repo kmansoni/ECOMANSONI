@@ -314,10 +314,48 @@ if (DEMO_MODE) {
     },
   });
 
+  // ─── Auth session mutex ─────────────────────────────────────────────────────
+  // Supabase uses navigatorLock (Storage Events API) to coordinate sessions across
+  // tabs. Concurrent getSession() calls from different parts of the app (auth
+  // provider, schema probe, ChatSchemaProbe, etc.) race for this lock.
+  // When the lock holder is slow (cold start, network latency), the others get
+  // AbortError: signal is aborted without reason, which bubbles up as spurious
+  // auth failures. This mutex serialises all getSession calls so that only the
+  // first one hits the lock and subsequent callers wait for the result.
+  const baseAuth = baseSupabase.auth;
+  type SessionData = Awaited<ReturnType<typeof baseAuth.getSession>>;
+  let sessionCache: SessionData | null = null;
+  let sessionMutex: Promise<SessionData> | null = null;
+
+  async function guardedGetSession(): Promise<SessionData> {
+    if (sessionCache) return sessionCache;
+    if (sessionMutex) return sessionMutex;
+    sessionMutex = baseAuth.getSession().then(
+      (result) => { sessionCache = result; return result; },
+      (err) => { sessionMutex = null; throw err; },
+    );
+    return sessionMutex;
+  }
+
+  const authProxy = new Proxy(baseAuth, {
+    get(target, prop) {
+      if (prop === "getSession") return guardedGetSession;
+      if (prop === "refreshSession") {
+        return (arg?: Parameters<typeof baseAuth.refreshSession>[0]) => baseAuth.refreshSession(arg);
+      }
+      const value = Reflect.get(target, prop);
+      return typeof value === "function" ? value.bind(target) : value;
+    },
+  });
+  // ────────────────────────────────────────────────────────────────────────────
+
   const supabaseProxy = new Proxy(baseSupabase, {
     get(target, prop) {
       if (prop === "functions") {
         return functionsProxy;
+      }
+      if (prop === "auth") {
+        return authProxy;
       }
       // NOTE: use `target` as receiver (not the Proxy) so that class getters
       // and methods that touch private fields (`#field`) resolve against the

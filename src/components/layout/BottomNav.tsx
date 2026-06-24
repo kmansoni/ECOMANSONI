@@ -62,7 +62,7 @@ interface BottomNavProps {
   onCreateClick?: () => void;
 }
 
-export const BottomNav = forwardRef<HTMLElement, BottomNavProps>(function BottomNav({ hidden = false, disableHideAnimation = false }, ref) {
+export const BottomNav = forwardRef<HTMLElement, BottomNavProps>(function BottomNav({ hidden = false, disableHideAnimation = false, onCreateClick }, ref) {
   const { isReelsPage } = useReelsContext();
   const location = useLocation();
   const navigate = useNavigate();
@@ -481,6 +481,30 @@ export const BottomNav = forwardRef<HTMLElement, BottomNavProps>(function Bottom
               );
             })}
           </nav>
+
+          {/* Center FAB: Create Content */}
+          <button
+            onClick={onCreateClick}
+            className={cn(
+              "flex items-center justify-center",
+              "w-12 h-12 rounded-full",
+              "bg-gradient-to-br from-cyan-400 via-cyan-500 to-blue-500",
+              "shadow-[0_4px_16px_rgba(34,211,238,0.45)]",
+              "active:scale-90",
+              "transition-all duration-200",
+              "flex-shrink-0"
+            )}
+            style={{
+              WebkitTapHighlightColor: 'transparent',
+              touchAction: 'manipulation',
+            }}
+            aria-label="Создать контент"
+          >
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <line x1="12" y1="5" x2="12" y2="19" />
+              <line x1="5" y1="12" x2="19" y2="12" />
+            </svg>
+          </button>
 
           {/* Separate circular button for the last item (Profile) */}
           {(() => {

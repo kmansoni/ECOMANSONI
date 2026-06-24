@@ -10,6 +10,12 @@ export type ChatSchemaProbeV2 = {
 
 let lastProbe: ChatSchemaProbeV2 | null = null;
 
+// Prevent concurrent probe runs and concurrent getSession calls from racing
+// the auth provider's own getSession. Without this, Supabase's navigatorLock
+// causes AbortError: signal is aborted without reason when two tabs call
+// getSession() simultaneously during app bootstrap.
+let probeMutex: Promise<ChatSchemaProbeV2 | null> | null = null;
+
 function isExpectedProbeError(error: any): boolean {
   const code = String(error?.code ?? "");
   const status = Number(error?.status ?? 0);
@@ -44,50 +50,59 @@ export function getLastChatSchemaProbe(): ChatSchemaProbeV2 | null {
 }
 
 export async function runChatSchemaProbeOnce(): Promise<ChatSchemaProbeV2 | null> {
+  // If already running, wait for that run instead of racing the navigatorLock.
+  if (probeMutex) return probeMutex;
+
   if (lastProbe) return lastProbe;
 
-  try {
-    // Probe is authenticated-only by design; skip when there is no session.
-    const sess = await supabase.auth.getSession();
-    if (sess?.data?.session == null) {
-      return null;
-    }
-
-    const res = await dbLoose.rpc("chat_schema_probe_v2");
-    const error = (res as any)?.error;
-    const data = (res as any)?.data;
-    if (error) {
-      if (isExpectedProbeError(error)) {
-        if (import.meta.env.DEV) {
-          logger.warn("[ChatSchemaProbe] RPC unavailable for current env/session", error);
-        }
-        // Expected probe errors are not a proven schema mismatch.
-        // Do not cache a hard failure because core chat RPCs may still be available.
-        return null;
-      } else {
-        logger.error("[ChatSchemaProbe] RPC error", error);
-        // Unknown transport/runtime errors should not globally disable chat.
+  probeMutex = (async () => {
+    try {
+      // Probe is authenticated-only by design; skip when there is no session.
+      const sess = await supabase.auth.getSession();
+      if (sess?.data?.session == null) {
         return null;
       }
-    }
 
-    if (data && typeof data === "object") {
-      lastProbe = data as ChatSchemaProbeV2;
-    } else {
-      // Malformed/empty payload is inconclusive; keep probe state neutral.
+      const res = await dbLoose.rpc("chat_schema_probe_v2");
+      const error = (res as any)?.error;
+      const data = (res as any)?.data;
+      if (error) {
+        if (isExpectedProbeError(error)) {
+          if (import.meta.env.DEV) {
+            logger.warn("[ChatSchemaProbe] RPC unavailable for current env/session", error);
+          }
+          // Expected probe errors are not a proven schema mismatch.
+          // Do not cache a hard failure because core chat RPCs may still be available.
+          return null;
+        } else {
+          logger.error("[ChatSchemaProbe] RPC error", error);
+          // Unknown transport/runtime errors should not globally disable chat.
+          return null;
+        }
+      }
+
+      if (data && typeof data === "object") {
+        lastProbe = data as ChatSchemaProbeV2;
+      } else {
+        // Malformed/empty payload is inconclusive; keep probe state neutral.
+        return null;
+      }
+
+      if (import.meta.env.DEV) {
+        logger.info("[ChatSchemaProbe] result", lastProbe);
+      }
+
+      return lastProbe;
+    } catch (e) {
+      if (import.meta.env.DEV) {
+        logger.warn("[ChatSchemaProbe] exception", e);
+      }
+      // Exceptions (network, auth race, transient failures) must not disable chat.
       return null;
+    } finally {
+      probeMutex = null;
     }
+  })();
 
-    if (import.meta.env.DEV) {
-      logger.info("[ChatSchemaProbe] result", lastProbe);
-    }
-
-    return lastProbe;
-  } catch (e) {
-    if (import.meta.env.DEV) {
-      logger.warn("[ChatSchemaProbe] exception", e);
-    }
-    // Exceptions (network, auth race, transient failures) must not disable chat.
-    return null;
-  }
+  return probeMutex;
 }

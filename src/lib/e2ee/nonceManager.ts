@@ -27,7 +27,10 @@ class AsyncMutex {
 }
 
 export class AsyncNonceManager {
-  private readonly seen = new Set<string>();
+  // FIX CRYPTO-6: Map instead of Set for LRU eviction.
+  // Set insertion order: FIFO (oldest first) → replay after 10000.
+  // Map insertion order: move-to-end on access → LRU (oldest first) → no replay.
+  private readonly seen = new Map<string, true>();
   private readonly mutex = new AsyncMutex();
   private readonly maxSize: number;
 
@@ -37,18 +40,26 @@ export class AsyncNonceManager {
 
   async checkAndAdd(nonce: string): Promise<boolean> {
     return this.mutex.runExclusive(() => {
-      if (this.seen.has(nonce)) return false;
-      if (this.seen.size >= this.maxSize) {
-        const first = this.seen.values().next().value;
-        if (first !== undefined) this.seen.delete(first);
+      if (this.seen.has(nonce)) {
+        // FIX CRYPTO-6: move to end → most recently used (LRU eviction)
+        this.seen.delete(nonce);
+        this.seen.set(nonce, true);
+        return false;
       }
-      this.seen.add(nonce);
+      if (this.seen.size >= this.maxSize) {
+        // Delete the oldest entry (first in insertion order)
+        const oldest = this.seen.keys().next().value;
+        if (oldest !== undefined) this.seen.delete(oldest);
+      }
+      this.seen.set(nonce, true);
       return true;
     });
   }
 
   async has(nonce: string): Promise<boolean> {
-    return this.mutex.runExclusive(() => this.seen.has(nonce));
+    return this.mutex.runExclusive(() => {
+      return this.seen.has(nonce);
+    });
   }
 
   async clear(): Promise<void> {

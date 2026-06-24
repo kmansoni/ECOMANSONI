@@ -24,6 +24,7 @@ export interface CallIdentity {
 
 import { logger } from '@/lib/logger';
 import { bytesToBase64, base64ToBytes, isUuidV4, decodeRequiredBase64Bytes } from './callKeyExchange.crypto';
+import { assertPeerSigningKeyPinned } from './ecdsaIdentity';
 
 /**
  * epoch → non-extractable AES-128-GCM CryptoKey для SFrame.
@@ -63,13 +64,28 @@ export class CallKeyExchange {
   private epochRawBytes: Map<number, Uint8Array> = new Map();
   /** peerId (userId:deviceId) → их ECDSA signing CryptoKey */
   private peerSigningKeys: Map<string, CryptoKey> = new Map();
-  /** Signed KEY_PACKAGE messageIds processed by this instance (anti-replay). */
-  private seenKeyPackageMessageIds: Set<string> = new Set();
+  /** Signed KEY_PACKAGE messageIds processed by this instance (anti-replay). TTL-evicted. */
+  private seenKeyPackageMessageIds: Map<string, number> = new Map();
+  private readonly keyPackageIdTtlMs: number = 5 * 60_000; // 5 minutes — ample for VoIP rekey cadence
+  private keyPackageCleanupTimer: ReturnType<typeof setInterval> | null = null;
   /** peerId (userId:deviceId) → highest processed KEY_PACKAGE epoch. */
   private highestProcessedEpochBySender: Map<string, number> = new Map();
 
   constructor(identity: CallIdentity) {
     this.identity = identity;
+    this.keyPackageCleanupTimer = setInterval(
+      () => this.cleanupKeyPackageMessageIds(),
+      60_000
+    );
+  }
+
+  private cleanupKeyPackageMessageIds(): void {
+    const now = Date.now();
+    for (const [id, expiresAt] of this.seenKeyPackageMessageIds.entries()) {
+      if (now >= expiresAt) {
+        this.seenKeyPackageMessageIds.delete(id);
+      }
+    }
   }
 
   /**
@@ -115,6 +131,11 @@ export class CallKeyExchange {
 
   async registerPeerSigningKey(peerId: string, signingPublicKeyBase64: string): Promise<void> {
     const raw = base64ToBytes(signingPublicKeyBase64);
+
+    // FIX CALLS-4: TOFU fingerprint check — reject identity substitution before accepting the key.
+    // A MITM who swapped the signing key in signaling would fail here.
+    await assertPeerSigningKeyPinned(peerId, raw);
+
     const key = await crypto.subtle.importKey(
       'raw',
       raw,
@@ -347,7 +368,8 @@ export class CallKeyExchange {
     if (!isUuidV4(pkg.messageId)) {
       throw new Error('[CallKeyExchange] processKeyPackage: messageId must be UUID v4.');
     }
-    if (this.seenKeyPackageMessageIds.has(pkg.messageId)) {
+    const expiresAt = this.seenKeyPackageMessageIds.get(pkg.messageId);
+    if (expiresAt !== undefined && expiresAt > Date.now()) {
       throw new Error(`[CallKeyExchange] KEY_PACKAGE replay REJECTED: duplicate messageId=${pkg.messageId}`);
     }
 
@@ -445,7 +467,7 @@ export class CallKeyExchange {
 
     this.epochKeys.set(pkg.epoch, epochKey);
     this.stagedEpochKey = epochKey;
-    this.seenKeyPackageMessageIds.add(pkg.messageId);
+    this.seenKeyPackageMessageIds.set(pkg.messageId, Date.now() + this.keyPackageIdTtlMs);
     this.highestProcessedEpochBySender.set(senderId, pkg.epoch);
 
     this.rotateOldEpochKeys(pkg.epoch);
@@ -508,6 +530,10 @@ export class CallKeyExchange {
     this.peerSigningKeys.clear();
     this.seenKeyPackageMessageIds.clear();
     this.highestProcessedEpochBySender.clear();
+    if (this.keyPackageCleanupTimer) {
+      clearInterval(this.keyPackageCleanupTimer);
+      this.keyPackageCleanupTimer = null;
+    }
   }
 
   private rotateOldEpochKeys(epoch: number): void {

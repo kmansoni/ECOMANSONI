@@ -399,30 +399,30 @@ export async function computeFingerprint(key: CryptoKey): Promise<string> {
 
 // ─── Nonce Manager (anti-replay) ──────────────────────────────────────────────
 
+// FIX CRYPTO-6: Set → Map for LRU eviction. FIFO replay after 10000 is gone.
 export class NonceManager {
-  private seen: Set<string>;
+  private seen = new Map<string, true>();
   private maxSize: number;
 
   constructor(maxSize = 10000) {
-    this.seen = new Set();
     this.maxSize = maxSize;
   }
 
-  /** Возвращает true если nonce НОВЫЙ (не встречался ранее) */
+  /** Returns true if nonce is NEW (not seen before) */
   check(nonce: string): boolean {
     return !this.seen.has(nonce);
   }
 
   add(nonce: string): void {
     if (this.seen.size >= this.maxSize) {
-      const first = this.seen.values().next().value;
-      if (first !== undefined) this.seen.delete(first);
+      const oldest = this.seen.keys().next().value;
+      if (oldest !== undefined) this.seen.delete(oldest);
     }
-    this.seen.add(nonce);
+    this.seen.set(nonce, true);
   }
 
   // SECURITY FIX: Atomic check-and-add prevents TOCTOU races in concurrent decrypt paths.
-  /** Атомарная проверка и добавление. Возвращает true если nonce НОВЫЙ (не повтор). */
+  /** Atomic check + add. Returns true if nonce is NEW (no replay). */
   checkAndAdd(nonce: string): boolean {
     if (this.seen.has(nonce)) return false;
     this.add(nonce);

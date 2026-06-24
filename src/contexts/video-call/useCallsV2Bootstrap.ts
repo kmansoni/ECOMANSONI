@@ -18,6 +18,7 @@ import {
   REKEY_INTERVAL_MS,
   REQUIRE_SFRAME,
   FRAME_E2EE_ADVERTISE_SFRAME,
+  TURN_REQUIRED_MISSING_ERROR,
   hasE2eeSupport,
   hasInsertableStreamsSupport,
   extractRouterCapsFromJoinPayload,
@@ -539,6 +540,16 @@ export function useCallsV2Bootstrap({
           turnIceServersRef.current = joinedTurn.iceServers;
           logger.info("[VideoCallContext] calls-v2 TURN iceServers seeded from ROOM_JOIN_OK", { count: joinedTurn.iceServers.length });
         }
+
+        // P0 #19 fix: graceful abort if peer requires E2EE but this client can't.
+        // Without this check, the call hangs on "Подключение..." with no explanation.
+        const peerRequiresE2ee = (joinedPayload as Record<string, unknown> | undefined)?.e2eeRequired === true;
+        if (peerRequiresE2ee && !hasE2eeSupport()) {
+          throw new Error(
+            "calls_v2_peer_requires_e2ee: server enforces E2EE but this browser lacks Insertable Streams API. Update Chrome/Edge/Firefox."
+          );
+        }
+
         epochGuardRef.current?.markRoomJoined(e2eeEpochRef.current);
         const initialReadiness = canSendE2eeReady({
           epoch: e2eeEpochRef.current,

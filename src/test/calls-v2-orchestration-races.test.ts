@@ -1,4 +1,4 @@
-/* @vitest-environment jsdom */
+/* @vitest-environment node */
 import { describe, expect, it } from 'vitest';
 import { CallKeyExchange } from '../calls-v2/callKeyExchange';
 import { CallMediaEncryption } from '../calls-v2/callMediaEncryption';
@@ -217,7 +217,10 @@ describe('P1: E2EE gating and rekey lifecycle', () => {
 
     // REKEY_COMMITTED holds until caller explicitly activates.
     // FSM does not auto-activate — requires manual activateEpoch(epoch).
-    expect(machine.getCurrentEpoch()).toBe(1);
+    // pendingEpoch is the committed-but-not-yet-activated epoch.
+    expect(machine.getPendingEpoch()).toBe(1);
+    // currentEpoch stays at the old value until activation.
+    expect(machine.getCurrentEpoch()).toBe(0);
   });
 });
 

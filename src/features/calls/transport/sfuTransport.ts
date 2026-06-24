@@ -10,6 +10,7 @@
 
 import type { RtpCapabilities, DtlsParameters } from "@/calls-v2/types";
 import { Device } from "mediasoup-client";
+import { logger } from "@/lib/logger";
 
 // Re-export types that callers might need
 export { Device } from "mediasoup-client";
@@ -239,7 +240,11 @@ export class SfuTransportManager {
         track: consumer.track,
         kind: consumer.kind,
       };
-    } catch {
+    } catch (err) {
+      logger.warn("[sfuTransport] consume failed", {
+        producerId,
+        error: err instanceof Error ? err.message : String(err),
+      });
       return null;
     }
   }

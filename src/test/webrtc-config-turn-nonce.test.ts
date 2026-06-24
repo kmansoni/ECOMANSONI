@@ -60,7 +60,12 @@ describe("webrtc-config TURN nonce contract", () => {
     expect(headers.apikey).toBe("public-turn-key");
     expect(headers["x-turn-nonce"]).toBeTruthy();
     expect(headers["x-request-id"]).toBeTruthy();
-    expect(headers["x-turn-nonce"]).toBe(headers["x-request-id"]);
+    // RFC 7635 §4.2: nonce MUST be random and different from requestId
+    expect(headers["x-turn-nonce"]).not.toBe(headers["x-request-id"]);
+    // Nonce must be base64url-encoded (no +/= chars)
+    expect(headers["x-turn-nonce"]).toMatch(/^[A-Za-z0-9_-]+$/);
+    // Nonce should be reasonably long (16 bytes → ~22 base64 chars)
+    expect(headers["x-turn-nonce"].length).toBeGreaterThanOrEqual(20);
 
     const body = JSON.parse(String(init.body)) as { nonce: string; requestId: string };
     expect(body.nonce).toBe(headers["x-turn-nonce"]);

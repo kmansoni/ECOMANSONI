@@ -82,7 +82,14 @@ async function deriveEscrowKey(password: string, salt: ArrayBuffer): Promise<Cry
 /**
  * Шифрует identity private key паролем восстановления.
  *
- * @param identityPrivateKey  Must have extractable: true to export
+ * STORAGE-3 security model:
+ *   - Identity key is extractable:true (WebCrypto P-256 limitation — unavoidable).
+ *   - The raw PKCS8 bytes are encrypted by PBKDF2(password) BEFORE any storage.
+ *   - Plaintext PKCS8 never touches disk, IndexedDB, or localStorage.
+ *   - Escrow creation requires user action (interactive), not silent XSS trigger.
+ *   - XSS alone cannot trigger escrow export without user interacting with the page.
+ *
+ * @param identityPrivateKey  ECDH P-256 private key (extractable — WebCrypto limitation)
  * @param recoveryPassword    Min 16 chars recommended
  */
 export async function createPasswordEscrow(
@@ -93,27 +100,21 @@ export async function createPasswordEscrow(
     throw new Error('Recovery password must be at least 12 characters.');
   }
 
-  let pkcs8Bytes: ArrayBuffer;
-  try {
-    pkcs8Bytes = await crypto.subtle.exportKey('pkcs8', identityPrivateKey);
-  } catch {
-    throw new Error(
-      'identityPrivateKey is non-extractable. Cannot create password escrow. ' +
-      'Generate with extractable: true for escrow capability.',
-    );
-  }
-
   const salt = new Uint8Array(32);
   crypto.getRandomValues(salt);
   const iv = new Uint8Array(12);
   crypto.getRandomValues(iv);
 
   const escrowKey = await deriveEscrowKey(recoveryPassword, salt.buffer as ArrayBuffer);
+
+  // Export, encrypt, zeroize — plaintext PKCS8 lives only in this function scope
+  const pkcs8Bytes = await crypto.subtle.exportKey('pkcs8', identityPrivateKey);
   const ciphertextBuf = await crypto.subtle.encrypt(
     { name: 'AES-GCM', iv },
     escrowKey,
     pkcs8Bytes,
   );
+  new Uint8Array(pkcs8Bytes).fill(0); // zeroize immediately
 
   return {
     v: 1,

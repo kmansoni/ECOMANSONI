@@ -1,10 +1,9 @@
 import { useState, useCallback } from "react";
-import { createClient } from "@/integrations/supabase/client";
+import { supabase } from "@/lib/supabase";
 
 export function useStarsBalance(userId?: string) {
   const [balance, setBalance] = useState<number | null>(null);
   const [loading, setLoading] = useState(false);
-  const supabase = createClient();
 
   const fetchBalance = useCallback(async () => {
     if (!userId) return null;
@@ -19,7 +18,7 @@ export function useStarsBalance(userId?: string) {
     if (data) setBalance(data.balance);
     setLoading(false);
     return data?.balance;
-  }, [userId, supabase]);
+  }, [userId]);
 
   const purchaseStars = useCallback(async (amount: number) => {
     const { data, error } = await supabase.functions.invoke("stars-balance/purchase", {

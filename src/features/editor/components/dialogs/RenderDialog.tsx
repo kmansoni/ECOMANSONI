@@ -7,6 +7,7 @@ import { Download, X, Loader2, CheckCircle, AlertCircle } from 'lucide-react';
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
@@ -167,6 +168,9 @@ export const RenderDialog = React.memo(function RenderDialog() {
             <Download className="h-5 w-5" />
             Экспорт видео
           </DialogTitle>
+          <DialogDescription className="sr-only">
+            Configure export settings and monitor rendering progress.
+          </DialogDescription>
         </DialogHeader>
 
         <Tabs value={activeTab} onValueChange={setActiveTab}>

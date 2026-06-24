@@ -19,6 +19,8 @@
  * - Public key exported as JWK for transmission over signaling channel.
  */
 
+import { safeEqualHex } from '@/lib/e2ee/constantTime';
+
 const DB_NAME = "calls-v2-identity";
 const DB_VERSION = 1;
 const STORE_NAME = "keypairs";
@@ -165,9 +167,17 @@ export async function signIdentity(
 /**
  * Verifies an ECDSA signature over (senderPublicKey, ciphertext, epoch, userId, deviceId, sessionId, salt, messageId).
  *
- * Returns false on any verification failure — never throws to the caller
- * to avoid timing-sensitive error propagation.
+ * Returns false for invalid signatures.
+ * Throws CryptoVerificationError for system failures (OOM, invalid params, crypto unavailable) — caller
+ * must distinguish system errors from invalid signatures.
  */
+export class CryptoVerificationError extends Error {
+  readonly name = "CryptoVerificationError" as const;
+  constructor(message: string) {
+    super(message);
+  }
+}
+
 export async function verifyIdentity(
    publicKey: CryptoKey,
    userId: string,
@@ -181,13 +191,15 @@ export async function verifyIdentity(
    signature: ArrayBuffer,
 ): Promise<boolean> {
    try {
-      const encoder = new TextEncoder();
       const data = new TextEncoder().encode(
          `${senderPublicKey}|${ciphertext}|${epoch}|${userId}|${deviceId}|${sessionId}|${salt}|${messageId}`
       );
-      return await crypto.subtle.verify(SIGN_PARAMS, publicKey, signature, data);
-   } catch {
-      return false;
+      return crypto.subtle.verify(SIGN_PARAMS, publicKey, signature, data);
+   } catch (err) {
+      // System failures (DOMException, OOM, invalid params) → propagate so caller can distinguish
+      // from a plain invalid signature (which returns false without throwing).
+      const name = err instanceof DOMException ? err.name : "unknown";
+      throw new CryptoVerificationError(`crypto.verify failed: ${name} — ${err instanceof Error ? err.message : String(err)}`);
    }
 }
 
@@ -250,7 +262,7 @@ export async function assertPeerIdentityPinned(
       return fingerprint;
     }
 
-    if (existing.fingerprint !== fingerprint) {
+    if (!safeEqualHex(existing.fingerprint, fingerprint)) {
       throw new Error(
         `ecdsaIdentity: peer identity key changed for ${userId}:${deviceId} — TOFU pin mismatch`
       );
@@ -259,4 +271,36 @@ export async function assertPeerIdentityPinned(
   } finally {
     db.close();
   }
+}
+
+/**
+ * TOFU pinning for SFU key exchange peer signing keys.
+ * Called from CallKeyExchange.registerPeerSigningKey() BEFORE accepting a peer's ECDSA
+ * public key. First-seen fingerprint is pinned in IndexedDB; any mismatch is rejected
+ * fail-closed as a possible identity substitution attack.
+ *
+ * @param peerId  composite userId:deviceId
+ * @param rawKey  raw bytes of the peer's ECDSA P-256 public key
+ */
+export async function assertPeerSigningKeyPinned(
+  peerId: string,
+  rawKey: Uint8Array,
+): Promise<string> {
+  const parts = peerId.split(':');
+  if (parts.length !== 2 || !parts[0] || !parts[1]) {
+    throw new Error(`ecdsaIdentity: invalid peerId format "${peerId}" — expected userId:deviceId`);
+  }
+  const [userId, deviceId] = parts;
+
+  // Reconstruct JWK from raw P-256 public key bytes
+  if (rawKey.length !== 65 || rawKey[0] !== 0x04) {
+    throw new Error(`ecdsaIdentity: expected uncompressed P-256 public key (65 bytes, 0x04 prefix), got ${rawKey.length} bytes`);
+  }
+  const jwk: JsonWebKey = {
+    kty: 'EC',
+    crv: 'P-256',
+    x: bytesToBase64(rawKey.slice(1, 33)),
+    y: bytesToBase64(rawKey.slice(33, 65)),
+  };
+  return assertPeerIdentityPinned(userId, deviceId, jwk);
 }

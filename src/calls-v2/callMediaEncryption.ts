@@ -1,23 +1,23 @@
 import { logger } from '@/lib/logger';
 
 /**
- * Call Media Encryption — оркестрирует SFrame encryption/decryption для call media pipeline.
+ * Call Media Encryption вЂ” РѕСЂРєРµСЃС‚СЂРёСЂСѓРµС‚ SFrame encryption/decryption РґР»СЏ call media pipeline.
  *
- * Связывает:
- *   CallKeyExchange (epoch CryptoKey) ↔ MediaEncryptor (SFrame TransformStream)
- *   SfuMediaManager (RTCRtpSender/Receiver) ↔ Insertable Streams API
+ * РЎРІСЏР·С‹РІР°РµС‚:
+ *   CallKeyExchange (epoch CryptoKey) в†” MediaEncryptor (SFrame TransformStream)
+ *   SfuMediaManager (RTCRtpSender/Receiver) в†” Insertable Streams API
  *
  * Design decisions:
- * - Fail-closed: без валидного epoch key setupSenderTransform БРОСАЕТ ошибку (H-6).
- * - Async setEncryptionKey/setDecryptionKey: MediaEncryptor.setEncryptionKey принимает CryptoKey.
- * - Adapter pattern: скрывает отличия сигнатуры MediaEncryptor от call pipeline.
- * - EpochGuard integration (M-6): assertMediaAllowed() перед всеми media operations.
- * - H-2 compatible: принимает EpochKeyMaterial без rawKeyBytes — использует CryptoKey напрямую.
+ * - Fail-closed: Р±РµР· РІР°Р»РёРґРЅРѕРіРѕ epoch key setupSenderTransform Р‘Р РћРЎРђР•Рў РѕС€РёР±РєСѓ (H-6).
+ * - Async setEncryptionKey/setDecryptionKey: MediaEncryptor.setEncryptionKey РїСЂРёРЅРёРјР°РµС‚ CryptoKey.
+ * - Adapter pattern: СЃРєСЂС‹РІР°РµС‚ РѕС‚Р»РёС‡РёСЏ СЃРёРіРЅР°С‚СѓСЂС‹ MediaEncryptor РѕС‚ call pipeline.
+ * - EpochGuard integration (M-6): assertMediaAllowed() РїРµСЂРµРґ РІСЃРµРјРё media operations.
+ * - H-2 compatible: РїСЂРёРЅРёРјР°РµС‚ EpochKeyMaterial Р±РµР· rawKeyBytes вЂ” РёСЃРїРѕР»СЊР·СѓРµС‚ CryptoKey РЅР°РїСЂСЏРјСѓСЋ.
  *
  * MediaEncryptor API (actual):
  *   setEncryptionKey(key: CryptoKey, keyId: number): Promise<void>
  *   setDecryptionKey(key: CryptoKey, keyId: number, peerId: string): Promise<void>
- *   setupSenderTransform(sender: RTCRtpSender, trackId: string): void  — throws if unsupported
+ *   setupSenderTransform(sender: RTCRtpSender, trackId: string): void  вЂ” throws if unsupported
  *   setupReceiverTransform(receiver: RTCRtpReceiver, trackId: string, peerId: string): void
  *   removeAllTransforms(): void
  */
@@ -28,9 +28,9 @@ import type { EpochKeyMaterial } from './callKeyExchange';
 import type { EpochGuard } from './epochGuard';
 
 export interface CallMediaEncryptionConfig {
-  /** Вызывается при ошибке шифрования/дешифровки на уровне кадра (информационный) */
+  /** Р’С‹Р·С‹РІР°РµС‚СЃСЏ РїСЂРё РѕС€РёР±РєРµ С€РёС„СЂРѕРІР°РЅРёСЏ/РґРµС€РёС„СЂРѕРІРєРё РЅР° СѓСЂРѕРІРЅРµ РєР°РґСЂР° (РёРЅС„РѕСЂРјР°С†РёРѕРЅРЅС‹Р№) */
   onError?: (error: Error, direction: 'encrypt' | 'decrypt') => void;
-  /** Вызывается при поломке pipe — caller должен пересоздать producer/consumer для восстановления */
+  /** Р’С‹Р·С‹РІР°РµС‚СЃСЏ РїСЂРё РїРѕР»РѕРјРєРµ pipe вЂ” caller РґРѕР»Р¶РµРЅ РїРµСЂРµСЃРѕР·РґР°С‚СЊ producer/consumer РґР»СЏ РІРѕСЃСЃС‚Р°РЅРѕРІР»РµРЅРёСЏ */
   onPipeBreak?: (info: PipeBreakInfo) => void;
 }
 
@@ -38,25 +38,19 @@ export class CallMediaEncryption {
   private encryptor: MediaEncryptor;
   private currentEpoch: number = 0;
   private hasEncryptionKey: boolean = false;
-  /** peerId → epoch number (для диагностики) */
+  /** peerId в†’ epoch number (РґР»СЏ РґРёР°РіРЅРѕСЃС‚РёРєРё) */
   private peerDecryptionEpochs: Map<string, number> = new Map();
-  /** M-6: optional EpochGuard — wenn gesetzt, assertMediaAllowed() wird aufgerufen */
+  /** M-6: optional EpochGuard вЂ” wenn gesetzt, assertMediaAllowed() wird aufgerufen */
   private epochGuard: EpochGuard | null = null;
 
   private buildPeerAliases(peerId: string): string[] {
     const trimmed = peerId.trim();
     if (!trimmed) return [];
-
-    const aliases = new Set<string>([trimmed]);
-    const sepIndex = trimmed.indexOf(':');
-    if (sepIndex > 0 && sepIndex < trimmed.length - 1) {
-      const userId = trimmed.slice(0, sepIndex).trim();
-      const deviceId = trimmed.slice(sepIndex + 1).trim();
-      if (userId) aliases.add(userId);
-      if (deviceId) aliases.add(deviceId);
-    }
-
-    return Array.from(aliases);
+    // FIX CALLS-3: ONLY the exact composite peerId is a valid key identifier.
+    // Splitting into bare userId or bare deviceId lets any device knowing one
+    // fragment decrypt traffic for ALL devices of that user. Each SFrame key
+    // must be associated with the precise userId:deviceId it was derived for.
+    return [trimmed];
   }
 
   private resolveReceiverPeerId(peerId: string): string {
@@ -83,15 +77,15 @@ export class CallMediaEncryption {
   }
 
   /**
-   * M-6: Установить EpochGuard для enforcement media allowed checks.
-   * Вызывать после создания CallMediaEncryption перед первым produce.
+   * M-6: РЈСЃС‚Р°РЅРѕРІРёС‚СЊ EpochGuard РґР»СЏ enforcement media allowed checks.
+   * Р’С‹Р·С‹РІР°С‚СЊ РїРѕСЃР»Рµ СЃРѕР·РґР°РЅРёСЏ CallMediaEncryption РїРµСЂРµРґ РїРµСЂРІС‹Рј produce.
    */
   setEpochGuard(guard: EpochGuard): void {
     this.epochGuard = guard;
   }
 
   /**
-   * Проверка поддержки Insertable Streams в текущем браузере.
+   * РџСЂРѕРІРµСЂРєР° РїРѕРґРґРµСЂР¶РєРё Insertable Streams РІ С‚РµРєСѓС‰РµРј Р±СЂР°СѓР·РµСЂРµ.
    * Chrome 86+ (createEncodedStreams). RTCRtpScriptTransform not counted (C-4).
    */
   static isSupported(): boolean {
@@ -99,30 +93,30 @@ export class CallMediaEncryption {
   }
 
   /**
-   * Установить ключ шифрования outbound media (наш epoch key).
-   * Вызывать после createEpochKey() — до первого produce.
-   * H-2: принимает CryptoKey напрямую — rawKeyBytes не нужен.
+   * РЈСЃС‚Р°РЅРѕРІРёС‚СЊ РєР»СЋС‡ С€РёС„СЂРѕРІР°РЅРёСЏ outbound media (РЅР°С€ epoch key).
+   * Р’С‹Р·С‹РІР°С‚СЊ РїРѕСЃР»Рµ createEpochKey() вЂ” РґРѕ РїРµСЂРІРѕРіРѕ produce.
+   * H-2: РїСЂРёРЅРёРјР°РµС‚ CryptoKey РЅР°РїСЂСЏРјСѓСЋ вЂ” rawKeyBytes РЅРµ РЅСѓР¶РµРЅ.
    */
   async setEncryptionKey(epochKey: EpochKeyMaterial): Promise<void> {
     // MediaEncryptor.setEncryptionKey(CryptoKey, keyId: number)
-    // keyId = epoch число (0–255, используется как SFrame Key ID)
-    await this.encryptor.setEncryptionKey(epochKey.key, epochKey.epoch & 0xff, epochKey.epoch);
+    // keyId = epoch С‡РёСЃР»Рѕ (0вЂ“255, РёСЃРїРѕР»СЊР·СѓРµС‚СЃСЏ РєР°Рє SFrame Key ID)
+    await this.encryptor.setEncryptionKey(epochKey.key, epochKey.epoch & 0x7fffffff, epochKey.epoch);
     this.currentEpoch = epochKey.epoch;
     this.hasEncryptionKey = true;
     logger.debug(`[CallMediaEncryption] Encryption key set for epoch ${epochKey.epoch}`);
   }
 
   /**
-   * Установить ключ дешифровки для конкретного пира (inbound media).
-   * Вызывать после processKeyPackage() с ключом от пира.
-   * H-2: принимает CryptoKey напрямую.
+   * РЈСЃС‚Р°РЅРѕРІРёС‚СЊ РєР»СЋС‡ РґРµС€РёС„СЂРѕРІРєРё РґР»СЏ РєРѕРЅРєСЂРµС‚РЅРѕРіРѕ РїРёСЂР° (inbound media).
+   * Р’С‹Р·С‹РІР°С‚СЊ РїРѕСЃР»Рµ processKeyPackage() СЃ РєР»СЋС‡РѕРј РѕС‚ РїРёСЂР°.
+   * H-2: РїСЂРёРЅРёРјР°РµС‚ CryptoKey РЅР°РїСЂСЏРјСѓСЋ.
    *
-   * @param peerId — userId или producerId пира
-   * @param epochKey — EpochKeyMaterial полученный от этого пира
+   * @param peerId вЂ” userId РёР»Рё producerId РїРёСЂР°
+   * @param epochKey вЂ” EpochKeyMaterial РїРѕР»СѓС‡РµРЅРЅС‹Р№ РѕС‚ СЌС‚РѕРіРѕ РїРёСЂР°
    */
   async setDecryptionKey(peerId: string, epochKey: EpochKeyMaterial): Promise<void> {
     // MediaEncryptor.setDecryptionKey(CryptoKey, keyId: number, peerId: string)
-    const keyId = epochKey.epoch & 0xff;
+    const keyId = epochKey.epoch & 0x7fffffff;
     const aliases = this.buildPeerAliases(peerId);
     logger.debug(`[CallMediaEncryption] setDecryptionKey: peer=${peerId} aliases=${JSON.stringify(aliases)} epoch=${epochKey.epoch} keyId=${keyId}`);
 
@@ -135,13 +129,13 @@ export class CallMediaEncryption {
   }
 
   /**
-   * Проверяет, что call-сессия уже прошла auth + room join для подключения transforms.
+   * РџСЂРѕРІРµСЂСЏРµС‚, С‡С‚Рѕ call-СЃРµСЃСЃРёСЏ СѓР¶Рµ РїСЂРѕС€Р»Р° auth + room join РґР»СЏ РїРѕРґРєР»СЋС‡РµРЅРёСЏ transforms.
    *
-   * Важно: setupSenderTransform/setupReceiverTransform являются частью подготовки E2EE,
-   * а не подтверждением E2EE_READY. Требование mediaAllowed здесь создаёт deadlock:
-   * E2EE_READY нельзя отправить до ключей/transforms, но transforms нельзя подключить
-   * до E2EE_READY. Поэтому guard проверяет только базовый контекст комнаты и epoch,
-   * а fail-closed инвариант обеспечивается обязательным outbound key ниже.
+   * Р’Р°Р¶РЅРѕ: setupSenderTransform/setupReceiverTransform СЏРІР»СЏСЋС‚СЃСЏ С‡Р°СЃС‚СЊСЋ РїРѕРґРіРѕС‚РѕРІРєРё E2EE,
+   * Р° РЅРµ РїРѕРґС‚РІРµСЂР¶РґРµРЅРёРµРј E2EE_READY. РўСЂРµР±РѕРІР°РЅРёРµ mediaAllowed Р·РґРµСЃСЊ СЃРѕР·РґР°С‘С‚ deadlock:
+   * E2EE_READY РЅРµР»СЊР·СЏ РѕС‚РїСЂР°РІРёС‚СЊ РґРѕ РєР»СЋС‡РµР№/transforms, РЅРѕ transforms РЅРµР»СЊР·СЏ РїРѕРґРєР»СЋС‡РёС‚СЊ
+   * РґРѕ E2EE_READY. РџРѕСЌС‚РѕРјСѓ guard РїСЂРѕРІРµСЂСЏРµС‚ С‚РѕР»СЊРєРѕ Р±Р°Р·РѕРІС‹Р№ РєРѕРЅС‚РµРєСЃС‚ РєРѕРјРЅР°С‚С‹ Рё epoch,
+   * Р° fail-closed РёРЅРІР°СЂРёР°РЅС‚ РѕР±РµСЃРїРµС‡РёРІР°РµС‚СЃСЏ РѕР±СЏР·Р°С‚РµР»СЊРЅС‹Рј outbound key РЅРёР¶Рµ.
    */
   private assertTransformSetupContext(operation: string): void {
     this.epochGuard?.assertAuthenticated(operation);
@@ -150,22 +144,22 @@ export class CallMediaEncryption {
   }
 
   /**
-   * Подключить SFrame encrypt transform на outbound RTCRtpSender.
-   * Вызывать ПОСЛЕ setEncryptionKey() и ПОСЛЕ produce().
+   * РџРѕРґРєР»СЋС‡РёС‚СЊ SFrame encrypt transform РЅР° outbound RTCRtpSender.
+   * Р’С‹Р·С‹РІР°С‚СЊ РџРћРЎР›Р• setEncryptionKey() Рё РџРћРЎР›Р• produce().
    *
-   * H-6: THROWS если encryption key не установлен — fail-closed, не допускаем незашифрованный медиа.
-   * M-6: EpochGuard проверяет auth/room/epoch; E2EE_READY выставляется после успешного подключения transforms.
+   * H-6: THROWS РµСЃР»Рё encryption key РЅРµ СѓСЃС‚Р°РЅРѕРІР»РµРЅ вЂ” fail-closed, РЅРµ РґРѕРїСѓСЃРєР°РµРј РЅРµР·Р°С€РёС„СЂРѕРІР°РЅРЅС‹Р№ РјРµРґРёР°.
+   * M-6: EpochGuard РїСЂРѕРІРµСЂСЏРµС‚ auth/room/epoch; E2EE_READY РІС‹СЃС‚Р°РІР»СЏРµС‚СЃСЏ РїРѕСЃР»Рµ СѓСЃРїРµС€РЅРѕРіРѕ РїРѕРґРєР»СЋС‡РµРЅРёСЏ transforms.
    *
-   * Fail-closed: throws if Insertable Streams unavailable — call must not proceed unencrypted.
+   * Fail-closed: throws if Insertable Streams unavailable вЂ” call must not proceed unencrypted.
    * Caller must verify CallMediaEncryption.isSupported() before entering a call.
    *
-   * @param sender — RTCRtpSender от SfuMediaManager.getProducerSender()
-   * @param trackId — producer.id (для идентификации transform в логах)
+   * @param sender вЂ” RTCRtpSender РѕС‚ SfuMediaManager.getProducerSender()
+   * @param trackId вЂ” producer.id (РґР»СЏ РёРґРµРЅС‚РёС„РёРєР°С†РёРё transform РІ Р»РѕРіР°С…)
    */
   setupSenderTransform(sender: RTCRtpSender, trackId: string): void {
     this.assertTransformSetupContext('setupSenderTransform');
 
-    // H-6: BLOCKED if no encryption key — throw, do not attach transform without key
+    // H-6: BLOCKED if no encryption key вЂ” throw, do not attach transform without key
     if (!this.hasEncryptionKey) {
       throw new Error(
         `[CallMediaEncryption] BLOCKED: cannot attach sender transform without encryption key for track ${trackId}. ` +
@@ -180,18 +174,18 @@ export class CallMediaEncryption {
   }
 
   /**
-   * Подключить SFrame decrypt transform на inbound RTCRtpReceiver.
-   * Вызывать ПОСЛЕ consume().
+   * РџРѕРґРєР»СЋС‡РёС‚СЊ SFrame decrypt transform РЅР° inbound RTCRtpReceiver.
+   * Р’С‹Р·С‹РІР°С‚СЊ РџРћРЎР›Р• consume().
    *
-   * Receiver можно подключать до прихода decryption key — MediaEncryptor дропнет фреймы
-   * пока ключ не придёт (fail-closed в SFrame transport).
-   * M-6: EpochGuard проверяет auth/room/epoch; E2EE_READY выставляется после успешного подключения transforms.
+   * Receiver РјРѕР¶РЅРѕ РїРѕРґРєР»СЋС‡Р°С‚СЊ РґРѕ РїСЂРёС…РѕРґР° decryption key вЂ” MediaEncryptor РґСЂРѕРїРЅРµС‚ С„СЂРµР№РјС‹
+   * РїРѕРєР° РєР»СЋС‡ РЅРµ РїСЂРёРґС‘С‚ (fail-closed РІ SFrame transport).
+   * M-6: EpochGuard РїСЂРѕРІРµСЂСЏРµС‚ auth/room/epoch; E2EE_READY РІС‹СЃС‚Р°РІР»СЏРµС‚СЃСЏ РїРѕСЃР»Рµ СѓСЃРїРµС€РЅРѕРіРѕ РїРѕРґРєР»СЋС‡РµРЅРёСЏ transforms.
    *
    * Fail-closed: throws if browser doesn't support Insertable Streams.
    *
-   * @param receiver — RTCRtpReceiver от SfuMediaManager.getConsumerReceiver()
-   * @param peerId — userId или producerId отправителя
-   * @param trackId — consumer.id (для идентификации)
+   * @param receiver вЂ” RTCRtpReceiver РѕС‚ SfuMediaManager.getConsumerReceiver()
+   * @param peerId вЂ” userId РёР»Рё producerId РѕС‚РїСЂР°РІРёС‚РµР»СЏ
+   * @param trackId вЂ” consumer.id (РґР»СЏ РёРґРµРЅС‚РёС„РёРєР°С†РёРё)
    */
   setupReceiverTransform(receiver: RTCRtpReceiver, peerId: string, trackId: string): void {
     this.assertTransformSetupContext('setupReceiverTransform');
@@ -201,7 +195,7 @@ export class CallMediaEncryption {
     const knownKeys = Array.from(this.peerDecryptionEpochs.keys());
     if (!hasKey) {
       logger.warn(
-        `[CallMediaEncryption] No decryption key for peer ${peerId} (resolved=${resolvedPeerId}) — frames will be dropped until key arrives. ` +
+        `[CallMediaEncryption] No decryption key for peer ${peerId} (resolved=${resolvedPeerId}) вЂ” frames will be dropped until key arrives. ` +
         `known peers: ${JSON.stringify(knownKeys)}`
       );
     }
@@ -212,9 +206,9 @@ export class CallMediaEncryption {
   }
 
   /**
-   * Обновить ключи при rekey (новый epoch).
-   * setEncryptionKey обновляет outbound; setDecryptionKey для каждого пира.
-   * Все уже подключённые transforms подхватывают новый ключ через SFrameContext.
+   * РћР±РЅРѕРІРёС‚СЊ РєР»СЋС‡Рё РїСЂРё rekey (РЅРѕРІС‹Р№ epoch).
+   * setEncryptionKey РѕР±РЅРѕРІР»СЏРµС‚ outbound; setDecryptionKey РґР»СЏ РєР°Р¶РґРѕРіРѕ РїРёСЂР°.
+   * Р’СЃРµ СѓР¶Рµ РїРѕРґРєР»СЋС‡С‘РЅРЅС‹Рµ transforms РїРѕРґС…РІР°С‚С‹РІР°СЋС‚ РЅРѕРІС‹Р№ РєР»СЋС‡ С‡РµСЂРµР· SFrameContext.
    */
   async updateKeys(
     ownEpochKey: EpochKeyMaterial,
@@ -230,7 +224,7 @@ export class CallMediaEncryption {
   }
 
   /**
-   * Проверить готовность E2EE (encryption key установлен + хотя бы один decryption key).
+   * РџСЂРѕРІРµСЂРёС‚СЊ РіРѕС‚РѕРІРЅРѕСЃС‚СЊ E2EE (encryption key СѓСЃС‚Р°РЅРѕРІР»РµРЅ + С…РѕС‚СЏ Р±С‹ РѕРґРёРЅ decryption key).
    */
   isReady(): boolean {
     return this.hasEncryptionKey && this.peerDecryptionEpochs.size > 0;
@@ -244,14 +238,14 @@ export class CallMediaEncryption {
     return Array.from(this.peerDecryptionEpochs.keys());
   }
 
-  /** Текущий epoch номер */
+  /** РўРµРєСѓС‰РёР№ epoch РЅРѕРјРµСЂ */
   getEpoch(): number {
     return this.currentEpoch;
   }
 
   /**
-   * Уничтожить все transforms и очистить ключи.
-   * Вызывать в closeCallsV2.
+   * РЈРЅРёС‡С‚РѕР¶РёС‚СЊ РІСЃРµ transforms Рё РѕС‡РёСЃС‚РёС‚СЊ РєР»СЋС‡Рё.
+   * Р’С‹Р·С‹РІР°С‚СЊ РІ closeCallsV2.
    */
   destroy(): void {
     this.encryptor.removeAllTransforms();

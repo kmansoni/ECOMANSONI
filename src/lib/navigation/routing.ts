@@ -870,6 +870,14 @@ export async function fetchRoute(
      degradationDiagnostics.push(diagnostic);
      logger.warn('[Routing] Offline route unavailable', { error: e, diagnostic });
    }
+
+   return {
+     main: null,
+     alternatives: [],
+     source: 'offline',
+     attemptedSources,
+     degradationReason: summarizeRouteDegradation(degradationDiagnostics),
+   };
 }
 
 // ─── Spatial off-route проверка O(1) вместо O(n) ───────────────────────────

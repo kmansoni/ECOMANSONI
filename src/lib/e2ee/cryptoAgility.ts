@@ -7,6 +7,7 @@
 
 import type { RatchetState } from './doubleRatchet';
 import { ml_kem768 } from '@noble/post-quantum/ml-kem.js';
+import { logger } from '@/lib/logger';
 
 const PQ_ENABLED = String(import.meta.env.VITE_E2EE_PQ_ENABLED ?? "false").trim() === "true";
 
@@ -88,25 +89,43 @@ export const CryptoAgility = {
     return MLKEM768.decapsulate(ciphertext, privateKey);
   },
 
+  /**
+   * FIX CRYPTO-1: symmetric KEM requires recipient pubKey.
+   *
+   * Protocol (X-Wing / NIST SP 800-56A rev. 3 hybrid pattern):
+   *   Alice: receives Bob's ML-KEM public key (published in bundle)
+   *   Alice: ML-KEM encapsulate(Bob.mlkem_pubkey) → (ciphertext, sharedSecret)
+   *   Alice: sends ciphertext to Bob
+   *   Bob:   ML-KEM decapsulate(ciphertext, Bob.mlkem_secretkey) → same sharedSecret
+   *
+   * @param senderPrivateKey     ECDH private key of sender (deriveBits source)
+   * @param recipientPublicKey   ECDH public key of recipient
+   * @param recipientMlKemPk    Recipient's ML-KEM-768 public key (from their bundle)
+   */
   async hybridKeyExchange(
-    x25519PrivateKey: CryptoKey,
-    x25519PublicKey: CryptoKey
+    senderPrivateKey: CryptoKey,
+    senderPublicKey: CryptoKey,
+    recipientPublicKey: CryptoKey,
+    recipientMlKemPk: Uint8Array | null,
   ): Promise<ArrayBuffer> {
     const ecdhSecret = await crypto.subtle.deriveBits(
-      { name: 'ECDH', public: x25519PublicKey },
-      x25519PrivateKey,
+      { name: 'ECDH', public: recipientPublicKey },
+      senderPrivateKey,
       256
     );
 
     let mlkemSecret: Uint8Array | null = null;
 
-    if (PQ_ENABLED) {
+    if (PQ_ENABLED && recipientMlKemPk) {
       try {
-        const { publicKey } = await MLKEM768.generateKeyPair();
-        const { sharedSecret } = await MLKEM768.encapsulate(publicKey);
+        // FIX CRYPTO-1: encapsulate in recipient's pubKey, not our own.
+        const { sharedSecret } = await MLKEM768.encapsulate(recipientMlKemPk);
         mlkemSecret = sharedSecret;
-      } catch {
-        console.warn('[CryptoAgility] ML-KEM-768 failed, using ECDH-only');
+      } catch (err) {
+        // FIX HIGH-2: hard fail on PQ path — silent fallback hides broken hybrid.
+        // Withdrawing PQ protection is a security decision, not a silent one.
+        logger.error('[CryptoAgility] ML-KEM encapsulation failed — PQ disabled', err);
+        throw new Error('Post-quantum key exchange failed. Rejecting ECDH-only fallback.');
       }
     }
 
@@ -150,19 +169,26 @@ export const CryptoAgility = {
     const usesPQ = newAlgo.includes('MLKEM');
 
     if (usesPQ) {
+      // FIX CRYPTO-3: derive root key and chain key from DIFFERENT parts of KDF output.
+      // Using same 32 bytes for both = forward secrecy broken.
       const pqKeys = await this.generateKyberKeypair();
 
-      const newRootKey = await crypto.subtle.digest(
+      const newRootKeyMaterial = await crypto.subtle.digest(
         'SHA-512',
         new Uint8Array([
           ...new Uint8Array(state.rootKey),
-          ...pqKeys.publicKey.slice(0, 32),
+          ...pqKeys.publicKey,
         ])
       );
 
+      const newRootKeyBytes = new Uint8Array(newRootKeyMaterial);
+
+      const newRootKey = newRootKeyBytes.slice(0, 32);
+      const chainKeyBytes = newRootKeyBytes.slice(32, 64);
+
       const newChainKey = await crypto.subtle.importKey(
         'raw',
-        newRootKey.slice(0, 32),
+        chainKeyBytes,
         { name: 'HMAC', hash: 'SHA-256' },
         false,
         ['sign']
@@ -170,16 +196,18 @@ export const CryptoAgility = {
 
       return {
         ...state,
-        rootKey: newRootKey.slice(0, 32),
+        rootKey: newRootKey.buffer,
         receivingChainKey: newChainKey,
       };
     } else {
-      const newRootKeyBytes = crypto.getRandomValues(new Uint8Array(32));
-      const newRootKey = newRootKeyBytes.buffer;
+      // FIX CRYPTO-2: generate 64 bytes, split 32/32.
+      // Previous: 32 bytes + slice(32,64) on 32-byte array = 0 bytes (empty chain key).
+      // FIX CRYPTO-3: use different halves for root key and chain key.
+      const newRootKeyBytes = crypto.getRandomValues(new Uint8Array(64));
 
       const newChainKey = await crypto.subtle.importKey(
         'raw',
-        new Uint8Array(newRootKey).slice(32, 64),
+        newRootKeyBytes.slice(32, 64),
         { name: 'HMAC', hash: 'SHA-256' },
         false,
         ['sign']
@@ -187,7 +215,7 @@ export const CryptoAgility = {
 
       return {
         ...state,
-        rootKey: newRootKey.slice(0, 32),
+        rootKey: newRootKeyBytes.slice(0, 32).buffer,
         receivingChainKey: newChainKey,
       };
     }

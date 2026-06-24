@@ -63,6 +63,8 @@ export const TURN_REFRESH_BEFORE_EXPIRY_SEC = 30 * 60;
 
 export const CALLS_V2_WS_URLS = CALLS_V2_ENDPOINTS;
 
+export const TURN_REQUIRED_MISSING_ERROR = "turn_required_missing: no relay candidates — calls behind symmetric NAT will fail";
+
 export const REKEY_INTERVAL_MS = Math.max(30_000, Number(import.meta.env.VITE_CALLS_V2_REKEY_INTERVAL_MS ?? "120000"));
 export const FRAME_E2EE_ADVERTISE_SFRAME = import.meta.env.VITE_CALLS_FRAME_E2EE_ADVERTISE_SFRAME === "true";
 
@@ -178,6 +180,9 @@ export function getCallsConfigToastDescription(issue: string): string {
   }
   if (issue.startsWith("Insecure calls endpoint on HTTPS page:")) {
     return "На HTTPS-странице нельзя использовать небезопасный WebSocket endpoint. Нужен только wss:// адрес для сервиса звонков.";
+  }
+  if (issue === TURN_REQUIRED_MISSING_ERROR) {
+    return "TURN-сервер недоступен. Звонки не работают за мобильной сетью или корпоративным firewall. Обратитесь в поддержку.";
   }
   return "Конфигурация сервиса звонков неполная. Проверьте env для Calls V2, TURN и SFU.";
 }
@@ -429,6 +434,23 @@ export function getCallsBootstrapToastPayload(error: unknown): { title: string; 
     return {
       title: "Требуется повторный вход",
       description: "Сессия входа устарела или недоступна. Обновите страницу и войдите снова, затем повторите звонок.",
+    };
+  }
+
+  if (message.includes("turn_required_missing")) {
+    return {
+      title: "Не удалось подключиться к TURN-серверу",
+      description: "Ваше подключение не поддерживает звонки. Попробуйте сменить сеть или Wi-Fi.",
+    };
+  }
+
+  if (
+    message.includes("peer_requires_e2ee") ||
+    message.includes("calls_v2_peer_requires_e2ee")
+  ) {
+    return {
+      title: "Версия приложения устарела",
+      description: "Ваш браузер не поддерживает шифрование звонков. Обновите приложение до последней версии.",
     };
   }
 

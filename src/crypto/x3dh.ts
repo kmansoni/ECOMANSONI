@@ -54,6 +54,15 @@ async function exportKey(key: CryptoKey): Promise<Uint8Array> {
 }
 
 export async function generateIdentityKey(): Promise<X3DHKeyPair> {
+  // WebCrypto P-256 ECDH limitation: wrapKey internally calls exportKey,
+  // which rejects non-extractable keys. extractable:true is unavoidable here.
+  //
+  // STORAGE-3 mitigations:
+  //   1. Identity key bytes are always encrypted at-rest with PBKDF2(escrow_password) —
+  //      plaintext PKCS8 never persists on disk/IndexedDB.
+  //   2. Escrow requires explicit user action (interactive flow), not silent XSS.
+  //   3. CRYPTO-5: Double Ratchet operational keys remain non-extractable always.
+  //   4. Hardware-backed storage (when available) adds OS-level protection.
   const pair = await crypto.subtle.generateKey(
     { name: 'ECDH', namedCurve: 'P-256' },
     true,
@@ -61,6 +70,7 @@ export async function generateIdentityKey(): Promise<X3DHKeyPair> {
   );
   return pair;
 }
+
 
 export async function signWithIdentity(
   identityKey: CryptoKey,

@@ -28,6 +28,7 @@ import { useReactions } from '@/hooks/useReactions';
 import { ReelItem } from '@/components/reels/ReelItem';
 import { ReelCommentsSheet } from '@/components/reels/ReelCommentsSheet';
 import { ReelShareSheet } from '@/components/reels/ReelShareSheet';
+import { ReelLikesSheet } from '@/components/reels/ReelLikesSheet';
 import { ReelTabs } from '@/components/reels/ReelTabs';
 import { AuroraOrbs } from '@/components/ui/glass/AuroraOrbs';
 import type { ReelFeedItem, ReelAuthor, ReelMetrics } from '@/types/reels';
@@ -450,6 +451,7 @@ export default function ReelsPage(): JSX.Element {
   const [currentIndex, setCurrentIndex] = useState(0);
   const [commentsReelId, setCommentsReelId] = useState<string | null>(null);
   const [shareReelId, setShareReelId] = useState<string | null>(null);
+  const [likesReelId, setLikesReelId] = useState<string | null>(null);
   const itemRefs = useRef<Map<number, Element>>(new Map());
   const observerRef = useRef<IntersectionObserver | null>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
@@ -671,6 +673,14 @@ export default function ReelsPage(): JSX.Element {
     setCommentsReelId(null);
   }, []);
 
+  const handleLikesOpen = useCallback((reelId: string) => {
+    setLikesReelId(reelId);
+  }, []);
+
+  const handleLikesClose = useCallback(() => {
+    setLikesReelId(null);
+  }, []);
+
   const handleAuthorPress = useCallback(
     (username: string) => navigate(`/user/${encodeURIComponent(username)}`),
     [navigate],
@@ -823,6 +833,7 @@ export default function ReelsPage(): JSX.Element {
                   reel={reel}
                   isActive={isActive}
                   onLike={handleLike}
+                  onLikesOpen={handleLikesOpen}
                   onSave={handleSave}
                   onRepost={handleRepost}
                   onShare={handleShare}
@@ -909,6 +920,18 @@ export default function ReelsPage(): JSX.Element {
           onShare={(targetType, targetId) => {
             void recordShare(shareReelId, targetType, targetId);
           }}
+        />
+      )}
+
+      {/* Likes sheet */}
+      {likesReelId !== null && (
+        <ReelLikesSheet
+          reelId={likesReelId}
+          likeCount={
+            feedItems.find((r) => r.id === likesReelId)?.metrics.likes_count ?? 0
+          }
+          isOpen={likesReelId !== null}
+          onClose={handleLikesClose}
         />
       )}
     </div>

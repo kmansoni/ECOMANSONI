@@ -1,5 +1,5 @@
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { AlertCircle, RefreshCw, Trash2 } from "lucide-react";
 
 interface DraftRestoreDialogProps {
@@ -29,6 +29,9 @@ export function DraftRestoreDialog({
           <AlertCircle className="w-5 h-5 text-primary" />
           Continue Draft?
         </DialogTitle>
+        <DialogDescription className="sr-only">
+          You have an unsaved draft. Would you like to continue where you left off?
+        </DialogDescription>
         
         <div className="space-y-4">
           <p className="text-sm text-muted-foreground">

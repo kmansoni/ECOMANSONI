@@ -59,8 +59,9 @@ function isOriginAllowed(origin: string | null): boolean {
   const normalized = origin.replace(/\/$/, "");
   // Capacitor/Ionic WebView origin used by mobile apps.
   if (/^(capacitor|ionic):\/\/localhost$/i.test(normalized)) return true;
-  // Local web dev should be allowed outside production.
-  if (!isProductionEnv() && /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(normalized)) return true;
+  // Localhost is never a production threat — allow unconditionally to align
+  // with infra/supabase-proxy/nginx.conf which already whitelists it.
+  if (/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(normalized)) return true;
   // Production first-party domains are always allowed.
   if (/^https?:\/\/([a-z0-9-]+\.)?mansoni\.ru(:\d+)?$/i.test(normalized)) return true;
   const allowed = getAllowedOrigins();

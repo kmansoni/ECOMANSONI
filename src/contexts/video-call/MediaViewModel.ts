@@ -88,6 +88,7 @@ export function useMediaViewModel(deps: MediaViewModelDeps) {
     markMediaBootstrapProgress,
     setRemoteStream: setRemoteMediaStream,
     releaseMediaWithoutDbUpdate,
+    currentCall: engineCurrentCall,
   } = useVideoCallSfu({
     onCallEnded: () => {
       // handled by SignalingViewModel
@@ -118,6 +119,12 @@ export function useMediaViewModel(deps: MediaViewModelDeps) {
       let data: unknown = null;
       let invokeError: unknown = null;
       const requestId = crypto.randomUUID();
+      // RFC 7635 §4.2: nonce MUST be random, ≠ requestId
+      const nonceBytes = new Uint8Array(16);
+      crypto.getRandomValues(nonceBytes);
+      let nonceBase64 = "";
+      for (let i = 0; i < nonceBytes.length; i++) nonceBase64 += String.fromCharCode(nonceBytes[i]);
+      nonceBase64 = btoa(nonceBase64).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 
       if (TURN_CREDENTIALS_URL) {
         try {
@@ -125,16 +132,16 @@ export function useMediaViewModel(deps: MediaViewModelDeps) {
           const accessToken = sessionData.session?.access_token;
           const headers: Record<string, string> = {
             "Content-Type": "application/json",
-            "x-turn-nonce": requestId,
+            "x-turn-nonce": nonceBase64,
             "x-request-id": requestId,
           };
           if (accessToken) headers.Authorization = `Bearer ${accessToken}`;
-          if (TURN_CREDENTIALS_API_KEY) headers.apikey = TURN_CREDENTIALS_URL;
+          if (TURN_CREDENTIALS_API_KEY) headers.apikey = TURN_CREDENTIALS_API_KEY;
 
           const response = await fetch(TURN_CREDENTIALS_URL, {
             method: "POST",
             headers,
-            body: JSON.stringify({ requestId, nonce: requestId }),
+            body: JSON.stringify({ requestId, nonce: nonceBase64 }),
           });
 
           if (response.ok) {
@@ -158,7 +165,7 @@ export function useMediaViewModel(deps: MediaViewModelDeps) {
         for (const fn of edgeFns) {
           try {
             const result = await supabase.functions.invoke(fn, {
-              body: { requestId, nonce: requestId },
+              body: { requestId, nonce: nonceBase64 },
               headers: {
                 ...(publishableKey ? { apikey: publishableKey } : {}),
                 ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
@@ -258,15 +265,16 @@ export function useMediaViewModel(deps: MediaViewModelDeps) {
     sfuManagerRef.current = manager;
   }, []);
 
-  // ─── Media bootstrap trigger — runs when currentCall + localStream are ready ─
+  // ─── Media bootstrap trigger — runs when engine call + local stream are ready ─
   const bootstrapPendingRef = useRef(false);
   useEffect(() => {
-    if (!currentCall || !localStream || bootstrapPendingRef.current) return;
+    const bootstrapCall = engineCurrentCall ?? currentCall;
+    if (!bootstrapCall || !localStream || bootstrapPendingRef.current) return;
     bootstrapPendingRef.current = true;
-    void bootstrapCallsV2Media(currentCall, localStream).finally(() => {
+    void bootstrapCallsV2Media(bootstrapCall, localStream).finally(() => {
       bootstrapPendingRef.current = false;
     });
-  }, [currentCall, localStream, bootstrapCallsV2Media]);
+  }, [currentCall, engineCurrentCall, localStream, bootstrapCallsV2Media]);
 
   // ─── Remote screen stream ────────────────────────────────────────────
   const [remoteScreenStream, setRemoteScreenStream] = useState<MediaStream | null>(null);

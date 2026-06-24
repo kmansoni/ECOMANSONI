@@ -424,6 +424,8 @@ export interface RoomJoinedPayload {
     e2eeReady?: boolean;
   }>;
   routerRtpCapabilities?: RtpCapabilities;
+  /** Server-side E2EE enforcement: if true, room requires E2EE from all participants. */
+  e2eeRequired?: boolean;
 }
 
 export interface PeerJoinedPayload {

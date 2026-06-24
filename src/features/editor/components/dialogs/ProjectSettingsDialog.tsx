@@ -7,6 +7,7 @@ import { Settings } from 'lucide-react';
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogHeader,
   DialogTitle,
   DialogFooter,
@@ -83,6 +84,9 @@ export const ProjectSettingsDialog = React.memo(function ProjectSettingsDialog()
             <Settings className="h-5 w-5" />
             Настройки проекта
           </DialogTitle>
+          <DialogDescription className="sr-only">
+            Configure resolution, frame rate, and aspect ratio for the project.
+          </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4 py-2">

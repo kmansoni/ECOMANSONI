@@ -48,6 +48,8 @@ interface ReelItemProps {
   onReactionChange?: (reelId: string, emoji: string) => void;
   /** Callback при удалении рилса автором */
   onDelete?: (reelId: string) => void;
+  /** Callback при открытии списка лайков */
+  onLikesOpen?: (reelId: string) => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -70,6 +72,7 @@ const ReelItem = memo<ReelItemProps>(
     myReaction = null,
     onReactionChange,
     onDelete,
+    onLikesOpen,
   }) => {
     const [heartPosition, setHeartPosition] = useState<TapPosition | null>(null);
     const [moreOpen, setMoreOpen] = useState(false);
@@ -119,9 +122,9 @@ const ReelItem = memo<ReelItemProps>(
       onAuthorPress(reel.author.username);
     }, [onAuthorPress, reel.author]);
 
-    const handleLike = useCallback(() => {
-      onLike(reel.id);
-    }, [onLike, reel.id]);
+    const handleLike = useCallback((clickedReelId: string) => {
+      onLike(clickedReelId);
+    }, [onLike]);
 
     const handleComment = useCallback(() => {
       onComment(reel.id);
@@ -274,6 +277,7 @@ const ReelItem = memo<ReelItemProps>(
             reactionCounts={reactionCounts}
             myReaction={myReaction}
             onLike={handleLike}
+            onLikesOpen={onLikesOpen}
             onComment={handleComment}
             onShare={handleShare}
             onSave={handleSave}

@@ -33,9 +33,10 @@ export interface SecurityLogEvent {
 /** Redacts well-known secret field names from an object. */
 function scrubObject(obj: Record<string, unknown>): Record<string, unknown> {
   const SECRET_KEYS = new Set([
-    'password', 'privateKey', 'secret', 'token', 'key', 'seed',
-    'rawKey', 'ciphertext', 'shardBytes', 'pkcs8', 'privateKeyBytes',
-    'prf', 'prfSeed', 'recoveryPassword', 'passphrase',
+    'password', 'privatekey', 'secret', 'token', 'key', 'seed',
+    'rawkey', 'ciphertext', 'shardbytes', 'pkcs8', 'privatekeybytes',
+    'prf', 'prfseed', 'recoverypassword', 'passphrase',
+    'secretkey', 'secretbytes', 'wrappedkey', 'wrappedbytes',
   ]);
   const result: Record<string, unknown> = {};
   for (const [k, v] of Object.entries(obj)) {

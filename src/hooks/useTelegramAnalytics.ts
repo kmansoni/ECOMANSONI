@@ -1,5 +1,5 @@
 import { useCallback } from "react";
-import { createClient } from "@/integrations/supabase/client";
+import { supabase } from "@/lib/supabase";
 
 interface AnalyticsEvent {
   event: string;
@@ -8,13 +8,11 @@ interface AnalyticsEvent {
 }
 
 export function useTelegramAnalytics() {
-  const supabase = createClient();
-
   const track = useCallback(async (event: AnalyticsEvent) => {
     await supabase.functions.invoke("telegram-analytics/track", {
       body: event,
     });
-  }, [supabase]);
+  }, []);
 
   const trackNavigation = useCallback((route: string, params?: Record<string, unknown>) => {
     return track({

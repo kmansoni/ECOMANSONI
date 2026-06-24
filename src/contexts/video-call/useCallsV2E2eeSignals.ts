@@ -1072,7 +1072,11 @@ const identitySig = btoa(String.fromCharCode(...new Uint8Array(identitySigRaw)))
         }
 
         const keyExchange = callKeyExchangeRef.current;
-        const keyActivated = keyExchange?.activateEpochKey(nextEpoch) ?? false;
+        if (!keyExchange) {
+          logger.error("[VideoCallContext] REKEY_COMMIT: key exchange unavailable for activation", { epoch: nextEpoch });
+          return;
+        }
+        const keyActivated = keyExchange.activateEpochKey(nextEpoch);
         if (!keyActivated) {
           logger.error("[VideoCallContext] REKEY_COMMIT: staged key missing for epoch", { epoch: nextEpoch });
           return;
@@ -1315,12 +1319,8 @@ const identitySig = btoa(String.fromCharCode(...new Uint8Array(identitySigRaw)))
     lastSnapshotRoomVersionRef,
     onDecryptionKeyReady,
     onE2eeActivated,
-    hasInboundE2eeReadiness,
-    getInboundE2eeReadiness,
-    missingSenderKeysRef,
     effectiveMissingSenderKeysRef,
     peerUserIdByDeviceIdRef,
-    callsWsRef,
     sfuManagerRef,
     sfuRouterRtpCapabilitiesRef,
     resolvePeerIdentity,

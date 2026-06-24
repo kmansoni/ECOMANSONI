@@ -177,14 +177,14 @@ export function useGroupVideoCall(roomId: string) {
     timeoutMs = 5000,
   ) => {
     return new Promise<{ payload: Record<string, unknown>; parsed: Record<string, unknown> }>((resolve, reject) => {
-      const timeoutId = window.setTimeout(() => {
+      const timerId: ReturnType<typeof setTimeout> = setTimeout(() => {
         pendingSignalWaitersRef.current = pendingSignalWaitersRef.current.filter((entry) => entry !== waiter);
         reject(new Error(`Timeout waiting for ${type}`));
       }, timeoutMs);
 
       const waiter = {
         type,
-        timeoutId,
+        timeoutId: timerId,
         predicate,
         resolve,
         reject,

@@ -93,12 +93,17 @@ const MAX_REPLAY_WINDOW = 8192;
 export class SFrameContext {
   private key: CryptoKey | null = null;
   private counter: number = 0;
-   private keyId: number = 0;
-   private epoch: number = 0;
-   private config: SFrameConfig;
+  private keyId: number = 0;
+  private epoch: number = 0;
+  private config: SFrameConfig;
   /** Replay protection: track highest seen counter + small window for out-of-order */
   private highestSeenCounter: number = -1;
   private seenCounters: Set<number> = new Set();
+  /** FIX CALLS-1: prevents concurrent decrypts with same counter from racing.
+   *  Key = counter, Value = promise resolving to decrypted result.
+   *  If two calls arrive with same counter before either resolves, the second
+   *  waits for the first's promise, ensuring only one decryption runs. */
+  private inFlight: Map<number, Promise<ArrayBuffer>> = new Map();
 
   constructor(config: Partial<SFrameConfig> = {}) {
     this.config = {
@@ -121,6 +126,7 @@ export class SFrameContext {
      // Reset replay state on key change
      this.highestSeenCounter = -1;
      this.seenCounters.clear();
+     this.inFlight.clear();
    }
 
   /**
@@ -182,42 +188,48 @@ export class SFrameContext {
     if (this.highestSeenCounter >= 0 && counter <= floor) {
       throw new Error(`Stale SFrame counter ${counter} (highest: ${this.highestSeenCounter}) — possible replay attack`);
     }
+
+    // FIX CALLS-1: inFlight FIRST — serializes concurrent frames with same counter.
+    // A duplicate counter arriving while another decrypt is in-flight is a replay attack.
+    // The legitimate in-flight decrypt completes normally (prevents false rejection
+    // from network retransmits), but the duplicate frame is dropped immediately.
+    const existing = this.inFlight.get(counter);
+    if (existing) {
+      throw new Error(`Concurrent SFrame counter ${counter} — possible replay attack`);
+    }
+
     if (this.seenCounters.has(counter)) {
       throw new Error(`Duplicate SFrame counter ${counter} — possible replay attack`);
     }
 
-     const iv = buildIV(this.keyId, this.epoch, counter);
+    const decryptPromise = (async () => {
+      const iv = buildIV(this.keyId, this.epoch, counter);
+      const headerBuf = new Uint8Array(frame.slice(0, headerLength));
+      const payloadBuf = new Uint8Array(frame.slice(headerLength));
+      // Non-null: this.key guard is at decryptFrame entry
+      const result = await crypto.subtle.decrypt(
+        { name: 'AES-GCM', iv, additionalData: headerBuf, tagLength: 128 },
+        this.key!,
+        payloadBuf
+      );
+      return result;
+    })();
 
-    // Header bytes (для AAD)
-    const headerBuf = new Uint8Array(frame.slice(0, headerLength));
+    this.inFlight.set(counter, decryptPromise);
 
-    // Encrypted payload (ciphertext + tag)
-    const payloadBuf = new Uint8Array(frame.slice(headerLength));
+    const decrypted = await decryptPromise;
 
-    const decrypted = await crypto.subtle.decrypt(
-      {
-        name: 'AES-GCM',
-        iv,
-        additionalData: headerBuf,
-        tagLength: 128,
-      },
-      this.key,
-      payloadBuf
-    );
-
-    // Track counter after successful decryption
+    // Update counters AFTER successful decrypt.
+    this.inFlight.delete(counter);
     this.seenCounters.add(counter);
     if (counter > this.highestSeenCounter) {
       this.highestSeenCounter = counter;
-     // Range-based eviction: drop all counters that fall below the new floor.
-     // This guarantees seenCounters only holds counters in [highestSeenCounter-MAX_REPLAY_WINDOW+1 .. highestSeenCounter].
-     // Any replay of an evicted counter will be caught by the floor check above.
-     const newFloor = this.highestSeenCounter - MAX_REPLAY_WINDOW;
-     this.seenCounters.forEach(c => {
-         if (c <= newFloor) {
-             this.seenCounters.delete(c);
-         }
-     });
+      const newFloor = this.highestSeenCounter - MAX_REPLAY_WINDOW;
+      this.seenCounters.forEach(c => {
+        if (c <= newFloor) {
+          this.seenCounters.delete(c);
+        }
+      });
     }
 
     return decrypted;

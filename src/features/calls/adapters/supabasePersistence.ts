@@ -110,7 +110,11 @@ export class SupabaseCallPersistenceAdapter implements CallPersistencePort {
           }
         }
       )
-      .subscribe();
+      .subscribe((status, err) => {
+        if (err) {
+          console.warn("[SupabaseCallPersistence] Realtime subscription error:", err);
+        }
+      });
 
     return () => {
       supabase.removeChannel(channel);
