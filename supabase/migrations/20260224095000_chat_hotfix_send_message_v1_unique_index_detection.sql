@@ -2,9 +2,9 @@
 -- Some environments may have a non-unique index with the same name, which breaks ON CONFLICT.
 
 CREATE OR REPLACE FUNCTION public.send_message_v1(
-  conversation_id UUID,
-  client_msg_id UUID,
-  body TEXT
+  p_conversation_id UUID,
+  p_client_msg_id UUID,
+  p_body TEXT
 )
 RETURNS TABLE (
   message_id UUID,
@@ -20,6 +20,10 @@ DECLARE
   trimmed TEXT;
   inserted_id UUID;
   inserted_seq BIGINT;
+  -- Alias function parameters as local variables so plpgsql variable_conflict can resolve unqualified references
+  v_conversation_id UUID := p_conversation_id;
+  v_client_msg_id UUID := p_client_msg_id;
+  v_body TEXT := p_body;
   has_unique_idempotency_index BOOLEAN := EXISTS (
     SELECT 1
     FROM pg_class ic
@@ -43,19 +47,19 @@ BEGIN
     RAISE EXCEPTION 'not_authenticated' USING ERRCODE = '28000';
   END IF;
 
-  IF conversation_id IS NULL THEN
+  IF v_conversation_id IS NULL THEN
     RAISE EXCEPTION 'invalid_conversation' USING ERRCODE = '22023';
   END IF;
 
-  IF client_msg_id IS NULL THEN
+  IF v_client_msg_id IS NULL THEN
     RAISE EXCEPTION 'invalid_client_msg_id' USING ERRCODE = '22023';
   END IF;
 
-  IF body IS NULL THEN
+  IF v_body IS NULL THEN
     RAISE EXCEPTION 'invalid_body' USING ERRCODE = '22023';
   END IF;
 
-  trimmed := btrim(body);
+  trimmed := btrim(v_body);
   IF length(trimmed) < 1 OR length(trimmed) > 4000 THEN
     RAISE EXCEPTION 'invalid_body' USING ERRCODE = '22023';
   END IF;
@@ -63,7 +67,7 @@ BEGIN
   IF NOT EXISTS (
     SELECT 1
     FROM public.conversation_participants cp
-    WHERE cp.conversation_id = conversation_id
+    WHERE cp.conversation_id = v_conversation_id
       AND cp.user_id = initiator
   ) THEN
     RAISE EXCEPTION 'not_participant' USING ERRCODE = '42501';
@@ -74,9 +78,9 @@ BEGIN
   SELECT m.id, m.seq
     INTO inserted_id, inserted_seq
   FROM public.messages m
-  WHERE m.conversation_id = conversation_id
+  WHERE m.conversation_id = v_conversation_id
     AND m.sender_id = initiator
-    AND m.client_msg_id = client_msg_id
+    AND m.client_msg_id = v_client_msg_id
   LIMIT 1;
 
   IF inserted_id IS NOT NULL THEN
@@ -157,10 +161,10 @@ BEGIN
       shared_reel_id
     )
     VALUES (
-      conversation_id,
+      v_conversation_id,
       initiator,
       final_content,
-      client_msg_id,
+      v_client_msg_id,
       final_media_url,
       final_media_type,
       final_duration,
@@ -184,10 +188,10 @@ BEGIN
       shared_reel_id
     )
     VALUES (
-      conversation_id,
+      v_conversation_id,
       initiator,
       final_content,
-      client_msg_id,
+      v_client_msg_id,
       final_media_url,
       final_media_type,
       final_duration,
@@ -201,9 +205,9 @@ BEGIN
     SELECT m.id, m.seq
       INTO inserted_id, inserted_seq
     FROM public.messages m
-    WHERE m.conversation_id = conversation_id
+    WHERE m.conversation_id = v_conversation_id
       AND m.sender_id = initiator
-      AND m.client_msg_id = client_msg_id
+      AND m.client_msg_id = v_client_msg_id
     LIMIT 1;
   END IF;
 

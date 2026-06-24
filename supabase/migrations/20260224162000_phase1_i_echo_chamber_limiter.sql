@@ -222,7 +222,7 @@ BEGIN
   SELECT 
     au.user_id,
     analyze_user_diversity_v1(au.user_id) AS is_echo_chamber,
-    (SELECT author_diversity_score FROM public.user_consumption_diversity WHERE user_id = au.user_id)
+    (SELECT author_diversity_score FROM public.user_consumption_diversity ucd WHERE ucd.user_id = au.user_id)
   FROM active_users au;
 END;
 $$;
