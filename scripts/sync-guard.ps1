@@ -206,11 +206,14 @@ if ($CheckRemoteMigrations) {
   }
   $usedApiFallback = $false
   $lines = @()
+  $cliInvoked = $false
+  $cliExitCode = $null
   if (-not [string]::IsNullOrWhiteSpace($dbPassword)) {
     $exe = $SupabaseExe.Trim()
     $oldEap = $ErrorActionPreference
     $ErrorActionPreference = "Continue"
     try {
+      $global:LASTEXITCODE = 0
       if ($exe -eq "npx supabase") {
         $raw = & npx supabase migration list 2>&1
       } elseif ($exe -eq "npx") {
@@ -218,6 +221,8 @@ if ($CheckRemoteMigrations) {
       } else {
         $raw = & $SupabaseExe migration list 2>&1
       }
+      $cliInvoked = $true
+      $cliExitCode = $global:LASTEXITCODE
     } finally {
       $ErrorActionPreference = $oldEap
     }
@@ -225,23 +230,23 @@ if ($CheckRemoteMigrations) {
   }
 
   $rawText = ($lines | ForEach-Object { [string]$_ }) -join "`n"
-  $cliNeedsFallback = [string]::IsNullOrWhiteSpace($dbPassword) -or $LASTEXITCODE -ne 0
+  $cliNeedsFallback = (-not $cliInvoked) -or ($cliExitCode -ne 0)
 
   if ($cliNeedsFallback) {
-    if (-not [string]::IsNullOrWhiteSpace($dbPassword) -and $LASTEXITCODE -ne 0) {
+    if ($cliInvoked -and $cliExitCode -ne 0) {
       $snippet = (($lines | Select-Object -First 3) | ForEach-Object { [string]$_ }) -join " | "
-      Write-Host "Supabase CLI remote migration check failed; trying Management API fallback. Output: $snippet" -ForegroundColor Yellow
+      Write-Host "Supabase CLI remote migration check failed (exit $cliExitCode); trying Management API fallback. Output: $snippet" -ForegroundColor Yellow
     } else {
-      Write-Host "Supabase CLI remote migration check unavailable; trying Management API fallback." -ForegroundColor Yellow
+      Write-Host "Supabase CLI remote migration check unavailable (no DB password); trying Management API fallback." -ForegroundColor Yellow
     }
 
     $apiState = Get-RemoteMigrationStateViaApi -repoRootPath $repoRoot
     if (-not $apiState.ok) {
-      if ([string]::IsNullOrWhiteSpace($dbPassword) -or $rawText -match 'SUPABASE_DB_PASSWORD|unexpected login role status 401|Connect to your database by setting the env var|password authentication failed|SQLSTATE 28P01|failed SASL auth') {
+      if (-not $cliInvoked -or $rawText -match 'SUPABASE_DB_PASSWORD|unexpected login role status 401|Connect to your database by setting the env var|password authentication failed|SQLSTATE 28P01|failed SASL auth') {
         Add-Issue $issues $apiState.message
       } else {
         $snippet = (($lines | Select-Object -First 3) | ForEach-Object { [string]$_ }) -join " | "
-        Add-Issue $issues "Unable to read remote migrations. Supabase CLI exit code: $LASTEXITCODE. Output: $snippet"
+        Add-Issue $issues "Unable to read remote migrations. Supabase CLI exit code: $cliExitCode. Output: $snippet"
         Add-Issue $issues $apiState.message
       }
     } else {
@@ -257,7 +262,7 @@ if ($CheckRemoteMigrations) {
     }
   }
 
-  if (-not $usedApiFallback -and $LASTEXITCODE -eq 0) {
+  if (-not $usedApiFallback -and $cliInvoked -and $cliExitCode -eq 0) {
     foreach ($line in $lines) {
       $s = [string]$line
       if ($s -match '^\s*Local\s+\|\s+Remote\s+\|') { continue }
