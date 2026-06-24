@@ -31,7 +31,7 @@ describe("group membership rotation helper", () => {
     removeGroupMemberMock.mockReset();
     capturedEncryptFn = null;
     // Re-set mockImplementation AFTER reset so capturedEncryptFn is populated
-    removeGroupMemberMock.mockImplementation(async (_convId: unknown, _removedId: unknown, encryptFn: Function) => {
+    removeGroupMemberMock.mockImplementation(async (_convId: unknown, _removedId: unknown, encryptFn: (convId: unknown, removedId: unknown) => Promise<{ epoch: number }>) => {
       capturedEncryptFn = encryptFn;
       return { epoch: 2 };
     });

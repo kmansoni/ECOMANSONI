@@ -7,14 +7,7 @@ import { CRMAutoMixin } from "./crm-auto";
 export class CRMLib extends CRMRpcClient {}
 export interface CRMLib extends CRMCoreMixin, CRMRealEstateMixin, CRMHRMixin, CRMAutoMixin {}
 
-Object.assign(
-  CRMLib.prototype,
-  CRMCoreMixin.prototype,
-  CRMRealEstateMixin.prototype,
-  CRMHRMixin.prototype,
-  CRMAutoMixin.prototype,
-);
-
-export const crm = new CRMLib();
+const _crm = new CRMLib();
+export const crm = _crm as CRMLib;
 
 export * from "./crm.types";

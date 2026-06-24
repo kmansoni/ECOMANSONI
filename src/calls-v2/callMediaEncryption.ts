@@ -8,7 +8,7 @@ import { logger } from '@/lib/logger';
  *   SfuMediaManager (RTCRtpSender/Receiver) в†” Insertable Streams API
  *
  * Design decisions:
- * - Fail-closed: Р±РµР· РІР°Р»РёРґРЅРѕРіРѕ epoch key setupSenderTransform Р‘Р РћРЎРђР•Рў РѕС€РёР±РєСѓ (H-6).
+ * - Fail-closed: Р±РµР· РІР°Р»РёРґРЅРѕРіРѕ epoch key setupSenderTransform Р‘Р РћРЎРђР•Рў РѕС€РёР±РєСѓ (H-6).
  * - Async setEncryptionKey/setDecryptionKey: MediaEncryptor.setEncryptionKey РїСЂРёРЅРёРјР°РµС‚ CryptoKey.
  * - Adapter pattern: СЃРєСЂС‹РІР°РµС‚ РѕС‚Р»РёС‡РёСЏ СЃРёРіРЅР°С‚СѓСЂС‹ MediaEncryptor РѕС‚ call pipeline.
  * - EpochGuard integration (M-6): assertMediaAllowed() РїРµСЂРµРґ РІСЃРµРјРё media operations.

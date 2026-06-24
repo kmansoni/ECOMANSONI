@@ -193,7 +193,7 @@ export function ReelRemix({
     recorder.onstop = () => {
       clearTimeout(timeoutId);
       origVideo?.removeEventListener('ended', onVideoEnded);
-      // @ts-ignore — MediaRecorder types vary by browser
+      // @ts-expect-error — MediaRecorder types vary by browser
       originalOnStop?.call(recorder);
     };
   };

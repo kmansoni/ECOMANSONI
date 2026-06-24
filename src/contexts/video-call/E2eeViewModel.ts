@@ -95,7 +95,8 @@ export function useE2eeViewModel(deps: E2eeViewModelDeps) {
 
   const producerPeerKeyRef = useRef<Map<string, string>>(new Map());
   const peerUserIdByDeviceIdRef = useRef<Map<string, string>>(new Map());
-  const _missingSenderKeysRef = missingSenderKeysRef ?? useRef<Set<string>>(new Set());
+  const _missingSenderKeysRef = useRef<Set<string>>(new Set());
+  if (missingSenderKeysRef) _missingSenderKeysRef.current = missingSenderKeysRef.current;
 
   const pendingReceiverTransformsRef = useRef<Map<string, PendingReceiverTransform>>(new Map());
   const consumerCreateParamsRef = useRef<Map<string, ConsumerReplayDescriptor>>(new Map());
