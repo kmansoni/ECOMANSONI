@@ -29,6 +29,7 @@ import { supabase, dbLoose } from "@/lib/supabase";
 import { GradientAvatar } from "@/components/ui/gradient-avatar";
 import { InviteQrDialog } from "@/components/chat/InviteQrDialog";
 import { rotateGroupMembershipAfterRemoval } from "@/lib/e2ee/groupMembershipRotation";
+import { E2EEKeyStore } from "@/lib/e2ee/keyStore";
 import { logger } from "@/lib/logger";
 
 interface GroupConversationProps {
@@ -61,6 +62,7 @@ export function GroupConversation({ group, onBack, onLeave }: GroupConversationP
   const [inviteQrOpen, setInviteQrOpen] = useState(false);
   const [inviteQrUrl, setInviteQrUrl] = useState("");
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const keyStoreRef = useRef<E2EEKeyStore | null>(null);
   const isOwner = group.owner_id === user?.id;
   const canInvite = isOwner && (settings?.allow_group_invites ?? true);
   const currentDisplayName = useMemo(() => {
@@ -133,6 +135,10 @@ export function GroupConversation({ group, onBack, onLeave }: GroupConversationP
   };
 
   const handleLeave = async () => {
+    if (!user?.id) return;
+    if (!keyStoreRef.current) {
+      keyStoreRef.current = new E2EEKeyStore({ dbName: 'e2ee-keystore-v2' });
+    }
     try {
       const { error } = await supabase
         .from("group_chat_members")
@@ -142,7 +148,8 @@ export function GroupConversation({ group, onBack, onLeave }: GroupConversationP
       if (error) throw error;
 
       // Best-effort E2EE rekey after membership change.
-      await rotateGroupMembershipAfterRemoval(group.id, user?.id);
+      // Node keys are encrypted per-recipient via ECDH+AES-GCM before leaving the client (GROUP-3 fix).
+      await rotateGroupMembershipAfterRemoval(group.id, user?.id, keyStoreRef.current, user.id);
 
       toast.success("Вы покинули группу");
       onLeave?.();

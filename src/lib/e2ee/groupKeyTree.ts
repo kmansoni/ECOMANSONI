@@ -57,6 +57,8 @@ export interface MembershipChange {
     recipientId: string;
     encryptedNodeKey: string; // base64 AES-GCM ciphertext
     iv: string;               // base64 12-byte nonce
+    /** Ephemeral ECDH public key — recipient uses it to derive the same AES key via ECDH */
+    ephemeralPublicKey: string; // base64 raw
   }>;
 }
 
@@ -211,7 +213,7 @@ async function _combineKeys(left: ArrayBuffer, right: ArrayBuffer): Promise<Arra
 export async function addGroupMember(
   conversationId: string,
   newUserId: string,
-  encryptNodeKeyForUser: (recipientId: string, nodeKey: ArrayBuffer) => Promise<{ ciphertext: string; iv: string }>,
+  encryptNodeKeyForUser: (recipientId: string, nodeKey: ArrayBuffer) => Promise<{ ciphertext: string; iv: string; ephemeralPublicKey: string }>,
 ): Promise<MembershipChange> {
   const tree = _trees.get(conversationId);
   if (!tree) throw new Error(`Group key tree not found for ${conversationId}`);
@@ -235,8 +237,8 @@ export async function addGroupMember(
     for (const nodeId of path) {
       const node = tree.nodes.get(nodeId);
       if (!node) continue;
-      const { ciphertext, iv } = await encryptNodeKeyForUser(userId, node.key);
-      keyUpdates.push({ nodeId, recipientId: userId, encryptedNodeKey: ciphertext, iv });
+      const { ciphertext, iv, ephemeralPublicKey } = await encryptNodeKeyForUser(userId, node.key);
+      keyUpdates.push({ nodeId, recipientId: userId, encryptedNodeKey: ciphertext, iv, ephemeralPublicKey });
     }
   }
 
@@ -257,7 +259,7 @@ export async function addGroupMember(
 export async function removeGroupMember(
   conversationId: string,
   removedUserId: string,
-  encryptNodeKeyForUser: (recipientId: string, nodeKey: ArrayBuffer) => Promise<{ ciphertext: string; iv: string }>,
+  encryptNodeKeyForUser: (recipientId: string, nodeKey: ArrayBuffer) => Promise<{ ciphertext: string; iv: string; ephemeralPublicKey: string }>,
 ): Promise<MembershipChange> {
   const tree = _trees.get(conversationId);
   if (!tree) throw new Error(`Group key tree not found for ${conversationId}`);
@@ -290,8 +292,8 @@ export async function removeGroupMember(
     for (const nodeId of path) {
       const node = tree.nodes.get(nodeId);
       if (!node) continue;
-      const { ciphertext, iv } = await encryptNodeKeyForUser(userId, node.key);
-      keyUpdates.push({ nodeId, recipientId: userId, encryptedNodeKey: ciphertext, iv });
+      const { ciphertext, iv, ephemeralPublicKey } = await encryptNodeKeyForUser(userId, node.key);
+      keyUpdates.push({ nodeId, recipientId: userId, encryptedNodeKey: ciphertext, iv, ephemeralPublicKey });
     }
   }
 
