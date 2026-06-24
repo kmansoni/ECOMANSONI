@@ -235,14 +235,15 @@ private currentEncryptionKey: { key: CryptoKey; keyId: number; epoch: number } |
         return [value, i - offset];
       }
 
-      // buildIV(epoch, counter) — epoch в первых 4 байтах, counter в последних 8
-      // This ensures IV uniqueness after key rotation when counter resets to 0
-      function buildIV(epoch, counter) {
-        const iv = new ArrayBuffer(12);
+      // IV-REUSE fix: include keyId in IV to prevent collision between audio/video senders
+      // with same epoch/counter. Format: [keyId(4)|epoch(4)|counter_hi(4)|counter_lo(4)]
+      function buildIV(keyId, epoch, counter) {
+        const iv = new ArrayBuffer(16);
         const view = new DataView(iv);
-        view.setUint32(0, epoch >>> 0, false);
-        view.setUint32(4, Math.floor(counter / 0x100000000) >>> 0, false);
-        view.setUint32(8, counter >>> 0, false);
+        view.setUint32(0, keyId >>> 0, false);
+        view.setUint32(4, epoch >>> 0, false);
+        view.setUint32(8, Math.floor(counter / 0x100000000) >>> 0, false);
+        view.setUint32(12, counter >>> 0, false);
         return iv;
       }
 
@@ -302,7 +303,7 @@ private currentEncryptionKey: { key: CryptoKey; keyId: number; epoch: number } |
         const msg = event.data || {};
         if (msg.type === 'setEncryptionKey') {
           encState.key = msg.key;
-          encState.keyId = msg.keyId & 0xff;
+          encState.keyId = msg.keyId & 0x7fffffff;
           encState.counter = 0;
           // Use epoch from message (already incremented in SFrameContext)
           encState.epoch = msg.epoch >>> 0;
@@ -310,7 +311,7 @@ private currentEncryptionKey: { key: CryptoKey; keyId: number; epoch: number } |
         if (msg.type === 'setDecryptionKey') {
           decStates.set(msg.peerId, {
             key: msg.key,
-            keyId: msg.keyId & 0xff,
+            keyId: msg.keyId & 0x7fffffff,
             epoch: msg.epoch >>> 0,
             highestSeenCounter: -1,
             seenCounters: new Set()
@@ -332,7 +333,7 @@ private currentEncryptionKey: { key: CryptoKey; keyId: number; epoch: number } |
                 if (!encState.key) return;
                 const counter = encState.counter++;
                 const header = buildHeader(encState.keyId, counter);
-                const iv = buildIV(encState.epoch, counter);
+                const iv = buildIV(encState.keyId, encState.epoch, counter);
                 const encrypted = await crypto.subtle.encrypt(
                   { name: 'AES-GCM', iv, additionalData: header, tagLength: 128 },
                   encState.key,
@@ -355,8 +356,8 @@ private currentEncryptionKey: { key: CryptoKey; keyId: number; epoch: number } |
                 if (!parsed) return;
                 const headerBuf = frame.data.slice(0, parsed.headerLength);
                 const payloadBuf = frame.data.slice(parsed.headerLength);
-                // Use epoch from state for IV reconstruction
-                const iv = buildIV(state.epoch, parsed.counter);
+                // IV includes parsed.keyId from SFrame header — matches encrypt IV construction
+                const iv = buildIV(parsed.keyId, state.epoch, parsed.counter);
                 const plain = await crypto.subtle.decrypt(
                   { name: 'AES-GCM', iv, additionalData: headerBuf, tagLength: 128 },
                   state.key,

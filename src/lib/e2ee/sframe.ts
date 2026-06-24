@@ -59,17 +59,31 @@ function decodeVarInt(data: Uint8Array, offset: number): [number, number] {
   return [value, i - offset];
 }
 
-/** Строит IV для AES-GCM из epoch и counter (epoch: первые 4 байта, counter: следующие 8 байт) */
-function buildIV(epoch: number, counter: number): Uint8Array {
-   const iv = new ArrayBuffer(12);
-   const view = new DataView(iv);
-   // epoch как 32-bit big-endian в первых 4 байтах
-   view.setUint32(0, epoch >>> 0, false);
-   // counter как 64-bit big-endian в следующих 8 байтах (разделён на две 32-битные части)
-   view.setUint32(4, Math.floor(counter / 0x100000000) >>> 0, false);
-   view.setUint32(8, counter >>> 0, false);
-   return new Uint8Array(iv);
- }
+/**
+ * IV-REUSE fix: IV construction must include keyId to prevent collisions
+ * between senders using the same epoch/counter (e.g., audio sender + video sender
+ * both encrypting frame 0 with epoch 0).
+ *
+ * Before fix: buildIV(epoch, counter) = [epoch(4)|counter_hi(4)|counter_lo(4)]
+ *   → Two senders with same epoch/counter produce identical IVs.
+ *   → AES-GCM IV collision breaks authentication — same (key, iv, aad) yields same tag.
+ *
+ * After fix: buildIV(keyId, epoch, counter) = [keyId(4)|epoch(4)|counter_hi(4)|counter_lo(4)]
+ *   → Even if epoch/counter collide, keyId makes IV unique per sender/key.
+ *   → Expanded to 16 bytes to fill the AES-GCM IV slot without truncation.
+ */
+function buildIV(keyId: number, epoch: number, counter: number): Uint8Array {
+  const iv = new ArrayBuffer(16);
+  const view = new DataView(iv);
+  // keyId: 4 bytes — disambiguates IV between simultaneous audio/video senders
+  view.setUint32(0, keyId >>> 0, false);
+  // epoch: 4 bytes — disambiguates IV after key rotation
+  view.setUint32(4, epoch >>> 0, false);
+  // counter: 8 bytes split into hi/lo 32-bit parts
+  view.setUint32(8, Math.floor(counter / 0x100000000) >>> 0, false);
+  view.setUint32(12, counter >>> 0, false);
+  return new Uint8Array(iv);
+}
 
 // ─── SFrameContext ────────────────────────────────────────────────────────────
 
@@ -119,7 +133,7 @@ export class SFrameContext {
 
     const counter = this.counter++;
     const header = this._buildHeader(this.keyId, counter);
-    const iv = buildIV(this.epoch, counter);
+    const iv = buildIV(this.keyId, this.epoch, counter);
 
     // AAD = header bytes
     const frameBytes = new Uint8Array(frame.slice(0));
@@ -172,7 +186,7 @@ export class SFrameContext {
       throw new Error(`Duplicate SFrame counter ${counter} — possible replay attack`);
     }
 
-     const iv = buildIV(this.epoch, counter);
+     const iv = buildIV(this.keyId, this.epoch, counter);
 
     // Header bytes (для AAD)
     const headerBuf = new Uint8Array(frame.slice(0, headerLength));
