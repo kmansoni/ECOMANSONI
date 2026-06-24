@@ -60,7 +60,7 @@ export function PostReminder({ postId }: PostReminderProps) {
         .select("remind_at")
         .eq("post_id", postId)
         .eq("user_id", user.id)
-        .single();
+        .maybeSingle();
       setReminder(data as ReminderData | null);
     };
     void loadReminder();
@@ -85,7 +85,7 @@ export function PostReminder({ postId }: PostReminderProps) {
         .select("remind_at")
         .eq("post_id", postId)
         .eq("user_id", user.id)
-        .single();
+        .maybeSingle();
       setReminder(data as ReminderData | null);
       setOpen(false);
       toast.success("Напоминание установлено");
@@ -120,7 +120,7 @@ export function PostReminder({ postId }: PostReminderProps) {
         .select("remind_at")
         .eq("post_id", postId)
         .eq("user_id", user.id)
-        .single();
+        .maybeSingle();
       setReminder(data as ReminderData | null);
       setOpen(false);
       toast.success("Напоминание установлено");
