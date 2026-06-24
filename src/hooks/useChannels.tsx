@@ -224,6 +224,13 @@ export function useChannels() {
     setLoading(true);
     setError(null);
 
+    // Guard: supabase client must be ready before any query
+    if (!supabase) {
+      setError("Клиент Supabase не инициализирован. Обновите страницу.");
+      setLoading(false);
+      return;
+    }
+
     try {
       // Fetch all public channels
       const { data: channelsData, error: channelsError } = await supabase

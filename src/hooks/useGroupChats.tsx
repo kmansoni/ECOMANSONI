@@ -147,6 +147,14 @@ export function useGroupChats() {
       return;
     }
 
+    // Guard: supabase client must be ready before any query
+    if (!supabase) {
+      setError("Клиент Supabase не инициализирован. Обновите страницу.");
+      setGroups([]);
+      setLoading(false);
+      return;
+    }
+
     // Проверяем наличие активной сессии перед запросом
     const { data: { session } } = await supabase.auth.getSession();
     if (!session) {

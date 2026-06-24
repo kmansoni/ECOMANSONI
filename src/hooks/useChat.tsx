@@ -429,6 +429,14 @@ export function useConversations() {
       return;
     }
 
+    // Guard: supabase client must be ready before any query
+    if (!supabase) {
+      setError("Клиент Supabase не инициализирован. Обновите страницу.");
+      setConversations([]);
+      setLoading(false);
+      return;
+    }
+
     try {
       const v11 = isChatProtocolV11EnabledForUser(user.id);
 
@@ -824,6 +832,14 @@ export function useMessages(conversationId: string | null) {
 
   const fetchMessages = useCallback(async () => {
     if (!conversationId || !user) {
+      setMessages([]);
+      setLoading(false);
+      return;
+    }
+
+    // Guard: supabase client must be ready before any query
+    if (!supabase) {
+      setFetchError("Клиент Supabase не инициализирован. Обновите страницу.");
       setMessages([]);
       setLoading(false);
       return;
